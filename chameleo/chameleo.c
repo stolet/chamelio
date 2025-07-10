@@ -11,7 +11,7 @@
 #include "nic/nic.h"
 #include "../utils/log/log.h"
 
-struct chameleo_context chameleo_ctx;
+struct chameleo_context cham_ctx;
 
 static int fast_path_thread(void *arg);
 static int fast_path_start(struct configuration *config);
@@ -25,7 +25,7 @@ int main (int argc, char **argv)
 
 
   /* Parse command line options */
-  config = &chameleo_ctx.config;
+  config = &cham_ctx.config;
   ret = config_parse(config, argc, argv);
   if (ret != 0)
   {
@@ -51,20 +51,20 @@ int main (int argc, char **argv)
 
   /* Initialize fast path contexts in hugepages */
   fp_ctxs = rte_calloc("fast path context list", 
-      chameleo_ctx.config.fp_cores_max, sizeof(*fp_ctxs), 64);
+      cham_ctx.config.fp_cores_max, sizeof(*fp_ctxs), 64);
   if (fp_ctxs == NULL)
   {
     LOG_ERROR("failed to allocated fp_ctxs");
     goto error_nic;
   }
-  chameleo_ctx.fp_ctxs = fp_ctxs;
+  cham_ctx.fp_ctxs = fp_ctxs;
 
   /* Start fast-path threads */
-  threads_launched = fast_path_start(&chameleo_ctx.config);
-  if (threads_launched < chameleo_ctx.config.fp_cores_max)
+  threads_launched = fast_path_start(&cham_ctx.config);
+  if (threads_launched < cham_ctx.config.fp_cores_max)
   {
     LOG_ERROR("failed to initialize fast path launched=%d target=%d", 
-        threads_launched, chameleo_ctx.config.fp_cores_max);
+        threads_launched, cham_ctx.config.fp_cores_max);
     goto error_nic;
   }
 
@@ -73,7 +73,7 @@ int main (int argc, char **argv)
   slow_path_loop();
 
 error_nic:
-  nic_cleanup(&chameleo_ctx.nic_ctx);
+  nic_cleanup(&cham_ctx.nic_ctx);
 error_exit:
   return -1;
 }
@@ -121,7 +121,7 @@ static int fast_path_thread(void *arg)
 {
   int ret;
   uint16_t id = (uintptr_t) arg;
-  struct fast_path_context *ctx;
+  struct fast_path_context *fp_ctx;
 
   {
     char name[18];
@@ -130,30 +130,31 @@ static int fast_path_thread(void *arg)
   }
 
   /* Allocate fastpath core context */
-  ctx = rte_zmalloc("fast path core context", sizeof(*ctx), 0);
-  if (ctx == NULL) 
+  fp_ctx = rte_zmalloc("fast path core context", sizeof(*fp_ctx), 0);
+  if (fp_ctx == NULL) 
   {
     LOG_ERROR("allocating fast path core context failed");
     goto error_alloc;
   }
-  chameleo_ctx.fp_ctxs[id] = ctx;
-  ctx->id = id;
+  cham_ctx.fp_ctxs[id] = fp_ctx;
+  fp_ctx->id = id;
 
   /* initialize data plane context */
-  ret = fast_path_context_init(ctx);
+  ret = fast_path_context_init(fp_ctx, &cham_ctx.nic_ctx.eth_dev_info,
+      &cham_ctx.config, id, cham_ctx.nic_ctx.port_id);
   if (ret != 0) 
   {
     LOG_ERROR("failed to initialize fast path context");
     goto error_dpctx;
   }
 
-  fast_path_loop(ctx);
-  fast_path_context_destroy(ctx);
+  fast_path_loop(fp_ctx);
+  fast_path_context_destroy(fp_ctx);
 
   return 0;
 
 error_dpctx:
-  fast_path_context_destroy(ctx);
+  fast_path_context_destroy(fp_ctx);
 error_alloc:
   abort();
   return -1;
