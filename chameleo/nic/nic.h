@@ -5,6 +5,8 @@
 
 #include <rte_ethdev.h>
 
+#include "../chameleo.h"
+
 struct nic_context {
   uint8_t port_id;
   struct rte_eth_conf port_conf;
@@ -13,5 +15,7 @@ struct nic_context {
 };
 
 int nic_init();
+void nic_cleanup(struct nic_context *nic_ctx);
+int nic_fp_init();
 
 #endif

@@ -1,3 +1,5 @@
+#include <rte_malloc.h>
+
 #include "chameleo.h"
 #include "config/config.h"
 #include "fast/fast.h"
@@ -31,7 +33,12 @@ int main (int argc, char **argv)
   }
 
   /* Initialize NIC */
-  nic_init();
+  ret = nic_init();
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to initialize nic");
+    goto error_nic;
+  }
 
   /* Initialize fast-paths */
   fast_path_init();
@@ -39,6 +46,8 @@ int main (int argc, char **argv)
   /* Initialize slow-path */
   slow_path_init();
 
+error_nic:
+  nic_cleanup(&chameleo_ctx.nic_ctx);
 error_exit:
   return -1;
 }

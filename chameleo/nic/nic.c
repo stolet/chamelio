@@ -28,7 +28,7 @@ int nic_init(struct chameleo_context *chameleo_ctx)
   memset(&chameleo_ctx->nic_ctx.port_conf, 0, 
       sizeof(chameleo_ctx->nic_ctx.port_conf));
   struct rte_eth_conf *port_conf = &chameleo_ctx->nic_ctx.port_conf;
-  
+
   /* Setup receive configuration */
   port_conf->rxmode.mq_mode = ETH_MQ_RX_RSS;
   port_conf->rxmode.offloads = 0;
@@ -104,4 +104,12 @@ int nic_init(struct chameleo_context *chameleo_ctx)
 int nic_fp_init()
 {
   return 0;
+}
+
+void nic_cleanup(struct nic_context *nic_ctx)
+{
+  struct rte_flow_error error;
+
+  rte_flow_flush(nic_ctx->port_id, &error);
+  rte_eth_dev_stop(nic_ctx->port_id);
 }
