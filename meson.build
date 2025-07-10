@@ -9,6 +9,7 @@ project('chameleo', 'c',
 )
 
 dpdk_dep = dependency('libdpdk', required : true)
+threads_dep = dependency('threads')
 
 subdir('utils')
 subdir('chameleo')

@@ -14,7 +14,8 @@ executable(
   include_directories : root_inc,
 
   dependencies : [
-    dpdk_dep
+    dpdk_dep,
+    threads_dep,
   ],
 
   link_with : [
