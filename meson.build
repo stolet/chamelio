@@ -8,8 +8,8 @@ project('chameleo', 'c',
   ]
 )
 
-dpdk_dep = dependency('libdpdk', required : true)
-threads_dep = dependency('threads')
+dpdk_dep = dependency('libdpdk', required: true)
+threads_dep = dependency('threads', required: true)
 
 subdir('utils')
 subdir('chameleo')

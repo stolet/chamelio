@@ -1,5 +1,5 @@
 udp_lib = static_library(
-  'udp',
+  'eth',
   include_directories : [
     include_directories('..', '../..')
   ]

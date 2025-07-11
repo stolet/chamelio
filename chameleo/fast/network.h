@@ -19,5 +19,7 @@ int network_init(struct network_context *net_ctx,
   uint16_t queue_id,uint8_t port_id);
 int network_rx(struct network_context *ctx, 
     unsigned num, struct rte_mbuf **mbs);
+int network_tx(struct network_context *ctx, 
+    unsigned num, struct rte_mbuf **mbs);
 
 #endif

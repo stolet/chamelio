@@ -1,0 +1,65 @@
+#ifndef IP_PKT_H_
+#define IP_PKT_H_
+
+#include <stdint.h>
+
+#include "../eth/eth_pkt.h"
+#include "../../../utils/utils.h"
+
+#define IPH_V(hdr)  ((hdr)->_v_hl >> 4)
+#define IPH_HL(hdr) ((hdr)->_v_hl & 0x0f)
+#define IPH_TOS(hdr) ((hdr)->_tos)
+#define IPH_ECN(hdr) ((hdr)->_tos & 0x3)
+
+#define IPH_VHL_SET(hdr, v, hl) (hdr)->_v_hl = (((v) << 4) | (hl))
+#define IPH_TOS_SET(hdr, tos) (hdr)->_tos = (tos)
+#define IPH_ECN_SET(hdr, e) (hdr)->_tos = ((hdr)->_tos & 0xffc) | (e)
+
+#define IP_HLEN 20
+
+#define IP_PROTO_IP      0
+#define IP_PROTO_ICMP    1
+#define IP_PROTO_IGMP    2
+#define IP_PROTO_IPENCAP 4
+#define IP_PROTO_UDP     17
+#define IP_PROTO_UDPLITE 136
+#define IP_PROTO_TCP     6
+#define IP_PROTO_DCCP	   33
+#define IP_PROTO_GRE     47
+
+#define TAS_IP_ECN_NONE      0x0
+#define TAS_IP_ECN_ECT0      0x2
+#define TAS_IP_ECN_ECT1      0x1
+#define TAS_IP_ECN_CE        0x3
+
+typedef beui32_t ip_addr_t;
+
+struct ip_hdr {
+  /* version / header length */
+  uint8_t _v_hl;
+  /* type of service */
+  uint8_t _tos;
+  /* total length */
+  beui16_t len;
+  /* identification */
+  beui16_t id;
+  /* fragment offset field */
+  beui16_t offset;
+  /* time to live */
+  uint8_t ttl;
+  /* protocol*/
+  uint8_t proto;
+  /* checksum */
+  uint16_t chksum;
+  /* source IP address */
+  ip_addr_t src;
+  /* destination IP address */
+  ip_addr_t dst;
+} __attribute__ ((packed));
+
+struct ip_pkt {
+  struct eth_hdr eth;
+  struct ip_hdr  ip;
+} __attribute__ ((packed));
+
+#endif

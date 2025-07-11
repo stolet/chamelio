@@ -96,6 +96,7 @@ error_mempool:
   return -1;
 }
 
+/* TODO: Move this to nic directory and rename things  */
 /* TODO: Move this to network.h so we can inline function.
    only static functions can be inlined by compiler */
 int network_rx(struct network_context *ctx, 
@@ -107,6 +108,19 @@ int network_rx(struct network_context *ctx,
   port_id = ctx->port_id;
   queue_id = ctx->queue_id;
   num = rte_eth_rx_burst(port_id, queue_id, mbs, num);
+
+  return num;
+}
+
+int network_tx(struct network_context *ctx, 
+    unsigned num, struct rte_mbuf **mbs)
+{
+  uint8_t port_id;
+  uint16_t queue_id;
+  
+  port_id = ctx->port_id;
+  queue_id = ctx->queue_id;
+  num = rte_eth_tx_burst(port_id, queue_id, mbs, num);
 
   return num;
 }
@@ -123,5 +137,4 @@ static struct rte_mempool *mempool_alloc(uint16_t pool_id)
   return rte_mempool_create(name, PERTHREAD_MBUFS, MBUF_SIZE, 32,
         sizeof(struct rte_pktmbuf_pool_private), rte_pktmbuf_pool_init, NULL,
         rte_pktmbuf_init, NULL, socket_id, 0);
-
 }
