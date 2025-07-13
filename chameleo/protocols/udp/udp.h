@@ -53,7 +53,7 @@ static inline int udp_pkt_len()
   /* TODO: Calculate payload and opt len */
   opt_len = 0;
   payload_len = 0;
-  hdrs_len = sizeof(struct udp_hdr) + opt_len;
+  hdrs_len = sizeof(struct udp_pkt) + opt_len;
 
   return hdrs_len + payload_len;
 }
