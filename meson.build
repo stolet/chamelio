@@ -8,6 +8,7 @@ project('chameleo', 'c',
   ]
 )
 
+# TODO: Maybe we need to link dpdk statically for better performance
 dpdk_dep = dependency('libdpdk', required: true)
 threads_dep = dependency('threads', required: true)
 

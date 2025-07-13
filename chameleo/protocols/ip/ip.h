@@ -13,7 +13,7 @@ static inline int ip_process_rx(struct rte_mbuf *mb)
 {
   struct ip_pkt *p = (struct ip_pkt *) (mb->buf_addr + mb->data_off);
 
-  LOG_DEBUG("rx ip: dst_ip=%08x:%05u src_ip=%08x:%05u", 
+  LOG_DEBUG("rx ip: dst_ip=%08x src_ip=%08x", 
       f_beui32(p->ip.dst), f_beui32(p->ip.src));
   return 0;
 }
@@ -30,8 +30,8 @@ static inline int ip_process_tx(struct rte_mbuf *mb)
 
   struct in_addr src, dst;
   uint32_t src_be, dst_be;
-  inet_pton(AF_INET, "192.168.11.4", &src);
-  inet_pton(AF_INET, "192.168.11.3", &dst);
+  inet_pton(AF_INET, "192.168.10.14", &src);
+  inet_pton(AF_INET, "192.168.10.13", &dst);
   src_be = (uint32_t) src.s_addr;
   dst_be = (uint32_t ) dst.s_addr;
 
@@ -48,7 +48,7 @@ static inline int ip_process_tx(struct rte_mbuf *mb)
 
   p->ip.chksum = rte_ipv4_cksum((void *) &p->ip);
 
-  LOG_DEBUG("tx ip: dst_ip=%08x:%05u src_ip=%08x:%05u", 
+  LOG_DEBUG("tx ip: dst_ip=%08x src_ip=%08x", 
       f_beui32(p->ip.dst), f_beui32(p->ip.src));
 
   return 0;

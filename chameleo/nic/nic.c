@@ -1,3 +1,5 @@
+
+
 #include "../chameleo.h"
 #include "../../utils/log/log.h"
 
@@ -20,10 +22,9 @@ int nic_init(struct chameleo_context *chameleo_ctx)
   }
   else if (n_ports > 1)
   {
-    LOG_ERROR("Multipel ethernet devices");
+    LOG_ERROR("Multiple ethernet devices");
     return -1;
   }
-
 
   memset(&chameleo_ctx->nic_ctx.port_conf, 0, 
       sizeof(chameleo_ctx->nic_ctx.port_conf));
@@ -74,11 +75,14 @@ int nic_init(struct chameleo_context *chameleo_ctx)
   }
 
   /* Enable per port checksum offload if requested */
-  if (config->fp_xsumoffloads)
-  {
-    port_conf->txmode.offloads = DEV_TX_OFFLOAD_IPV4_CKSUM;
-    port_conf->txmode.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
-  }
+  // if (config->fp_xsumoffloads)
+  // {
+  //   port_conf->txmode.offloads = DEV_TX_OFFLOAD_IPV4_CKSUM;
+  //   port_conf->txmode.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
+  // }
+
+  // TODO: Make this a parameter
+  port_conf->intr_conf.rxq = 0;
 
   /* Initialize port */
   ret = rte_eth_dev_configure(port_id, config->fp_cores_max, 
@@ -92,11 +96,11 @@ int nic_init(struct chameleo_context *chameleo_ctx)
   /* Set offloads to dev info*/
   dev_info->default_rxconf.offloads = 0;
   dev_info->default_txconf.offloads = 0;
-  if (config->fp_xsumoffloads)
-  {
-    dev_info->default_txconf.offloads = DEV_TX_OFFLOAD_IPV4_CKSUM;
-    dev_info->default_txconf.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
-  }
+  // if (config->fp_xsumoffloads)
+  // {
+  //   dev_info->default_txconf.offloads = DEV_TX_OFFLOAD_IPV4_CKSUM;
+  //   dev_info->default_txconf.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
+  // }
 
   return 0;
 }

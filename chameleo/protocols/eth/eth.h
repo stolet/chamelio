@@ -34,15 +34,21 @@ static inline int eth_process_rx(struct rte_mbuf *mb)
 
 static inline int eth_process_tx(struct rte_mbuf *mb)
 {
+  uint64_t sm, dm;
   struct eth_pkt *p = (struct eth_pkt *) (mb->buf_addr + mb->data_off);
   struct cham_eth_addr addr_src, addr_dst;
 
-  mac_from_text("b8:59:9f:c4:af:67", addr_src.addr);
-  mac_from_text("b8:59:9f:c4:af:e7", addr_dst.addr);
+  mac_from_text("b8:59:9f:c4:af:66", addr_src.addr);
+  mac_from_text("b8:59:9f:c4:af:e6", addr_dst.addr);
 
   p->eth.src = addr_src;
   p->eth.dst = addr_dst;
   p->eth.type = t_beui16(ETH_TYPE_IP);
+  memcpy(&sm, &p->eth.src, ETH_ADDR_LEN);
+  memcpy(&dm, &p->eth.dst, ETH_ADDR_LEN);
+  LOG_DEBUG("tx eth: src_mac=%012" PRIx64 " dst_mac=%012" PRIx64,
+          (uint64_t)(be64toh(sm)),
+          (uint64_t)(be64toh(dm)));
 
   return 0;
 }

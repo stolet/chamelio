@@ -52,7 +52,6 @@ int network_init(struct network_context *net_ctx,
   __sync_add_and_fetch(&tx_init_done, 1);
   while (tx_init_done < config->fp_cores_max);
 
-
   /* Initialize RX queue */
   rte_spinlock_lock(&initlock);
   rx_socket_id = rte_socket_id();
@@ -115,14 +114,24 @@ int network_rx(struct network_context *ctx,
 int network_tx(struct network_context *ctx, 
     unsigned num, struct rte_mbuf **mbs)
 {
+  unsigned sent;
   uint8_t port_id;
   uint16_t queue_id;
   
   port_id = ctx->port_id;
   queue_id = ctx->queue_id;
-  num = rte_eth_tx_burst(port_id, queue_id, mbs, num);
 
-  return num;
+  sent = rte_eth_tx_burst(port_id, queue_id, mbs, num);
+
+  /* TODO: Deal with the case where we don't send everything 
+     (queue is full) gracefully */
+  if (sent == 0)
+  {
+    LOG_ERROR("We didn't send everything for some reason");
+    abort();
+  }
+
+  return sent;
 }
 
 static struct rte_mempool *mempool_alloc(uint16_t pool_id)

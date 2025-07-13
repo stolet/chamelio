@@ -27,13 +27,16 @@ int fast_path_context_init(struct fast_path_context *fp_ctx,
   g->id = 0;
   g->next_guest = NULL;
   g->n_apps = 1;
+  fp_ctx->guests = g;
+  fp_ctx->n_guests = 1;
+
   struct application *app = rte_zmalloc("app", sizeof(struct application), 0);
-  g->apps = app;
   app->id = 0;
   app->proto.id = PROTOCOL_UDP;
   app->proto.process_rx = udp_process_rx;
   app->proto.process_queues = udp_process_queues;
   app->proto.process_tx = udp_process_tx;
+  g->apps = app;
     
   return 0;
 }
@@ -105,13 +108,19 @@ int poll_queues(struct fast_path_context *ctx)
 
 int poll_tx(struct fast_path_context *ctx)
 {
+  unsigned n;
   int i, ret;
   struct guest *guest;
   struct rte_mbuf *mbs[BATCH_SIZE];
   uint8_t n_guests = ctx->n_guests;
   
+  n = BATCH_SIZE;
+  if (TXBUF_SIZE - ctx->tx_n < n)
+    n = TXBUF_SIZE - ctx->tx_n;
+
   /* Allocate mbufs to use for transmission */
-  ret = rte_pktmbuf_alloc_bulk(ctx->net_ctx.pool, mbs, BATCH_SIZE);
+  /* TODO: Have a cache for the mempool, free only what we used and don't allocate every loop */
+  ret = rte_pktmbuf_alloc_bulk(ctx->net_ctx.pool, mbs, n);
   if (ret < 0)
   {
     LOG_ERROR("not enough entries in the mempool");
@@ -120,7 +129,7 @@ int poll_tx(struct fast_path_context *ctx)
   }
 
   guest = ctx->guests;
-  for (i = 0; i < n_guests && guest != NULL; i++)
+  for (i = 0; i < n_guests && guest != NULL && i < n; i++)
   {
     ret = fast_process_packet_tx(ctx, mbs[i]);
     if (ret < 0)
@@ -128,11 +137,16 @@ int poll_tx(struct fast_path_context *ctx)
       LOG_ERROR("fast_process_packet_tx failed");
       return -1;
     }
+    else
+    {
+      ctx->tx_mbs[ctx->tx_n] = mbs[i];
+      ctx->tx_n++;
+    }
     guest = guest->next_guest;
   }
 
   ret = network_tx(&ctx->net_ctx, ctx->tx_n, ctx->tx_mbs);
-  rte_pktmbuf_free_bulk(mbs, BATCH_SIZE);
+  rte_pktmbuf_free_bulk(mbs, n);
 
   if (ret == ctx->tx_n)
   {
@@ -142,7 +156,6 @@ int poll_tx(struct fast_path_context *ctx)
   else if (ret > 0)
   {
     /* Move unsent packets to front */
-    LOG_DEBUG("Not everything was sent for some reason");
     for (i = ret; i < ctx->tx_n; i++)
     {
       ctx->tx_mbs[i - ret] = ctx->tx_mbs[i];
