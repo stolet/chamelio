@@ -79,11 +79,13 @@ int poll_rx(struct fast_path_context *ctx)
   struct rte_mbuf *mbs[BATCH_SIZE];
 
   n = BATCH_SIZE;
+  if (TXBUF_SIZE - ctx->tx_n < n)
+    n = TXBUF_SIZE - ctx->tx_n;
 
-  /* receive packets from the network */
-  ret = network_rx(&ctx->net_ctx, n, mbs);
+  /* Receive packets from the NIC */
+  n = network_rx(&ctx->net_ctx, n, mbs);
 
-  if (ret <= 0)
+  if (n <= 0)
   {
     return 0;
   }
@@ -97,6 +99,8 @@ int poll_rx(struct fast_path_context *ctx)
       return -1;
     }
   }
+
+  rte_pktmbuf_free_bulk(mbs, n);
 
   return n;
 }
@@ -145,6 +149,7 @@ int poll_tx(struct fast_path_context *ctx)
     guest = guest->next_guest;
   }
 
+  /* Push packets to the NIC */
   ret = network_tx(&ctx->net_ctx, ctx->tx_n, ctx->tx_mbs);
   rte_pktmbuf_free_bulk(mbs, n);
 

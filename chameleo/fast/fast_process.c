@@ -36,6 +36,8 @@ int fast_process_packet_tx(struct fast_path_context *ctx, struct rte_mbuf *mb)
 {
   int ret;
   
+  mb->data_off = 0;
+
   /* TODO: Don't hardcode udp here and instead use protocol assigned to application */
   ret = udp_process_tx(mb);
   if (ret < 0)
@@ -57,7 +59,6 @@ int fast_process_packet_tx(struct fast_path_context *ctx, struct rte_mbuf *mb)
     return -1;
   }
 
-  mb->data_off = 0;
   mb->pkt_len = mb->data_len = 1500;
   return 0;
 }
