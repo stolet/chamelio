@@ -5,7 +5,7 @@
 
 #include <rte_ethdev.h>
 
-#include "../chameleo.h"
+#include "../config/config.h"
 
 struct nic_context {
   uint8_t port_id;
@@ -14,7 +14,7 @@ struct nic_context {
   struct rte_ether_addr eth_addr;
 };
 
-int nic_init();
+int nic_init(struct nic_context *nic_ctx, struct configuration *config);
 void nic_cleanup(struct nic_context *nic_ctx);
 int nic_fp_init();
 

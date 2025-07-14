@@ -23,7 +23,6 @@ int main (int argc, char **argv)
   struct fast_path_context **fp_ctxs;
   unsigned threads_launched;
 
-
   /* Parse command line options */
   config = &cham_ctx.config;
   ret = config_parse(config, argc, argv);
@@ -42,7 +41,7 @@ int main (int argc, char **argv)
   }
 
   /* Initialize NIC */
-  ret = nic_init();
+  ret = nic_init(&cham_ctx.nic_ctx, config);
   if (ret != 0)
   {
     LOG_ERROR("failed to initialize nic");

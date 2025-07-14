@@ -1,17 +1,16 @@
 
 
 #include "../chameleo.h"
+#include "../config/config.h"
 #include "../../utils/log/log.h"
 
 
-int nic_init(struct chameleo_context *chameleo_ctx)
+int nic_init(struct nic_context *nic_ctx, struct configuration *config)
 {
   int ret;
   uint16_t n_ports, p;
   
   uint8_t port_id = 0;
-  struct nic_context *nic_ctx = &chameleo_ctx->nic_ctx;
-  struct configuration *config = &chameleo_ctx->config;
   struct rte_eth_dev_info *dev_info;
   
   n_ports = rte_eth_dev_count_avail();
@@ -26,17 +25,16 @@ int nic_init(struct chameleo_context *chameleo_ctx)
     return -1;
   }
 
-  memset(&chameleo_ctx->nic_ctx.port_conf, 0, 
-      sizeof(chameleo_ctx->nic_ctx.port_conf));
-  struct rte_eth_conf *port_conf = &chameleo_ctx->nic_ctx.port_conf;
+  memset(&nic_ctx->port_conf, 0, sizeof(nic_ctx->port_conf));
+  struct rte_eth_conf *port_conf = &nic_ctx->port_conf;
 
   /* Setup receive configuration */
-  port_conf->rxmode.mq_mode = ETH_MQ_RX_RSS;
+  port_conf->rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
   port_conf->rxmode.offloads = 0;
-  port_conf->rx_adv_conf.rss_conf.rss_hf = ETH_RSS_NONFRAG_IPV4_TCP;
+  port_conf->rx_adv_conf.rss_conf.rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_TCP;
 
   /* Setup transmit configuration */
-  port_conf->txmode.mq_mode = ETH_MQ_RX_RSS;
+  port_conf->txmode.mq_mode = RTE_ETH_MQ_RX_RSS;
   port_conf->txmode.offloads = 0;
 
   /* Setup interrupt configuration */
@@ -50,7 +48,12 @@ int nic_init(struct chameleo_context *chameleo_ctx)
 
   /* Get MAC address and device info */
   rte_eth_macaddr_get(port_id, &nic_ctx->eth_addr);
-  rte_eth_dev_info_get(port_id, &nic_ctx->eth_dev_info);
+  ret = rte_eth_dev_info_get(port_id, &nic_ctx->eth_dev_info);
+  if (ret < 0)
+  {
+    LOG_ERROR("Failed to get device info");
+    return -1;
+  }
 
   dev_info = &nic_ctx->eth_dev_info;
   if (dev_info->max_tx_queues < config->fp_cores_max ||

@@ -5,6 +5,7 @@
 
 #include <rte_ethdev.h>
 
+#include "../chameleo.h"
 #include "network.h" 
 #include "../config/config.h"
 
