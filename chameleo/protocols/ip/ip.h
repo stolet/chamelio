@@ -9,8 +9,13 @@
 #include "../../../utils/log/log.h"
 #include "../../../utils/utils.h"
 
-static inline int ip_process_rx(struct rte_mbuf *mb)
+struct ip_state {
+
+};
+
+static inline uint8_t ip_process_rx(void *state, struct rte_mbuf *mb)
 {
+  // struct ip_state *ip_s = state;
   struct ip_pkt *p = (struct ip_pkt *) (mb->buf_addr + mb->data_off);
 
   LOG_DEBUG("rx ip: dst_ip=%08x src_ip=%08x", 
@@ -18,9 +23,10 @@ static inline int ip_process_rx(struct rte_mbuf *mb)
   return 0;
 }
 
-static inline int ip_process_tx(struct rte_mbuf *mb)
+static inline uint8_t ip_process_tx(void *state, struct rte_mbuf *mb)
 {
   uint16_t opt_len, hdrs_len, payload_len;
+  // struct ip_state *ip_s = state;
   struct ip_pkt *p = (struct ip_pkt *) (mb->buf_addr + mb->data_off);
 
   opt_len = 0;
@@ -54,7 +60,7 @@ static inline int ip_process_tx(struct rte_mbuf *mb)
   return 0;
 }
 
-static inline int ip_process_queues()
+static inline uint8_t ip_process_queues()
 {
   return 0;
 }

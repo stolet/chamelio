@@ -3,6 +3,7 @@ subdir('fast')
 subdir('slow')
 subdir('nic')
 subdir('protocols')
+subdir('queue')
 
 sources_root = files('chameleo.c')
 
@@ -25,5 +26,6 @@ executable(
     nic_lib,
     udp_lib,
     log_lib,
+    queue_lib,
   ],
 )

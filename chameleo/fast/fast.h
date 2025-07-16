@@ -8,6 +8,7 @@
 #include "../chameleo.h"
 #include "network.h" 
 #include "../config/config.h"
+#include "../queue/queue.h"
 
 #define BATCH_SIZE 16
 
@@ -21,10 +22,11 @@
 
 struct protocol {
   uint8_t id;
+  void * state;
 
-  int (*process_rx)(struct rte_mbuf *);
-  int (*process_tx)(struct rte_mbuf *);
-  int (*process_queues)();
+  uint8_t (*process_rx)(void *state, struct rte_mbuf *);
+  uint8_t (*process_tx)(void *state, struct rte_mbuf *);
+  uint8_t (*process_queues)();
 };
 
 struct application {
@@ -40,7 +42,7 @@ struct guest {
   struct application *apps;
 };
 
-struct fast_path_context {
+struct fast_context {
   uint8_t id;
   struct network_context net_ctx;
   
@@ -49,12 +51,17 @@ struct fast_path_context {
 
   uint16_t tx_n;
   struct rte_mbuf *tx_mbs[TXBUF_SIZE];
+
+  /* Queue from fast-path core to slow-path */
+  struct queue *fast_slow_q;
+  /* Queue from the slow-path to the fast-path */
+  struct queue *slow_fast_q;
 };
 
-int fast_path_context_init(struct fast_path_context *fp_ctx, 
+int fast_context_init(struct fast_context *f_ctx, 
     struct rte_eth_dev_info *eth_dev_info, 
     struct configuration *config, uint16_t thread_id, uint8_t port_id);
-int fast_path_loop(struct fast_path_context *ctx);
-void fast_path_context_destroy();
+int fast_loop(struct fast_context *ctx);
+void fast_context_destroy();
 
 #endif

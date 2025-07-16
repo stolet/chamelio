@@ -9,17 +9,17 @@
 #include "../../utils/log/log.h"
 #include "../config/config.h"
 
-int poll_rx(struct fast_path_context *ctx);
-int poll_queues(struct fast_path_context *ctx);
-int poll_tx(struct fast_path_context *ctx);
+int poll_rx(struct fast_context *ctx);
+int poll_queues(struct fast_context *ctx);
+int poll_tx(struct fast_context *ctx);
 
-int fast_path_context_init(struct fast_path_context *fp_ctx, 
+int fast_context_init(struct fast_context *f_ctx, 
     struct rte_eth_dev_info *eth_dev_info, 
     struct configuration *config, uint16_t thread_id, uint8_t port_id)
 {
 
-  fp_ctx->id = thread_id;
-  network_init(&fp_ctx->net_ctx, 
+  f_ctx->id = thread_id;
+  network_init(&f_ctx->net_ctx, 
       eth_dev_info, config, thread_id, port_id);
   
   /* TODO: Add this dynamically when VMs and applications start */
@@ -27,8 +27,8 @@ int fast_path_context_init(struct fast_path_context *fp_ctx,
   g->id = 0;
   g->next_guest = NULL;
   g->n_apps = 1;
-  fp_ctx->guests = g;
-  fp_ctx->n_guests = 1;
+  f_ctx->guests = g;
+  f_ctx->n_guests = 1;
 
   struct application *app = rte_zmalloc("app", sizeof(struct application), 0);
   app->id = 0;
@@ -41,12 +41,12 @@ int fast_path_context_init(struct fast_path_context *fp_ctx,
   return 0;
 }
 
-void fast_path_context_destroy()
+void fast_context_destroy()
 {
   /* TODO: cleanup fast path context */
 }
 
-int fast_path_loop(struct fast_path_context *ctx)
+int fast_loop(struct fast_context *ctx)
 {
   int ret;
 
@@ -73,9 +73,10 @@ int fast_path_loop(struct fast_path_context *ctx)
   }
 }
 
-int poll_rx(struct fast_path_context *ctx)
+int poll_rx(struct fast_context *ctx)
 {
-  int i, n, ret;
+  int i, n;
+  uint8_t rx_err;
   struct rte_mbuf *mbs[BATCH_SIZE];
 
   n = BATCH_SIZE;
@@ -92,11 +93,11 @@ int poll_rx(struct fast_path_context *ctx)
 
   for (i = 0; i < n; i++)
   {
-    ret = fast_process_packet_rx(ctx, mbs[i]);
-    if (ret < 0)
+    rx_err = fast_process_packet_rx(ctx, mbs[i]);
+    if (rx_err != 0)
     {
       LOG_ERROR("fast_process_packet_rx failed");
-      return -1;
+      fast_process_packet_error(ctx, mbs[i], rx_err);
     }
   }
 
@@ -105,15 +106,16 @@ int poll_rx(struct fast_path_context *ctx)
   return n;
 }
 
-int poll_queues(struct fast_path_context *ctx)
+int poll_queues(struct fast_context *ctx)
 {
   return 0;
 }
 
-int poll_tx(struct fast_path_context *ctx)
+int poll_tx(struct fast_context *ctx)
 {
   unsigned n;
   int i, ret;
+  uint8_t tx_err;
   struct guest *guest;
   struct rte_mbuf *mbs[BATCH_SIZE];
   uint8_t n_guests = ctx->n_guests;
@@ -135,11 +137,11 @@ int poll_tx(struct fast_path_context *ctx)
   guest = ctx->guests;
   for (i = 0; i < n_guests && guest != NULL && i < n; i++)
   {
-    ret = fast_process_packet_tx(ctx, mbs[i]);
-    if (ret < 0)
+    tx_err = fast_process_packet_tx(ctx, mbs[i]);
+    if (tx_err < 0)
     {
-      LOG_ERROR("fast_process_packet_tx failed");
-      return -1;
+      LOG_WARN("fast_process_packet_tx failed sending to slow path");
+      fast_process_packet_error(ctx, mbs[i], tx_err);
     }
     else
     {

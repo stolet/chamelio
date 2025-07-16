@@ -6,6 +6,11 @@
 #include "eth_pkt.h"
 #include "../../../utils/log/log.h"
 #include "../../../utils/utils.h"
+#include "../../queue/queue.h"
+
+struct eth_state {
+
+};
 
 int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN])
 {
@@ -20,10 +25,17 @@ int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN])
     return 0;             
 }
 
-static inline int eth_process_rx(struct rte_mbuf *mb)
+static inline uint8_t eth_process_rx(void *state, struct rte_mbuf *mb)
 {
   uint64_t sm, dm;
+  // struct eth_state *eth_s = (struct eth_state *) state;
   struct eth_pkt *p = (struct eth_pkt *) (mb->buf_addr + mb->data_off);
+
+  if (f_beui16(p->eth.type) == ETH_TYPE_ARP)
+  {
+    LOG_DEBUG("got an ARP packet");
+    return QUEUE_TYPE_ARP_RX;
+  }
 
   memcpy(&sm, &p->eth.src, ETH_ADDR_LEN);
   memcpy(&dm, &p->eth.dst, ETH_ADDR_LEN);
@@ -32,11 +44,12 @@ static inline int eth_process_rx(struct rte_mbuf *mb)
   return 0;
 }
 
-static inline int eth_process_tx(struct rte_mbuf *mb)
+static inline uint8_t eth_process_tx(void *state, struct rte_mbuf *mb)
 {
   uint64_t sm, dm;
+  // struct eth_state *eth_s = (struct eth_state *) state;
   struct eth_pkt *p = (struct eth_pkt *) (mb->buf_addr + mb->data_off);
-  struct cham_eth_addr addr_src, addr_dst;
+  struct eth_addr addr_src, addr_dst;
 
   mac_from_text("b8:59:9f:c4:af:66", addr_src.addr);
   mac_from_text("b8:59:9f:c4:af:e6", addr_dst.addr);
@@ -53,7 +66,7 @@ static inline int eth_process_tx(struct rte_mbuf *mb)
   return 0;
 }
 
-static inline int eth_process_queues()
+static inline uint8_t eth_process_queues()
 {
   return 0;
 }

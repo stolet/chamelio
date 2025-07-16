@@ -16,6 +16,6 @@ struct nic_context {
 
 int nic_init(struct nic_context *nic_ctx, struct configuration *config);
 void nic_cleanup(struct nic_context *nic_ctx);
-int nic_fp_init();
+int nic_fast_init();
 
 #endif

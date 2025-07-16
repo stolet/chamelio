@@ -9,8 +9,8 @@
 struct chameleo_context {
   struct configuration config;
   struct nic_context nic_ctx;
-  struct slow_path_context sp_ctx;
-  struct fast_path_context **fp_ctxs;
+  struct slow_context sp_ctx;
+  struct fast_context **f_ctxs;
 };
 
 #endif

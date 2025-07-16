@@ -108,7 +108,7 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   return 0;
 }
 
-int nic_fp_init()
+int nic_fast_init()
 {
   return 0;
 }

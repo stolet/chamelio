@@ -9,18 +9,25 @@
 #include "fast/fast.h"
 #include "slow/slow.h"
 #include "nic/nic.h"
+#include "queue/queue.h"
 #include "../utils/log/log.h"
+
+/* TODO: Make this a parameter in the start */
+#define QUEUE_SIZE 256
 
 struct chameleo_context cham_ctx;
 
-static int fast_path_thread(void *arg);
-static int fast_path_start(struct configuration *config);
+static int fast_thread(void *arg);
+static int fast_start(struct configuration *config);
 
 int main (int argc, char **argv)
 {
-  int ret;
+  int i, j, ret;
   struct configuration *config;
-  struct fast_path_context **fp_ctxs;
+  struct slow_context *s_ctx;
+  struct queue *q;
+  struct queue **fast_slow_qs, **slow_fast_qs;
+  struct fast_context **f_ctxs;
   unsigned threads_launched;
 
   /* Parse command line options */
@@ -49,17 +56,17 @@ int main (int argc, char **argv)
   }
 
   /* Initialize fast path contexts in hugepages */
-  fp_ctxs = rte_calloc("fast path context list", 
-      cham_ctx.config.fp_cores_max, sizeof(*fp_ctxs), 64);
-  if (fp_ctxs == NULL)
+  f_ctxs = rte_calloc("fast path context list", 
+      cham_ctx.config.fp_cores_max, sizeof(*f_ctxs), 64);
+  if (f_ctxs == NULL)
   {
-    LOG_ERROR("failed to allocated fp_ctxs");
+    LOG_ERROR("failed to allocated f_ctxs");
     goto error_nic;
   }
-  cham_ctx.fp_ctxs = fp_ctxs;
+  cham_ctx.f_ctxs = f_ctxs;
 
   /* Start fast-path threads */
-  threads_launched = fast_path_start(&cham_ctx.config);
+  threads_launched = fast_start(&cham_ctx.config);
   if (threads_launched < cham_ctx.config.fp_cores_max)
   {
     LOG_ERROR("failed to initialize fast path launched=%d target=%d", 
@@ -67,17 +74,72 @@ int main (int argc, char **argv)
     goto error_nic;
   }
 
-  /* Initialize slow-path */
-  slow_path_init();
-  slow_path_loop();
+  s_ctx = malloc(sizeof(struct slow_context));
+  if (s_ctx == NULL)
+  {
+    LOG_ERROR("failed to allocate slow path context");
+    goto error_nic;
+  }
 
+  fast_slow_qs = malloc(sizeof(struct queue *) * config->fp_cores_max);
+  if (fast_slow_qs == NULL)
+  {
+    LOG_ERROR("failed to allocate list for fast-path to slow-path queues");
+    goto error_fast_slow_list;
+  }
+  s_ctx->fast_slow_qs = fast_slow_qs;
+  
+  slow_fast_qs = malloc(sizeof(struct queue *) * config->fp_cores_max);
+  if (slow_fast_qs == NULL)
+  {
+    LOG_ERROR("failed to allocate list for slow-path to fast-path queues");
+    goto error_slow_fast_list;
+  }
+  s_ctx->slow_fast_qs = slow_fast_qs;
+
+  /* Create pair of queues for each core */
+  for (i = 0; i < config->fp_cores_max; i++)
+  {
+    q = queue_new(QUEUE_SIZE);
+    if (q == NULL)
+    {
+      LOG_ERROR("failed to allcoate fast to slow queue");
+      goto error_queues;
+    }
+    fast_slow_qs[i] = q;
+
+    q = queue_new(QUEUE_SIZE);
+    if (q == NULL)
+    {
+      LOG_ERROR("failed to allcoate slow to fast queue");
+      goto error_queues;
+    }
+    slow_fast_qs[i] = q;
+  }
+
+  /* Initialize slow-path */
+  slow_context_init(s_ctx, config->fp_cores_max, fast_slow_qs, slow_fast_qs);
+
+  /* Loop in slow-path */
+  slow_loop(s_ctx);
+
+error_queues:
+  for (j = 0; j < i; j++)
+  {
+    free(fast_slow_qs[i]);
+    free(slow_fast_qs[i]);
+  }
+error_slow_fast_list:
+  free(fast_slow_qs);
+error_fast_slow_list:
+  free(s_ctx);
 error_nic:
   nic_cleanup(&cham_ctx.nic_ctx);
 error_exit:
   return -1;
 }
 
-int fast_path_start(struct configuration *config)
+int fast_start(struct configuration *config)
 {
   unsigned cores_avail, cores_needed, core, threads_launched = 0;
   void *arg;
@@ -103,7 +165,7 @@ int fast_path_start(struct configuration *config)
     {
       arg = (void *) (uintptr_t) threads_launched;
     
-      if (rte_eal_remote_launch(fast_path_thread, arg, core) != 0) 
+      if (rte_eal_remote_launch(fast_thread, arg, core) != 0) 
       {
         LOG_ERROR("failed to launch fast path thread");
         return -1;
@@ -116,11 +178,11 @@ int fast_path_start(struct configuration *config)
   return threads_launched;
 }
 
-static int fast_path_thread(void *arg)
+static int fast_thread(void *arg)
 {
   int ret;
   uint16_t id = (uintptr_t) arg;
-  struct fast_path_context *fp_ctx;
+  struct fast_context *f_ctx;
 
   {
     char name[18];
@@ -129,17 +191,17 @@ static int fast_path_thread(void *arg)
   }
 
   /* Allocate fastpath core context */
-  fp_ctx = rte_zmalloc("fast path core context", sizeof(*fp_ctx), 0);
-  if (fp_ctx == NULL) 
+  f_ctx = rte_zmalloc("fast path core context", sizeof(*f_ctx), 0);
+  if (f_ctx == NULL) 
   {
     LOG_ERROR("allocating fast path core context failed");
     goto error_alloc;
   }
-  cham_ctx.fp_ctxs[id] = fp_ctx;
-  fp_ctx->id = id;
+  cham_ctx.f_ctxs[id] = f_ctx;
+  f_ctx->id = id;
 
   /* initialize data plane context */
-  ret = fast_path_context_init(fp_ctx, &cham_ctx.nic_ctx.eth_dev_info,
+  ret = fast_context_init(f_ctx, &cham_ctx.nic_ctx.eth_dev_info,
       &cham_ctx.config, id, cham_ctx.nic_ctx.port_id);
   if (ret != 0) 
   {
@@ -147,13 +209,13 @@ static int fast_path_thread(void *arg)
     goto error_dpctx;
   }
 
-  fast_path_loop(fp_ctx);
-  fast_path_context_destroy(fp_ctx);
+  fast_loop(f_ctx);
+  fast_context_destroy(f_ctx);
 
   return 0;
 
 error_dpctx:
-  fast_path_context_destroy(fp_ctx);
+  fast_context_destroy(f_ctx);
 error_alloc:
   abort();
   return -1;

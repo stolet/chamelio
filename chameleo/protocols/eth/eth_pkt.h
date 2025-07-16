@@ -10,13 +10,13 @@
 #define ETH_TYPE_IP   0x0800
 #define ETH_TYPE_ARP  0x0806
 
-struct cham_eth_addr {
+struct eth_addr {
   uint8_t addr[ETH_ADDR_LEN];
 } __attribute__ ((packed));
 
 struct eth_hdr {
-  struct cham_eth_addr dst;
-  struct cham_eth_addr src;
+  struct eth_addr dst;
+  struct eth_addr src;
   beui16_t type;
 } __attribute__ ((packed));
 

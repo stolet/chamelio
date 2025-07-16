@@ -2,13 +2,56 @@
 #define UDP_H_
 
 #include <rte_mbuf.h>
+#include <rte_malloc.h>
 
 #include "udp_pkt.h"
 #include "../../../utils/log/log.h"
 #include "../../../utils/utils.h"
+#include "../../queue/queue.h"
 
-static inline int udp_process_rx(struct rte_mbuf *mb)
+struct udp_flow {
+  uint16_t core;
+  uint16_t src_port;
+  uint16_t dst_port;
+  uint32_t src_ip;
+  uint32_t dst_ip;
+};
+
+struct udp_state {
+  uint32_t n_flows;
+  uint32_t n_flows_max;
+  struct udp_flows *flows;
+};
+
+static inline struct udp_state * udp_state_init(uint32_t n_flows)
 {
+  struct udp_flows *flows;
+  struct udp_state *state;
+
+  state = rte_zmalloc("udp state", sizeof(struct udp_state), 0);
+  if (state == NULL)
+  {
+    LOG_ERROR("failed to allocate state");
+    return NULL;
+  }
+  state->n_flows_max = n_flows;
+  state->n_flows = 0;
+
+  flows = rte_zmalloc("udp flows", sizeof(struct udp_flow) * n_flows, 0);
+  if (flows == NULL)
+  {
+    LOG_ERROR("failed to allocate flows");
+    return NULL;
+  }
+  
+  state->flows = flows;
+
+  return state;
+}
+
+static inline uint8_t udp_process_rx(void *state, struct rte_mbuf *mb)
+{
+  // struct udp_state *udp_s = (struct udp_state *) state;
   struct udp_pkt *p = (struct udp_pkt *) (mb->buf_addr + mb->data_off);
 
   LOG_DEBUG("rx udp: src_port=%d dst_port=%d", 
@@ -17,9 +60,10 @@ static inline int udp_process_rx(struct rte_mbuf *mb)
   return 0;
 }
 
-static inline int udp_process_tx(struct rte_mbuf *mb)
+static inline uint8_t udp_process_tx(void *state, struct rte_mbuf *mb)
 {
   uint16_t opt_len, hdrs_len, payload_len;
+  // struct udp_state *udp_s = (struct udp_state *) state;
   struct udp_pkt *p = (struct udp_pkt *) (mb->buf_addr + mb->data_off);
   
   /* TODO: Calculate payload and opt len */
@@ -41,7 +85,7 @@ static inline int udp_process_tx(struct rte_mbuf *mb)
   return 0;
 }
 
-static inline int udp_process_queues()
+static inline uint8_t udp_process_queues()
 {
   return 0;
 }
