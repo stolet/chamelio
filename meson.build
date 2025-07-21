@@ -2,7 +2,7 @@ project('chameleo', 'c',
   version : '0.1',
   default_options: [
     'c_std=gnu99',
-    'optimization=3',
+    'optimization=0',
     'debug=true',
     'c_args=-march=native',
   ]

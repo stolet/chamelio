@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define MEM_BARRIER() __asm__ volatile("" ::: "memory")
+
 struct beui16 { uint16_t x; } __attribute__((packed));
 struct beui32 { uint32_t x; } __attribute__((packed));
 struct beui64 { uint64_t x; } __attribute__((packed));

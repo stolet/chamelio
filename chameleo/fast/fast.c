@@ -5,6 +5,7 @@
 #include "network.h"
 #include "fast.h"
 #include "fast_process.h"
+#include "../queue/queue.h"
 #include "../protocols/udp/udp.h"
 #include "../../utils/log/log.h"
 #include "../config/config.h"
@@ -12,9 +13,11 @@
 int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
 int poll_tx(struct fast_context *ctx);
+int poll_slow(struct fast_context *ctx);
 
 int fast_context_init(struct fast_context *f_ctx, 
     struct rte_eth_dev_info *eth_dev_info, 
+    struct queue *fast_slow_q, struct queue *slow_fast_q,
     struct configuration *config, uint16_t thread_id, uint8_t port_id)
 {
 
@@ -22,6 +25,9 @@ int fast_context_init(struct fast_context *f_ctx,
   network_init(&f_ctx->net_ctx, 
       eth_dev_info, config, thread_id, port_id);
   
+  f_ctx->fast_slow_q = fast_slow_q;
+  f_ctx->slow_fast_q = slow_fast_q;
+
   /* TODO: Add this dynamically when VMs and applications start */
   struct guest *g = rte_zmalloc("guest", sizeof(struct guest), 0);
   g->id = 0;
@@ -69,6 +75,12 @@ int fast_loop(struct fast_context *ctx)
     if (ret < 0)
     {
       LOG_ERROR("poll_tx failed");
+    }
+
+    ret = poll_slow(ctx);
+    if (ret < 0)
+    {
+      LOG_ERROR("poll_slow failed");
     }
   }
 }
@@ -172,3 +184,31 @@ int poll_tx(struct fast_context *ctx)
 
   return 0;
 }
+
+int poll_slow(struct fast_context *ctx)
+{
+  uint8_t type;
+  struct queue *q;
+  struct queue_entry *qe;
+
+  q = ctx->slow_fast_q;
+  qe = queue_head(q);
+  
+  if (qe != NULL)
+  {
+    type = qe->type;
+    switch (type)
+    {
+    case QUEUE_TYPE_ARP_TX:
+      queue_dequeue(q);
+      LOG_DEBUG("received arp tx from slow");
+      break;
+    default:
+      LOG_WARN("unknown queue tryt type from slow path to fast path");
+      break;
+    }
+  }
+
+
+  return 0;
+} 

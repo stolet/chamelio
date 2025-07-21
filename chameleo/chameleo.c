@@ -88,6 +88,7 @@ int main (int argc, char **argv)
     goto error_fast_slow_list;
   }
   s_ctx->fast_slow_qs = fast_slow_qs;
+  cham_ctx.fast_slow_qs = fast_slow_qs;
   
   slow_fast_qs = malloc(sizeof(struct queue *) * config->fp_cores_max);
   if (slow_fast_qs == NULL)
@@ -96,6 +97,7 @@ int main (int argc, char **argv)
     goto error_slow_fast_list;
   }
   s_ctx->slow_fast_qs = slow_fast_qs;
+  cham_ctx.slow_fast_qs = slow_fast_qs;
 
   /* Create pair of queues for each core */
   for (i = 0; i < config->fp_cores_max; i++)
@@ -202,6 +204,7 @@ static int fast_thread(void *arg)
 
   /* initialize data plane context */
   ret = fast_context_init(f_ctx, &cham_ctx.nic_ctx.eth_dev_info,
+      cham_ctx.fast_slow_qs[id], cham_ctx.slow_fast_qs[id],
       &cham_ctx.config, id, cham_ctx.nic_ctx.port_id);
   if (ret != 0) 
   {

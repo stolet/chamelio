@@ -69,23 +69,21 @@ int fast_process_packet_error(struct fast_context *ctx,
 {
   // struct rte_mbuf *mb_copy;
   struct queue *q;
+  q = ctx->fast_slow_q;
 
-  if (type == QUEUE_TYPE_ARP_RX)
+  switch(type)
   {
-    // mb_copy = rte_pktmbuf_copy(mb, ctx->net_ctx.pool, 0, UINT32_MAX);
-    // if (mb_copy == NULL)
-    // {
-    //   LOG_ERROR("failed to copy mbuf");
-    //   return -1;
-    // }
-  
-    q = ctx->fast_slow_q;
-    queue_enqueue(q, type);
-  }
-  else
-  {
-    LOG_ERROR("got unknown error");
-    abort();
+    case QUEUE_TYPE_ARP_RX:
+      LOG_DEBUG("sending arp rx to slow");
+      queue_enqueue(q, type);
+      break;
+    case QUEUE_TYPE_ARP_TX:
+      LOG_DEBUG("sending arp tx to slow");
+      queue_enqueue(q, type);
+      break;
+    default:
+      LOG_ERROR("got unknown error");
+      abort();
   }
 
   return 0;

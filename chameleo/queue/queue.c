@@ -3,8 +3,9 @@
 #include "queue.h"
 #include "../chameleo.h"
 #include "../../utils/log/log.h"
+#include "../../utils/utils.h"
 
-struct queue * queue_new(uint32_t n)
+struct queue * queue_new(uint32_t size)
 {
   struct queue *q;
   struct queue_entry *q_entries;
@@ -16,17 +17,16 @@ struct queue * queue_new(uint32_t n)
     return NULL;
   }
 
-  q_entries = rte_malloc("queue entries", sizeof(struct queue_entry) * n, 0);
+  q_entries = rte_malloc("queue entries", sizeof(struct queue_entry) * size, 0);
   if (q_entries == NULL)
   {
     LOG_ERROR("Failed to allcoate queue entries from hugepages");
     goto error_entries;
   }
 
-  q->n = 0;
-  q->max = 0;
   q->head = 0;
   q->tail = 0;
+  q->size = size;
   q->entries = q_entries;
 
   return q;
@@ -40,50 +40,44 @@ error_entries:
 int queue_enqueue(struct queue *q, uint8_t type)
 {
   int ret;
-  uint32_t new_tail, old_tail;
-
-  if (q->n == q->max)
+  struct queue_entry *qe = &q->entries[q->tail];
+  
+  /* Queue is full */
+  if (qe->type != QUEUE_TYPE_EMPTY)
     return -1;
 
-  old_tail = q->tail;
-  new_tail = (q->tail + 1) % q->max;
-  ret = __sync_val_compare_and_swap(&q->tail, old_tail, new_tail);
-  __sync_fetch_and_add(&q->n, 1);
-
-  if (ret != old_tail)
-  {
-    LOG_ERROR("Tail didn't get update properly." 
-        "This might indicate a synchronization bug");
-    abort();
-  }
-
-  q->entries[q->tail].type = type;
+  qe->type = type;
+  
+  MEM_BARRIER();
+  q->tail = (q->tail + 1) % q->size;
 
   return 0;
 }
 
-struct queue_entry * queue_dequeue(struct queue *q)
+int queue_dequeue(struct queue *q)
 {
   int ret;
-  uint32_t new_head, old_head;
-  struct queue_entry * qe;
+  uint32_t old_head;
+  struct queue_entry *qe = &q->entries[q->head];
 
-  if (q->n == 0)
-    return NULL;
-
-  qe = &q->entries[q->head];
-  __sync_fetch_and_sub(&q->n, 1);
+  /* Queue is empty */
+  if (qe->type == QUEUE_TYPE_EMPTY)
+    return -1;
 
   old_head = q->head;
-  new_head = (q->head + 1) % q->max;
-  ret = __sync_val_compare_and_swap(&q->head, old_head, new_head);
+  q->head = (q->head + 1) % q->size;
 
-  if (ret != old_head)
-  {
-    LOG_ERROR("Tail didn't get update properly." 
-        "This might indicate a synchronization bug");
-    abort();
-  }
+  MEM_BARRIER();
+  q->entries[old_head].type = 0;
 
-  return qe;
+  return 0;
+}
+
+struct queue_entry * queue_head(struct queue *q)
+{
+  /* Queue is empty */
+  if (q->head == q->tail)
+    return NULL;
+
+  return &q->entries[q->head];
 }

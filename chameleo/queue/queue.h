@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#define QUEUE_TYPE_EMPTY 0
 #define QUEUE_TYPE_ARP_TX 1
 #define QUEUE_TYPE_ARP_RX 2
 
@@ -11,10 +12,9 @@
 #define QUEUE_TYPE_ERROR 4
 
 struct queue {
-  uint32_t n;
-  uint32_t max;
-  uint32_t head;
-  uint32_t tail;
+  volatile uint32_t head;
+  volatile uint32_t tail;
+  uint32_t size;
   struct queue_entry *entries;
 };
 
@@ -24,6 +24,7 @@ struct queue_entry {
 
 struct queue * queue_new();
 int queue_enqueue(struct queue *q, uint8_t type);
-struct queue_entry * queue_dequeue(struct queue *q);
+int queue_dequeue(struct queue *q);
+struct queue_entry * queue_head(struct queue *q);
 
 #endif
