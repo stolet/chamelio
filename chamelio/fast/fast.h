@@ -5,7 +5,7 @@
 
 #include <rte_ethdev.h>
 
-#include "../chameleo.h"
+#include "../chamelio.h"
 #include "network.h" 
 #include "../config/config.h"
 #include "../queue/queue.h"

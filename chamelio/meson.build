@@ -5,12 +5,12 @@ subdir('nic')
 subdir('protocols')
 subdir('queue')
 
-sources_root = files('chameleo.c')
+sources_root = files('chamelio.c')
 
 root_inc = include_directories('.', '../utils')
 
 executable(
-  'chameleo',
+  'chamelio',
   sources_root,
   include_directories : root_inc,
 

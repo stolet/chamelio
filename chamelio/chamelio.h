@@ -1,12 +1,12 @@
-#ifndef CHAMELEO_H_
-#define CHAMELEO_H_
+#ifndef CHAMELIO_H_
+#define CHAMELIO_H_
 
 #include "config/config.h"
 #include "nic/nic.h"
 #include "fast/fast.h"
 #include "slow/slow.h"
 
-struct chameleo_context {
+struct chamelio_context {
   /* Configuration parameters */
   struct configuration config;
   /* Context for the NIC */

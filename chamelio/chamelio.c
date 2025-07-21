@@ -4,7 +4,7 @@
 
 #include <rte_malloc.h>
 
-#include "chameleo.h"
+#include "chamelio.h"
 #include "config/config.h"
 #include "fast/fast.h"
 #include "slow/slow.h"
@@ -15,7 +15,7 @@
 /* TODO: Make this a parameter in the start */
 #define QUEUE_SIZE 256
 
-struct chameleo_context cham_ctx;
+struct chamelio_context cham_ctx;
 
 static int fast_thread(void *arg);
 static int fast_start(struct configuration *config);
@@ -188,7 +188,7 @@ static int fast_thread(void *arg)
 
   {
     char name[18];
-    snprintf(name, sizeof(name), "chameleo-fp-%u", id);
+    snprintf(name, sizeof(name), "chamelio-fp-%u", id);
     pthread_setname_np(pthread_self(), name);
   }
 

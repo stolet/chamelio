@@ -1,7 +1,7 @@
 #include <rte_malloc.h>
 
 #include "queue.h"
-#include "../chameleo.h"
+#include "../chamelio.h"
 #include "../../utils/log/log.h"
 #include "../../utils/utils.h"
 
@@ -39,7 +39,6 @@ error_entries:
 /* Only one sides enqueue and one side dequeues */
 int queue_enqueue(struct queue *q, uint8_t type)
 {
-  int ret;
   struct queue_entry *qe = &q->entries[q->tail];
   
   /* Queue is full */
@@ -56,7 +55,6 @@ int queue_enqueue(struct queue *q, uint8_t type)
 
 int queue_dequeue(struct queue *q)
 {
-  int ret;
   uint32_t old_head;
   struct queue_entry *qe = &q->entries[q->head];
 
