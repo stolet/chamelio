@@ -22,10 +22,14 @@
 
 struct protocol {
   uint8_t id;
-  void * state;
 
-  uint8_t (*process_rx)(void *state, struct rte_mbuf *);
-  uint8_t (*process_tx)(void *state, struct rte_mbuf *);
+  uint64_t shm_len;
+  void * shm;
+  uint64_t shm_internal_len;
+  void *shm_internal;
+
+  uint8_t (*process_rx)(void *, struct rte_mbuf *);
+  uint8_t (*process_tx)(void *, struct rte_mbuf *);
   uint8_t (*process_queues)();
 };
 
@@ -40,6 +44,11 @@ struct guest {
 
   uint8_t n_apps;
   struct application *apps;
+
+  void *shm_base;
+  uint64_t shm_len;
+  void *shm_internal_base;
+  uint64_t shm_internal_len;
 };
 
 struct fast_context {

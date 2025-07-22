@@ -17,6 +17,9 @@ struct configuration {
   /* Max number of fast-path cores */
   uint32_t fp_cores_max;
 
+  /* SHM configurations */
+  uint64_t shm_len;
+
   /* DPDK configurations */
   /* DPDK extra argument count */
   int dpdk_argc;

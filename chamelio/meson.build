@@ -1,8 +1,8 @@
 subdir('config')
+subdir('protocols')
 subdir('fast')
 subdir('slow')
 subdir('nic')
-subdir('protocols')
 subdir('queue')
 
 sources_root = files('chamelio.c')
@@ -17,14 +17,16 @@ executable(
   dependencies : [
     dpdk_dep,
     threads_dep,
+    rt_dep,
   ],
 
   link_with : [
     config_lib,
+    udp_lib,
+    protocols_lib,
     fast_lib,
     slow_lib,
     nic_lib,
-    udp_lib,
     log_lib,
     queue_lib,
   ],

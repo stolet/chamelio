@@ -2,6 +2,7 @@
 #define UDP_H_
 
 #include <rte_mbuf.h>
+#include <rte_ip4.h>
 #include <rte_malloc.h>
 
 #include "udp_pkt.h"

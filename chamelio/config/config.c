@@ -10,6 +10,7 @@
 #include "../../utils/log/log.h"
 
 enum cfg_params {
+  CP_SHM_LEN,
   CP_IP_ADDR,
   CP_IP_ROUTE,
   CP_FP_CORES_MAX,
@@ -18,6 +19,9 @@ enum cfg_params {
 };
 
 static struct option opts[] = {
+  { .name = "shm-len",
+    .has_arg = required_argument,
+    .val = CP_SHM_LEN },
   { .name = "ip-addr",
     .has_arg = required_argument,
     .val = CP_IP_ADDR },
@@ -37,11 +41,12 @@ static struct option opts[] = {
 
 static int config_defaults(struct configuration *c, char *progname);
 static void print_usage(struct configuration *c, char *progname);
-static inline int parse_int32(const char *s, uint32_t *pu32);
-static inline int parse_arg_append(char *s, struct configuration *c);
-static inline int parse_cidr(char *s, uint32_t *ip, uint8_t *prefix);
-static inline int parse_route(char *s, struct configuration *c);
-static inline int parse_ipv4(const char *s, uint32_t *ip);
+static int parse_int64(const char *s, uint64_t *pi);
+static int parse_int32(const char *s, uint32_t *pu32);
+static int parse_arg_append(char *s, struct configuration *c);
+static int parse_cidr(char *s, uint32_t *ip, uint8_t *prefix);
+static int parse_route(char *s, struct configuration *c);
+static int parse_ipv4(const char *s, uint32_t *ip);
 
 int config_parse(struct configuration *c, int argc, char **argv)
 {
@@ -59,6 +64,12 @@ int config_parse(struct configuration *c, int argc, char **argv)
     ret = getopt_long(argc, argv, "", opts, NULL);
     switch (ret)
     {
+      case CP_SHM_LEN:
+        if (parse_int64(optarg, &c->shm_len) != 0) {
+          fprintf(stderr, "shm len parsing failed\n");
+          goto failed;
+        }
+        break;
       case CP_IP_ADDR:
         c->ip_prefix = 0;
         if (parse_cidr(optarg, &c->ip, &c->ip_prefix) != 0) {
@@ -105,6 +116,7 @@ failed:
 static int config_defaults(struct configuration *c, char *progname)
 {
   c->ip = 0;
+  c->shm_len = 1024 * 1024 * 1024;
   c->fp_cores_max = 1;
   c->fp_xsumoffloads = 1;
 
@@ -123,7 +135,9 @@ static void print_usage(struct configuration *c, char *progname)
 {
   fprintf(stderr, "Usage: %s [OPTION]... --ip-addr=IP[/PREFIXLEN]\n"
       "\n"
-
+      "Memory sizes:\n"
+      "  --shm-len=LEN                           Shared memory len"
+           "[default: %"PRIu64"]\n"
       "Fast path:\n"
       "  --fp-cores-max=CORES                    Max cores used for fast path"
            "[default: %"PRIu32"]\n"
@@ -134,10 +148,10 @@ static void print_usage(struct configuration *c, char *progname)
       "  --ip-addr=ADDR[/PREFIXLEN]              Set local IP address\n"
       "Miscelaneous:\n"
       "  --dpdk-extra=ARG                        Add extra DPDK argument"
-      ,progname, c->fp_cores_max);
+      ,progname, c->shm_len, c->fp_cores_max);
 }
 
-static inline int parse_int32(const char *s, uint32_t *pi)
+static int parse_int64(const char *s, uint64_t *pi)
 {
   char *end;
   *pi = strtoul(s, &end, 10);
@@ -146,7 +160,7 @@ static inline int parse_int32(const char *s, uint32_t *pi)
   return 0;
 }
 
-static inline int parse_int8(const char *s, uint8_t *pi)
+static int parse_int32(const char *s, uint32_t *pi)
 {
   char *end;
   *pi = strtoul(s, &end, 10);
@@ -155,7 +169,16 @@ static inline int parse_int8(const char *s, uint8_t *pi)
   return 0;
 }
 
-static inline int parse_arg_append(char *s, struct configuration *c)
+static int parse_int8(const char *s, uint8_t *pi)
+{
+  char *end;
+  *pi = strtoul(s, &end, 10);
+  if (!*s || *end)
+    return -1;
+  return 0;
+}
+
+static int parse_arg_append(char *s, struct configuration *c)
 {
   char **new;
 
@@ -172,7 +195,7 @@ static inline int parse_arg_append(char *s, struct configuration *c)
   return 0;
 }
 
-static inline int parse_cidr(char *s, uint32_t *ip, uint8_t *prefix)
+static int parse_cidr(char *s, uint32_t *ip, uint8_t *prefix)
 {
   char *slash;
 
@@ -196,7 +219,7 @@ static inline int parse_cidr(char *s, uint32_t *ip, uint8_t *prefix)
   return 0;
 }
 
-static inline int parse_route(char *s, struct configuration *c)
+static int parse_route(char *s, struct configuration *c)
 {
   struct config_route *r, *r_p;
   char *comma;
