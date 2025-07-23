@@ -3,25 +3,45 @@
 #include <assert.h>
 
 #include "slow.h"
-#include "../queue/queue.h"
-#include "../utils/log/log.h"
+#include "guestif.h"
+#include "config.h"
+#include "log.h"
+#include "queue.h"
 
 int poll_fast();
 
-int slow_context_init(struct slow_context *ctx, uint16_t n_cores,
+int slow_context_init(struct slow_context *ctx, struct configuration *config,
     struct queue **fast_slow_qs, struct queue **slow_fast_qs)
 {
-  ctx->n_cores = n_cores;
+  ctx->config = config;
   ctx->fast_slow_qs = fast_slow_qs;
   ctx->slow_fast_qs = slow_fast_qs;
+
+  ctx->guest_uxfd = -1;
+  ctx->guest_epfd = -1;
+  ctx->guest_id_next = 0;
+
+  ctx->app_uxfd = -1;
+  ctx->app_epfd = -1;
+  ctx->app_id_next = 0;
 
   return 0;
 }
 
 int slow_loop(struct slow_context *ctx)
 {
+  int ret;
+
+  ret = guestif_init(ctx);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to initialize guestif");
+    return -1;
+  }
+
   while (1) 
   {
+    guestif_poll(ctx);
     poll_fast(ctx);
   }
 }
@@ -33,7 +53,7 @@ int poll_fast(struct slow_context *ctx)
   struct queue_entry *qe;
   int i;
 
-  for (i = 0; i < ctx->n_cores; i++)
+  for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
     /* TODO: Dequeue in batches to improve performance and prevent us
        from spending too much time in one core */

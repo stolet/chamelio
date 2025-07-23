@@ -1,9 +1,9 @@
 #include <rte_malloc.h>
 
 #include "queue.h"
-#include "../chamelio.h"
-#include "../../utils/log/log.h"
-#include "../../utils/utils.h"
+
+#include "log.h"
+#include "utils.h"
 
 struct queue * queue_new(uint32_t size)
 {

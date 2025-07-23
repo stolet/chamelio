@@ -32,7 +32,7 @@ struct app_ctx {
   uint32_t rx_avail;
 };
 
-void *shm_create_huge(const char *name, size_t size, void *addr);
-void shm_destroy_huge(const char *name, size_t size, void *addr);
+void *shm_create_huge(const char *name, size_t size, void *addr, int *fd);
+void shm_destroy_huge(const char *name, size_t size, void *addr, int fd);
 
 #endif

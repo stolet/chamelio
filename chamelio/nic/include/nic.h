@@ -5,7 +5,7 @@
 
 #include <rte_ethdev.h>
 
-#include "../config/config.h"
+#include "config.h"
 
 struct nic_context {
   uint8_t port_id;

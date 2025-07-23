@@ -5,10 +5,9 @@
 #include <rte_ip4.h>
 #include <rte_malloc.h>
 
-#include "udp_pkt.h"
-#include "../../../utils/log/log.h"
-#include "../../../utils/utils.h"
-#include "../../queue/queue.h"
+#include "pkt_defs.h"
+#include "log.h"
+#include "utils.h"
 
 struct udp_flow {
   uint16_t core;

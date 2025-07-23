@@ -3,10 +3,9 @@
 
 #include <rte_mbuf.h>
 
-#include "eth_pkt.h"
-#include "../../../utils/log/log.h"
-#include "../../../utils/utils.h"
-#include "../../queue/queue.h"
+#include "pkt_defs.h"
+#include "log.h"
+#include "utils.h"
 
 struct eth_state {
 

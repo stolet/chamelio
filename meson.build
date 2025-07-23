@@ -1,5 +1,5 @@
 project('chamelio', 'c', 
-  version : '0.1',
+  version : '1.0',
   default_options: [
     'c_std=gnu99',
     'optimization=0',
@@ -16,3 +16,5 @@ rt_dep = cc.find_library('rt', required : true)
 
 subdir('utils')
 subdir('chamelio')
+subdir('lib')
+subdir('examples')

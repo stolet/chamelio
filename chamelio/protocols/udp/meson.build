@@ -1,7 +1,22 @@
+udp_inc = include_directories('include')
+
+deps = [
+  dependency('utils_dep'),
+  dependency('log_dep'),
+  dependency('protocols_dep'),
+]
+
 udp_lib = static_library(
   'udp',
-  'udp_shm.c',
-  include_directories : [
-    include_directories('..', '../..')
-  ]
+  include_directories : udp_inc,
+  dependencies: deps,
+  install : false,
 )
+
+udp_dep = declare_dependency(
+  link_with : udp_lib,
+  include_directories : udp_inc,
+  dependencies: deps,
+)
+
+meson.override_dependency('udp_dep', udp_dep)

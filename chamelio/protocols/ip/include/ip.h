@@ -4,10 +4,9 @@
 #include <rte_mbuf.h>
 #include <arpa/inet.h>
 
-#include "ip_pkt.h"
-#include "../udp/udp_pkt.h"
-#include "../../../utils/log/log.h"
-#include "../../../utils/utils.h"
+#include "pkt_defs.h"
+#include "log.h"
+#include "utils.h"
 
 struct ip_state {
 

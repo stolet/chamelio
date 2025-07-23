@@ -1,0 +1,1 @@
+int cham_init_guest();

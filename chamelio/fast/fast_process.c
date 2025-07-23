@@ -1,9 +1,9 @@
 #include <rte_mbuf.h>
 
 #include "fast.h"
-#include "protocols/eth/eth.h"
-#include "protocols/ip/ip.h"
-#include "protocols/udp/udp.h"
+#include "eth.h"
+#include "ip.h"
+#include "udp.h"
 
 uint8_t fast_process_packet_rx(struct fast_context *ctx, struct rte_mbuf *mb)
 {

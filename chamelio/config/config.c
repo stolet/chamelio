@@ -7,7 +7,7 @@
 #include <inttypes.h>
 
 #include "config.h"
-#include "../../utils/log/log.h"
+#include "log.h"
 
 enum cfg_params {
   CP_SHM_LEN,

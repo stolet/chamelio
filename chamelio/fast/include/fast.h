@@ -5,10 +5,9 @@
 
 #include <rte_ethdev.h>
 
-#include "../chamelio.h"
 #include "network.h" 
-#include "../config/config.h"
-#include "../queue/queue.h"
+#include "config.h"
+#include "queue.h"
 
 #define BATCH_SIZE 16
 

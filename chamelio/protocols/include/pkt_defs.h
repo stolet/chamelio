@@ -1,10 +1,32 @@
-#ifndef IP_PKT_H_
-#define IP_PKT_H_
+#ifndef PKT_DEFS_H_
+#define PKT_DEFS_H_
 
 #include <stdint.h>
 
-#include "../eth/eth_pkt.h"
-#include "../../../utils/utils.h"
+#include "utils.h"
+
+/* ETH */
+
+#define ETH_ADDR_LEN 6
+
+#define ETH_TYPE_IP   0x0800
+#define ETH_TYPE_ARP  0x0806
+
+struct eth_addr {
+  uint8_t addr[ETH_ADDR_LEN];
+} __attribute__ ((packed));
+
+struct eth_hdr {
+  struct eth_addr dst;
+  struct eth_addr src;
+  beui16_t type;
+} __attribute__ ((packed));
+
+struct eth_pkt {
+  struct eth_hdr eth;
+} __attribute__ ((packed));
+
+/* IP */
 
 #define IPH_V(hdr)  ((hdr)->_v_hl >> 4)
 #define IPH_HL(hdr) ((hdr)->_v_hl & 0x0f)
@@ -60,6 +82,26 @@ struct ip_hdr {
 struct ip_pkt {
   struct eth_hdr eth;
   struct ip_hdr  ip;
+} __attribute__ ((packed));
+
+
+/* UDP */
+
+struct udp_hdr {
+  /* src port */
+  beui16_t src;
+  /* destination port */
+  beui16_t dst;
+  /* length of header and data */
+  beui16_t len;
+  /* checksum */
+  uint16_t chksum;
+} __attribute__ ((packed));
+
+struct udp_pkt {
+  struct eth_hdr eth;
+  struct ip_hdr ip;
+  struct udp_hdr udp;
 } __attribute__ ((packed));
 
 #endif

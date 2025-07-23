@@ -5,7 +5,7 @@
 #include <rte_malloc.h>
 
 #include "network.h"
-#include "../../utils/log/log.h"
+#include "log.h"
 
 #define BUFFER_SIZE 2048
 #define PERTHREAD_MBUFS 2048

@@ -1,11 +1,11 @@
-subdir('udp')
-subdir('eth')
-subdir('ip')
+protocols_inc = include_directories('include')
 
-protocols_lib = static_library(
-  'protocols',
-  'shm.c',
-  include_directories : [
-    include_directories('..', '../..')
-  ]
+protocols_dep = declare_dependency(
+  include_directories: protocols_inc,
 )
+
+meson.override_dependency('protocols_dep', protocols_dep)
+
+subdir('ip')
+subdir('eth')
+subdir('udp')

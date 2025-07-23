@@ -5,12 +5,13 @@
 #include <rte_malloc.h>
 
 #include "chamelio.h"
-#include "config/config.h"
-#include "fast/fast.h"
-#include "slow/slow.h"
-#include "nic/nic.h"
-#include "queue/queue.h"
-#include "../utils/log/log.h"
+#include "config.h"
+#include "fast.h"
+#include "slow.h"
+#include "nic.h"
+#include "queue.h"
+#include "log.h"
+
 
 /* TODO: Make this a parameter in the start */
 #define QUEUE_SIZE 256
@@ -99,7 +100,7 @@ int main (int argc, char **argv)
   s_ctx->slow_fast_qs = slow_fast_qs;
   cham_ctx.slow_fast_qs = slow_fast_qs;
 
-  /* Create pair of queues for each core */
+  /* Create pair of queues between slow path and fast path for each core */
   for (i = 0; i < config->fp_cores_max; i++)
   {
     q = queue_new(QUEUE_SIZE);
@@ -120,7 +121,7 @@ int main (int argc, char **argv)
   }
 
   /* Initialize slow-path */
-  slow_context_init(s_ctx, config->fp_cores_max, fast_slow_qs, slow_fast_qs);
+  slow_context_init(s_ctx, config, fast_slow_qs, slow_fast_qs);
 
   /* Loop in slow-path */
   slow_loop(s_ctx);

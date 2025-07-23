@@ -1,8 +1,21 @@
-udp_lib = static_library(
+subdir('log')
+
+utils_inc = include_directories('include')
+
+utils_lib = static_library(
   'utils',
-  include_directories : [
-    include_directories('.')
-  ]
+  include_directories : utils_inc,
+  install : false
 )
 
-subdir('log')
+deps = [
+  dependency('log_dep'),
+]
+
+utils_dep = declare_dependency(
+  link_with : utils_lib,
+  include_directories : utils_inc,
+  dependencies : deps,
+)
+
+meson.override_dependency('utils_dep', utils_dep)

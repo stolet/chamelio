@@ -1,7 +1,28 @@
+fast_inc = include_directories('include')
+
+fast_srcs = files('fast.c', 'fast_process.c', 'network.c')
+
+deps = [
+  dependency('config_dep'),
+  dependency('udp_dep'),
+  dependency('ip_dep'),
+  dependency('eth_dep'),
+  dependency('utils_dep'),
+  dependency('queue_dep'),
+  dependency('chamelio_dep'),
+]
+
 fast_lib = static_library(
   'fast',
-  'fast.c',
-  'fast_process.c',
-  'network.c',
-  include_directories : include_directories('..')
+  fast_srcs,
+  include_directories : fast_inc,
+  dependencies : deps,
+  install : false,
 )
+
+fast_dep = declare_dependency(
+  link_with : fast_lib,
+  include_directories : fast_inc,
+)
+
+meson.override_dependency('fast_dep', fast_dep)

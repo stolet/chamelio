@@ -1,9 +1,6 @@
-
-
-#include "../chamelio.h"
-#include "../config/config.h"
-#include "../../utils/log/log.h"
-
+#include "nic.h"
+#include "config.h"
+#include "log.h"
 
 int nic_init(struct nic_context *nic_ctx, struct configuration *config)
 {

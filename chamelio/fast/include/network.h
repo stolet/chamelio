@@ -6,7 +6,7 @@
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>
 
-#include "../config/config.h"
+#include "config.h"
 
 struct network_context {
   uint8_t port_id;
