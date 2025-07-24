@@ -2,6 +2,42 @@
 #define SLOW_H_
 
 #include "config.h"
+#include "shmalloc.h"
+
+struct app_slow {
+  /* Id of the registered application */
+  uint8_t id;
+  /* Id of the guest this application belongs to */
+  uint8_t gid;
+
+  /* Queue from the application to the Chamelio slow-path */
+  struct queue *app_cham_q;
+  /* Queue from the Chamelio slow-path to the application */
+  struct queue *cham_app_q;
+
+  /* Next application in the list */
+  struct app_slow *next;
+};
+
+struct guest_slow {
+  /* ID of registered guest */
+  uint8_t id;
+
+  /* File descriptor for shared memory region for this guest */
+  int shm_fd;
+  /* Base pointer to the shared memory region for this guest */
+  void *shm_base;
+  /* Allocator for shared memory region */
+  struct shm_allocator *alloc;
+  
+  /* Queue from the guest to the Chamelio slow-path */
+  struct queue *guest_cham_q;
+  /* Queue from the Chamelio slow-path to the guest */
+  struct queue *cham_guest_q;
+  
+  /* Next guest in the list */
+  struct guest_slow *next;
+};
 
 struct slow_context {
   /* Configuration parameters */
@@ -10,6 +46,11 @@ struct slow_context {
   struct queue **fast_slow_qs;
   /* Queues from the slow-path to the fast-path. One per core */
   struct queue **slow_fast_qs;
+
+  /* File descriptor for internal shared memory */
+  int shm_fd_internal;
+  /* Base pointer for internal shared memory region */
+  void *shm_base_internal;
 
   /* Listening UX sockets for guests */
   int guest_uxfd;
@@ -25,11 +66,12 @@ struct slow_context {
   /* Next unused application id */
   int app_id_next;
 
+  /* Guests that have registered with chamelio */
+  struct guest_slow *guests;
 };
 
 int slow_context_init(struct slow_context *s_ctx, struct configuration *config,
     struct queue **fast_slow_qs, struct queue **slow_fast_qs);
 int slow_loop(struct slow_context *ctx);
-
 
 #endif

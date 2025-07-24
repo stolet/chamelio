@@ -65,10 +65,10 @@ int poll_fast(struct slow_context *ctx)
       type = qe->type;
       switch (type)
       {
-        case QUEUE_TYPE_ARP_TX:
+        case QUEUE_ARP_TX:
           LOG_DEBUG("sending arp tx to slow");
           break;
-        case QUEUE_TYPE_ARP_RX:
+        case QUEUE_ARP_RX:
           LOG_DEBUG("sending arp rx to slow");
           break;
         default:

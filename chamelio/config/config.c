@@ -11,6 +11,10 @@
 
 enum cfg_params {
   CP_SHM_LEN,
+  CP_CHAM_QUEUE_LEN,
+  CP_APP_QUEUE_LEN,
+  CP_RXBUF_LEN,
+  CP_TXBUF_LEN,
   CP_IP_ADDR,
   CP_IP_ROUTE,
   CP_FP_CORES_MAX,
@@ -22,6 +26,18 @@ static struct option opts[] = {
   { .name = "shm-len",
     .has_arg = required_argument,
     .val = CP_SHM_LEN },
+  { .name = "cham-queue-len",
+    .has_arg = required_argument,
+    .val = CP_CHAM_QUEUE_LEN },
+  { .name = "app-queue-len",
+    .has_arg = required_argument,
+    .val = CP_APP_QUEUE_LEN },
+  { .name = "rxbuf-len",
+    .has_arg = required_argument,
+    .val = CP_RXBUF_LEN },
+  { .name = "txbuf-len",
+    .has_arg = required_argument,
+    .val = CP_TXBUF_LEN },
   { .name = "ip-addr",
     .has_arg = required_argument,
     .val = CP_IP_ADDR },
@@ -67,6 +83,30 @@ int config_parse(struct configuration *c, int argc, char **argv)
       case CP_SHM_LEN:
         if (parse_int64(optarg, &c->shm_len) != 0) {
           fprintf(stderr, "shm len parsing failed\n");
+          goto failed;
+        }
+        break;
+      case CP_CHAM_QUEUE_LEN:
+        if (parse_int64(optarg, &c->cham_queue_len) != 0) {
+          fprintf(stderr, "chamelio queue len parsing failed\n");
+          goto failed;
+        }
+        break;
+      case CP_APP_QUEUE_LEN:
+        if (parse_int64(optarg, &c->app_queue_len) != 0) {
+          fprintf(stderr, "app queue len parsing failed\n");
+          goto failed;
+        }
+        break;
+      case CP_RXBUF_LEN:
+        if (parse_int64(optarg, &c->rxbuf_len) != 0) {
+          fprintf(stderr, "rx buffer len parsing failed\n");
+          goto failed;
+        }
+        break;
+      case CP_TXBUF_LEN:
+        if (parse_int64(optarg, &c->txbuf_len) != 0) {
+          fprintf(stderr, "tx buffer len parsing failed\n");
           goto failed;
         }
         break;
@@ -117,6 +157,10 @@ static int config_defaults(struct configuration *c, char *progname)
 {
   c->ip = 0;
   c->shm_len = 1024 * 1024 * 1024;
+  c->cham_queue_len = 16 * 1024;
+  c->app_queue_len = 1024 * 1024;
+  c->rxbuf_len = 8192;
+  c->txbuf_len = 8192;
   c->fp_cores_max = 1;
   c->fp_xsumoffloads = 1;
 
@@ -138,6 +182,14 @@ static void print_usage(struct configuration *c, char *progname)
       "Memory sizes:\n"
       "  --shm-len=LEN                           Shared memory len"
            "[default: %"PRIu64"]\n"
+      "  --cham-queue-len=LEN                    Chamelio Fast <-> Slow queue len"
+           "[default: %"PRIu64"]\n"
+      "  --app-queue-len=LEN                     Application <-> Chamelio queue len"
+           "[default: %"PRIu64"]\n"
+      "  --rxbuf-len=LEN                         Application RX buffer len"
+           "[default: %"PRIu64"]\n"
+      "  --txbuf-len=LEN                         Application TX buffer len len"
+           "[default: %"PRIu64"]\n"
       "Fast path:\n"
       "  --fp-cores-max=CORES                    Max cores used for fast path"
            "[default: %"PRIu32"]\n"
@@ -148,7 +200,12 @@ static void print_usage(struct configuration *c, char *progname)
       "  --ip-addr=ADDR[/PREFIXLEN]              Set local IP address\n"
       "Miscelaneous:\n"
       "  --dpdk-extra=ARG                        Add extra DPDK argument"
-      ,progname, c->shm_len, c->fp_cores_max);
+      "\n"
+      ,progname, 
+      c->shm_len, 
+      c->cham_queue_len, c->app_queue_len, 
+      c->rxbuf_len, c->txbuf_len, 
+      c->fp_cores_max);
 }
 
 static int parse_int64(const char *s, uint64_t *pi)

@@ -9,7 +9,7 @@
 #define MAX_FLOWS (128 * 1024)
 
 #define CHAMELIO_SHM_NAME "chamelio_shm"
-#define CHAMELIO_SHM_INTERNAL "fp_state"
+#define CHAMELIO_SHM_NAME_INTERNAL "chamelio_internal"
 #define CHAMELIO_HUGE_PREFIX "/dev/hugepages"
 
 struct app_ctx {

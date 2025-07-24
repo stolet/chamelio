@@ -32,17 +32,17 @@ struct protocol {
   uint8_t (*process_queues)();
 };
 
-struct application {
+struct application_fast {
   uint8_t id;
   struct protocol proto;
 };
 
-struct guest {
+struct guest_fast {
   uint8_t id;
-  struct guest *next_guest;
+  struct guest_fast *next_guest;
 
   uint8_t n_apps;
-  struct application *apps;
+  struct application_fast *apps;
 
   void *shm_base;
   uint64_t shm_len;
@@ -55,7 +55,7 @@ struct fast_context {
   struct network_context net_ctx;
   
   uint8_t n_guests;
-  struct guest *guests;
+  struct guest_fast *guests;
 
   uint16_t tx_n;
   struct rte_mbuf *tx_mbs[TXBUF_SIZE];

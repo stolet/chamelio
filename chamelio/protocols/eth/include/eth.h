@@ -33,7 +33,7 @@ static inline uint8_t eth_process_rx(void *state, struct rte_mbuf *mb)
   if (f_beui16(p->eth.type) == ETH_TYPE_ARP)
   {
     LOG_DEBUG("got an ARP packet");
-    return QUEUE_TYPE_ARP_RX;
+    return QUEUE_ARP_RX;
   }
 
   memcpy(&sm, &p->eth.src, ETH_ADDR_LEN);

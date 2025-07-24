@@ -13,8 +13,8 @@
 #include "config.h"
 
 
-struct guest * init_guest(uint8_t id, uint64_t shm_len);
-struct application * init_application(uint8_t id);
+struct guest_fast * init_guest(uint8_t id, uint64_t shm_len);
+struct application_fast * init_application(uint8_t id);
 
 int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
@@ -123,7 +123,7 @@ int poll_tx(struct fast_context *ctx)
   unsigned n;
   int i, ret;
   uint8_t tx_err;
-  struct guest *guest;
+  struct guest_fast *guest;
   struct rte_mbuf *mbs[BATCH_SIZE];
   uint8_t n_guests = ctx->n_guests;
   
@@ -200,7 +200,7 @@ int poll_slow(struct fast_context *ctx)
     type = qe->type;
     switch (type)
     {
-    case QUEUE_TYPE_ARP_TX:
+    case QUEUE_ARP_TX:
       queue_dequeue(q);
       LOG_DEBUG("received arp tx from slow");
       break;

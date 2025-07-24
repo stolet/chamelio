@@ -73,11 +73,11 @@ int fast_process_packet_error(struct fast_context *ctx,
 
   switch(type)
   {
-    case QUEUE_TYPE_ARP_RX:
+    case QUEUE_ARP_RX:
       LOG_DEBUG("sending arp rx to slow");
       queue_enqueue(q, type);
       break;
-    case QUEUE_TYPE_ARP_TX:
+    case QUEUE_ARP_TX:
       LOG_DEBUG("sending arp tx to slow");
       queue_enqueue(q, type);
       break;

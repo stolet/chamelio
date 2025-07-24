@@ -4,11 +4,14 @@
 
 #include "log.h"
 #include "utils.h"
+#include "shmalloc.h"
 
-struct queue * queue_new(uint32_t size)
+struct queue * queue_new(uint32_t size, struct shm_allocator *alloc)
 {
+  int ret;
   struct queue *q;
-  struct queue_entry *q_entries;
+  struct shm_handle *sh;
+  uintptr_t off;
 
   q = rte_malloc("queue", sizeof(struct queue), 0);
   if (q == NULL)
@@ -16,18 +19,18 @@ struct queue * queue_new(uint32_t size)
     LOG_ERROR("Failed to allocate queue from hugepages");
     return NULL;
   }
-
-  q_entries = rte_malloc("queue entries", sizeof(struct queue_entry) * size, 0);
-  if (q_entries == NULL)
+  
+  ret = shmalloc_alloc(alloc, sizeof(struct queue_entry) * size, &off, &sh);
+  if (ret != 0)
   {
-    LOG_ERROR("Failed to allcoate queue entries from hugepages");
+    LOG_ERROR("failed to allocated memory in shared memory");
     goto error_entries;
   }
-
+  q->sh = sh;
+  q->entries = alloc->shm_base + off;
   q->head = 0;
   q->tail = 0;
   q->size = size;
-  q->entries = q_entries;
 
   return q;
 
@@ -42,7 +45,7 @@ int queue_enqueue(struct queue *q, uint8_t type)
   struct queue_entry *qe = &q->entries[q->tail];
   
   /* Queue is full */
-  if (qe->type != QUEUE_TYPE_EMPTY)
+  if (qe->type != QUEUE_EMPTY)
     return -1;
 
   qe->type = type;
@@ -59,7 +62,7 @@ int queue_dequeue(struct queue *q)
   struct queue_entry *qe = &q->entries[q->head];
 
   /* Queue is empty */
-  if (qe->type == QUEUE_TYPE_EMPTY)
+  if (qe->type == QUEUE_EMPTY)
     return -1;
 
   old_head = q->head;

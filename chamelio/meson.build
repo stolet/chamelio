@@ -9,6 +9,7 @@ chamelio_dep = declare_dependency(
 meson.override_dependency('chamelio_dep', chamelio_dep)
 
 subdir('config')
+subdir('shm')
 subdir('queue')
 subdir('protocols')
 subdir('nic')
@@ -18,6 +19,7 @@ subdir('slow')
 deps = [
   dependency('utils_dep'),
   dependency('config_dep'),
+  dependency('shm_dep'),
   dependency('queue_dep'),
   dependency('udp_dep'),
   dependency('ip_dep'),

@@ -1,10 +1,11 @@
 slow_inc = include_directories('include')
 
-slow_srcs = files('slow.c', 'guestif.c', 'shm.c')
+slow_srcs = files('slow.c', 'guestif.c')
 
 deps = [
   dependency('config_dep'),
   dependency('log_dep'),
+  dependency('shm_dep'),
   dependency('queue_dep'),
 ]
 

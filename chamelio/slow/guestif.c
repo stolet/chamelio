@@ -10,6 +10,8 @@
 #include "guestif.h"
 #include "slow.h"
 #include "log.h"
+#include "shmalloc.h"
+#include "queue.h"
 
 #define IVSHMEM_PROTOCOL_VERSION 0
 #define HOST_PEERID 255
@@ -55,7 +57,14 @@ int guestif_poll(struct slow_context *ctx)
         uxsocket_accept(ctx);
         break;
       case EP_GUEST:
-        uxsocket_error(ctx, gev);
+        if ((evs[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) != 0)
+        {
+          uxsocket_error(ctx, gev);
+        }
+        else if ((evs[i].events & EPOLLIN) != 0)
+        {
+          LOG_DEBUG("EPOLLIN");
+        }
         break;
       default:
         LOG_WARN("unknown guest event type");
@@ -167,6 +176,9 @@ static int uxsocket_accept(struct slow_context *ctx)
   char shm_name[30];
   struct epoll_event ev;
   struct guest_event *gev;
+  struct guest_slow *g;
+  struct shm_allocator *alloc;
+  struct queue *guest_cham_q, *cham_guest_q;
 
   int64_t version = IVSHMEM_PROTOCOL_VERSION;
   uint64_t hostid = HOST_PEERID;
@@ -257,6 +269,40 @@ static int uxsocket_accept(struct slow_context *ctx)
     goto close_ifd;
   }
 
+  g = malloc(sizeof(struct guest_slow));
+  if (g == NULL)
+  {
+    LOG_ERROR("failed to allocate guest_slow struct");
+    goto free_gev;
+  }
+  g->id = ctx->guest_id_next;
+  g->shm_fd = sfd;
+  g->shm_base = shm_base;
+
+  alloc = shmalloc_init(sfd, shm_base, ctx->config->shm_len);
+  if (alloc == NULL)
+  {
+    LOG_ERROR("failed to initialise shm allocator");
+    goto free_guest;
+  }
+  g->alloc = alloc;
+
+  /* TODO: Have a configuration param specifically for size
+     of queue between chamelio and the guest */
+  guest_cham_q = queue_new(ctx->config->app_queue_len, alloc);
+  if (guest_cham_q == NULL)
+  {
+    LOG_ERROR("failed to create guest->chamelio queue");
+    goto free_alloc;
+  }
+
+  cham_guest_q = queue_new(ctx->config->app_queue_len, alloc);
+  if (cham_guest_q == NULL)
+  {
+    LOG_ERROR("failed to create chamelio->guest queue");
+    goto free_guest_cham_q;
+  }
+
   /* Add connection to epoll */
   gev->type = EP_GUEST;
   gev->fd = cfd;
@@ -269,15 +315,20 @@ static int uxsocket_accept(struct slow_context *ctx)
   {
     LOG_ERROR("epoll_ctl failed");
     perror("");
-    goto free_gev;
-  }
-
-  /* TODO: Create queue for messages between guest and chamelio */
-
+    goto free_cham_guest_q;
+  }  
 
   ctx->guest_id_next++;
   return 0;
 
+free_cham_guest_q:
+  free(cham_guest_q);
+free_guest_cham_q:
+  free(guest_cham_q);
+free_alloc:
+  free(alloc);
+free_guest:
+  free(g);
 free_gev:
   free(gev);
 close_ifd:
@@ -297,6 +348,7 @@ static void uxsocket_error(struct slow_context *ctx, struct guest_event *gev)
   LOG_WARN("removing cfd=%d from guest epfd", ctx->guest_epfd);
   epoll_ctl(ctx->guest_epfd, EPOLL_CTL_DEL, gev->fd, NULL);
   close(gev->fd);
+  free(gev);
 }
 
 static int uxsocket_send_int(int fd, int64_t i)

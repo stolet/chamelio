@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #define MEM_BARRIER() __asm__ volatile("" ::: "memory")
+#define STATIC_ASSERT(COND,MSG) typedef char static_assertion_##MSG[(COND)?1:-1]
 
 struct beui16 { uint16_t x; } __attribute__((packed));
 struct beui32 { uint32_t x; } __attribute__((packed));

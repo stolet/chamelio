@@ -11,6 +11,8 @@
 #include "nic.h"
 #include "queue.h"
 #include "log.h"
+#include "shm.h"
+#include "shmalloc.h"
 
 
 /* TODO: Make this a parameter in the start */
@@ -23,12 +25,14 @@ static int fast_start(struct configuration *config);
 
 int main (int argc, char **argv)
 {
-  int i, j, ret;
+  int i, j, ret, sfd;
+  void *shm_base;
   struct configuration *config;
   struct slow_context *s_ctx;
   struct queue *q;
   struct queue **fast_slow_qs, **slow_fast_qs;
   struct fast_context **f_ctxs;
+  struct shm_allocator *alloc;
   unsigned threads_launched;
 
   /* Parse command line options */
@@ -66,22 +70,33 @@ int main (int argc, char **argv)
   }
   cham_ctx.f_ctxs = f_ctxs;
 
-  /* Start fast-path threads */
-  threads_launched = fast_start(&cham_ctx.config);
-  if (threads_launched < cham_ctx.config.fp_cores_max)
+  /* Create internal shared memory region */
+  /* TODO: Pass internal shared memory size dynamically */
+  shm_base = shm_create_huge(CHAMELIO_SHM_NAME_INTERNAL, 
+      1024 * 1024 * 1024, NULL, &sfd);
+  if (shm_base == NULL)
   {
-    LOG_ERROR("failed to initialize fast path launched=%d target=%d", 
-        threads_launched, cham_ctx.config.fp_cores_max);
-    goto error_nic;
+    LOG_ERROR("failed to initialise internal shared memory region");
+    goto error_shm;
   }
 
+  /* Create allocator for internal shared memory region */
+  alloc = shmalloc_init(sfd, shm_base, 1024 * 1024 * 1024);
+  if (alloc == NULL)
+  {
+    LOG_ERROR("failed to initialise shared memory allocator");
+    goto error_shmalloc;
+  }
+
+  /* Create slow-path context */
   s_ctx = malloc(sizeof(struct slow_context));
   if (s_ctx == NULL)
   {
     LOG_ERROR("failed to allocate slow path context");
-    goto error_nic;
+    goto error_sctx;
   }
 
+  /* Allocate fast->slow queues */
   fast_slow_qs = malloc(sizeof(struct queue *) * config->fp_cores_max);
   if (fast_slow_qs == NULL)
   {
@@ -91,6 +106,7 @@ int main (int argc, char **argv)
   s_ctx->fast_slow_qs = fast_slow_qs;
   cham_ctx.fast_slow_qs = fast_slow_qs;
   
+  /* Allocate slow->fast queues */
   slow_fast_qs = malloc(sizeof(struct queue *) * config->fp_cores_max);
   if (slow_fast_qs == NULL)
   {
@@ -103,7 +119,7 @@ int main (int argc, char **argv)
   /* Create pair of queues between slow path and fast path for each core */
   for (i = 0; i < config->fp_cores_max; i++)
   {
-    q = queue_new(QUEUE_SIZE);
+    q = queue_new(QUEUE_SIZE, alloc);
     if (q == NULL)
     {
       LOG_ERROR("failed to allcoate fast to slow queue");
@@ -111,7 +127,7 @@ int main (int argc, char **argv)
     }
     fast_slow_qs[i] = q;
 
-    q = queue_new(QUEUE_SIZE);
+    q = queue_new(QUEUE_SIZE, alloc);
     if (q == NULL)
     {
       LOG_ERROR("failed to allcoate slow to fast queue");
@@ -122,6 +138,15 @@ int main (int argc, char **argv)
 
   /* Initialize slow-path */
   slow_context_init(s_ctx, config, fast_slow_qs, slow_fast_qs);
+  
+  /* Start fast-path threads */
+  threads_launched = fast_start(&cham_ctx.config);
+  if (threads_launched < cham_ctx.config.fp_cores_max)
+  {
+    LOG_ERROR("failed to initialize fast path launched=%d target=%d", 
+        threads_launched, cham_ctx.config.fp_cores_max);
+    goto error_queues;
+  }
 
   /* Loop in slow-path */
   slow_loop(s_ctx);
@@ -136,6 +161,13 @@ error_slow_fast_list:
   free(fast_slow_qs);
 error_fast_slow_list:
   free(s_ctx);
+error_sctx:
+  free(alloc);
+error_shmalloc:
+  shm_destroy_huge(CHAMELIO_SHM_NAME_INTERNAL, 
+      1024 * 1024 * 1024, shm_base, sfd);
+error_shm:
+  rte_free(f_ctxs);
 error_nic:
   nic_cleanup(&cham_ctx.nic_ctx);
 error_exit:
