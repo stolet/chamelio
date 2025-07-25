@@ -1,6 +1,6 @@
 slow_inc = include_directories('include')
 
-slow_srcs = files('slow.c', 'guestif.c')
+slow_srcs = files('slow.c', 'guestif.c', 'appif.c')
 
 deps = [
   dependency('config_dep'),

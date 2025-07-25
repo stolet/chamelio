@@ -4,17 +4,33 @@
 #include "config.h"
 #include "shmalloc.h"
 
-struct app_slow {
-  /* Id of the registered application */
+struct app_context {
+  /* Id of this application context */
   uint8_t id;
-  /* Id of the guest this application belongs to */
-  uint8_t gid;
+  /* Application that owns this context */
+  struct app_slow *app;
 
   /* Queue from the application to the Chamelio slow-path */
   struct queue *app_cham_q;
   /* Queue from the Chamelio slow-path to the application */
   struct queue *cham_app_q;
 
+  /* List of rx queues for each application context and a fast-path core */
+  struct shm_handle **rxq;
+  /* List of tx queues for each application context and a fast-path core */
+  struct shm_handle **txq;
+
+  /* Next app context in the list */
+  struct app_context *next;
+};
+
+struct app_slow {
+  /* Id of the registered application */
+  uint8_t id;
+  /* Guest where this application is running */
+  struct guest_slow *guest;
+  /* Contexts for this application */
+  struct app_context *ctxs;
   /* Next application in the list */
   struct app_slow *next;
 };
@@ -35,6 +51,9 @@ struct guest_slow {
   /* Queue from the Chamelio slow-path to the guest */
   struct queue *cham_guest_q;
   
+  /* Applications registered in this guest */
+  struct app_slow *apps;
+
   /* Next guest in the list */
   struct guest_slow *next;
 };

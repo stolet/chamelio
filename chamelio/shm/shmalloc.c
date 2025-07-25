@@ -39,7 +39,7 @@ struct shm_allocator * shmalloc_init(int shm_fd, void *shm_base, uint64_t len)
 }
 
 int shmalloc_alloc(struct shm_allocator *alloc, size_t length, 
-    uintptr_t *off, struct shm_handle **handle)
+    struct shm_handle **handle)
 {
   struct shm_handle *sh, *sh_prev, *ph_new;
 
@@ -62,13 +62,9 @@ int shmalloc_alloc(struct shm_allocator *alloc, size_t length,
 
     /* pointer to previous next pointer for removal */
     if (sh_prev == NULL) 
-    {
       alloc->freelist = sh->next;
-    } 
     else 
-    {
       sh_prev->next = sh->next;
-    }
 
     ph_new = sh;
   } 
@@ -92,7 +88,6 @@ int shmalloc_alloc(struct shm_allocator *alloc, size_t length,
   }
 
   *handle = ph_new;
-  *off = ph_new->base;
 
   return 0;
 }

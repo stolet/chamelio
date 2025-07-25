@@ -34,11 +34,6 @@ int fast_context_init(struct fast_context *f_ctx,
   f_ctx->fast_slow_q = fast_slow_q;
   f_ctx->slow_fast_q = slow_fast_q;
 
-  /* TODO: Add this dynamically when VMs and applications start */
-  // struct guest *g = init_guest(0, config->shm_len);
-  // f_ctx->guests = g;
-  // f_ctx->n_guests = 1;
-
   return 0;
 }
 
@@ -212,85 +207,3 @@ int poll_slow(struct fast_context *ctx)
 
   return 0;
 }
-
-// struct guest * init_guest(uint8_t id, uint64_t shm_len)
-// {
-//   uint64_t shm_internal_len;
-//   void *shm_base, *shm_base_internal;
-//   char shm_name[30], shm_internal_name[30];
-//   struct application *app;
-//   struct guest *g;
-
-//   g = rte_zmalloc("guest", sizeof(struct guest), 0);
-//   if (g == NULL)
-//   {
-//     LOG_ERROR("failed to allocate guest");
-//     goto guest_init_error;
-//   }
-//   g->id = id;
-//   g->next_guest = NULL;
-
-//   snprintf(shm_name, sizeof(shm_name), "%s_%d", CHAMELIO_SHM_NAME, id);
-//   /* TODO: Dynamically use shm init protocol according to the protocol registered by VM */
-//   shm_base = udp_init_shm(id, shm_name, shm_len);
-//   if (shm_base == NULL)
-//   {
-//     LOG_ERROR("failed to initialise shared memory for guest %d", id);
-//     goto shm_init_error;
-//   }
-//   g->shm_base = shm_base;
-//   g->shm_internal_len = shm_len;
-
-//   snprintf(shm_internal_name, sizeof(shm_internal_name), 
-//       "%s_%d", CHAMELIO_SHM_INTERNAL, id);
-//   shm_internal_len = sizeof(struct udp_shm_internal);
-//   /* TODO: Dynamically use shm init internal protocol according to the protocol registered by VM */
-//   shm_base_internal = udp_init_shm_internal(id, shm_internal_name);
-//   if (shm_base == NULL)
-//   {
-//     LOG_ERROR("failed to initialise internal shared memory for guest %d", id);
-//     goto shm_init_internal_error;
-//   }
-//   g->shm_internal_base = shm_base_internal;
-//   g->shm_internal_len = shm_internal_len;
-  
-//   app = init_application(0);
-//   if (app == NULL)
-//   {
-//     LOG_ERROR("failed to allocate application");
-//     goto app_init_error;
-//   }
-//   g->n_apps = 1;
-
-//   return g;
-
-// app_init_error:
-//   shm_destroy_huge(shm_internal_name, 
-//       sizeof(struct udp_shm_internal), shm_internal_name);
-// shm_init_internal_error:
-//   shm_destroy_huge(shm_name, shm_len, shm_base);
-// shm_init_error:
-//   rte_free(g);
-// guest_init_error:
-//   return NULL;
-// }
-
-// struct application * init_application(uint8_t id)
-// {
-//   struct application *app;
-  
-//   app = rte_zmalloc("app", sizeof(struct application), 0);
-//   if (app == NULL)
-//   {
-//     LOG_ERROR("Failed to initialise applicaiton");
-//     return NULL;
-//   }
-
-//   app->id = id;
-//   app->proto.id = PROTOCOL_UDP;
-//   app->proto.process_rx = udp_process_rx;
-//   app->proto.process_queues = udp_process_queues;
-//   app->proto.process_tx = udp_process_tx;
-
-//   return app;
-// }

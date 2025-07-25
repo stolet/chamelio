@@ -11,7 +11,6 @@ struct queue * queue_new(uint32_t size, struct shm_allocator *alloc)
   int ret;
   struct queue *q;
   struct shm_handle *sh;
-  uintptr_t off;
 
   q = rte_malloc("queue", sizeof(struct queue), 0);
   if (q == NULL)
@@ -20,14 +19,14 @@ struct queue * queue_new(uint32_t size, struct shm_allocator *alloc)
     return NULL;
   }
   
-  ret = shmalloc_alloc(alloc, sizeof(struct queue_entry) * size, &off, &sh);
+  ret = shmalloc_alloc(alloc, size, &sh);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocated memory in shared memory");
     goto error_entries;
   }
   q->sh = sh;
-  q->entries = alloc->shm_base + off;
+  q->entries = alloc->shm_base + sh->base;
   q->head = 0;
   q->tail = 0;
   q->size = size;
@@ -39,46 +38,56 @@ error_entries:
   return NULL;
 }
 
-/* Only one sides enqueue and one side dequeues */
+/* Only one thread can enqueue */
 int queue_enqueue(struct queue *q, uint8_t type)
 {
-  struct queue_entry *qe = &q->entries[q->tail];
+  uint32_t tail;
+  struct queue_entry *qe = q->entries + q->tail;
   
   /* Queue is full */
   if (qe->type != QUEUE_EMPTY)
     return -1;
 
-  qe->type = type;
-  
+  tail = q->tail + sizeof(struct queue_entry);
+  if (tail > q->size)
+    tail = 0;
+  q->tail = tail;
+    
   MEM_BARRIER();
-  q->tail = (q->tail + 1) % q->size;
+  qe->type = type;
 
   return 0;
 }
 
+/* Only one thread can dequeue */
 int queue_dequeue(struct queue *q)
 {
-  uint32_t old_head;
-  struct queue_entry *qe = &q->entries[q->head];
+  uint32_t head;
+  struct queue_entry *qe = q->entries + q->head;
 
   /* Queue is empty */
   if (qe->type == QUEUE_EMPTY)
     return -1;
 
-  old_head = q->head;
-  q->head = (q->head + 1) % q->size;
+  head = q->head + sizeof(struct queue_entry);
+  if (head > q->size)
+    head = 0;
+  q->head = head;
 
   MEM_BARRIER();
-  q->entries[old_head].type = 0;
+  qe->type = 0;
 
   return 0;
 }
 
 struct queue_entry * queue_head(struct queue *q)
 {
+  struct queue_entry *qe;
+  qe = (void *) q->entries + q->head;
+  
   /* Queue is empty */
-  if (q->head == q->tail)
+  if (qe->type == QUEUE_EMPTY)
     return NULL;
 
-  return &q->entries[q->head];
+  return qe;
 }

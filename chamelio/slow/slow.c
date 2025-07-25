@@ -4,6 +4,7 @@
 
 #include "slow.h"
 #include "guestif.h"
+#include "appif.h"
 #include "config.h"
 #include "log.h"
 #include "queue.h"
@@ -35,13 +36,21 @@ int slow_loop(struct slow_context *ctx)
   ret = guestif_init(ctx);
   if (ret != 0)
   {
-    LOG_ERROR("failed to initialize guestif");
+    LOG_ERROR("failed to initialise guestif");
+    return -1;
+  }
+
+  ret = appif_init(ctx);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to initialise appif");
     return -1;
   }
 
   while (1) 
   {
     guestif_poll(ctx);
+    appif_poll(ctx);
     poll_fast(ctx);
   }
 }
