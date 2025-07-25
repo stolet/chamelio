@@ -4,15 +4,25 @@
 #include <unistd.h>
 #include <sys/un.h>
 #include <sys/socket.h>
+#include <assert.h>
 
 #include "log.h"
+#include "queue.h"
 
 // TODO: Don't duplicate this
 #define GUEST_SOCKET_PATH "guest_socket"
+#define APP_SOCKET_PATH "app_socket"
 #define IVSHMEM_PROTOCOL_VERSION 0
 #define HOST_PEERID 255
+#define MAX_FP_CORES 16
+#define NIC_RXQ_LEN (64 * 32 * 1024)
+#define NIC_TXQ_LEN (64 * 8192)
 
 static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd);
+
+/* TODO: Move this to a lib context struct instead of global var */
+static int uxsocket_fd_global = -1;
+static int shm_fd_global = -1;
 
 int cham_init_guest()
 {
@@ -57,8 +67,7 @@ int cham_init_guest()
     goto err_close;
   }
 
-  /* now, we expect shared mem fd + a -1 index, note that shm fd
-    * is not used */
+  /* now, we expect shared mem fd */
   if (uxsocket_read_one_msg(sock_fd, &tmp, &fd) < 0 || tmp != -1 || fd < 0) 
   {
     if (fd >= 0) 
@@ -68,11 +77,116 @@ int cham_init_guest()
     goto err_close;
   }
 
-  return 0;
+  return fd;
 
 err_close:
   close(sock_fd);
   return -1;
+}
+
+int cham_init_app()
+{
+  struct sockaddr_un s_un;
+  int fd, ret, sock_fd;
+  int64_t tmp;
+
+  sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock_fd < 0) 
+  {
+    LOG_ERROR("failed to create socket");
+    return -1;
+  }
+  uxsocket_fd_global = sock_fd;
+
+  s_un.sun_family = AF_UNIX;
+  ret = snprintf(s_un.sun_path, sizeof(s_un.sun_path), 
+      "%s", APP_SOCKET_PATH);
+  if (ret < 0 || ret >= sizeof(s_un.sun_path)) 
+  {
+    LOG_ERROR("could not copy unix socket path");
+    goto err_close;
+  }
+
+  if (connect(sock_fd, (struct sockaddr *)&s_un, sizeof(s_un)) < 0) 
+  {
+    LOG_ERROR("cannot connect to chamelio");
+    goto err_close;
+  }
+
+  /* Get shared mem fd */
+  if (uxsocket_read_one_msg(sock_fd, &tmp, &fd) < 0 || tmp != -1 || fd < 0) 
+  {
+    if (fd >= 0) 
+      close(fd);
+    
+    LOG_ERROR("cannot read shared memory fd from chamelio");
+    goto err_close;
+  }
+  shm_fd_global = fd;
+
+  return fd;
+
+err_close:
+  close(sock_fd);
+  return -1;
+
+  return 0;
+}
+
+int cham_init_app_ctx()
+{
+  ssize_t sz, off;
+  struct queue_new_app_ctx_res *resp;
+  uint8_t resp_buf[sizeof(*resp)];
+  struct queue_new_app_ctx_req req = {
+    .rxq_len = NIC_RXQ_LEN,
+    .txq_len = NIC_TXQ_LEN,
+  };
+
+  /* send request on kernel socket */
+  struct iovec iov = {
+    .iov_base = &req,
+    .iov_len = sizeof(req),
+  };
+
+  union {
+    char buf[CMSG_SPACE(sizeof(int))];
+    struct cmsghdr align;
+  } u;
+
+  struct msghdr msg = {
+    .msg_name = NULL,
+    .msg_namelen = 0,
+    .msg_iov = &iov,
+    .msg_iovlen = 1,
+    .msg_control = u.buf,
+    .msg_controllen = sizeof(u.buf),
+    .msg_flags = 0,
+  };
+
+  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+  sz = sendmsg(uxsocket_fd_global, &msg, 0);
+  assert(sz == sizeof(req));
+
+  /* receive response on kernel socket */
+  resp = (struct queue_new_app_ctx_res *) resp_buf;
+  off = 0;
+  while (off < sizeof(*resp)) 
+  {
+    sz = read(uxsocket_fd_global, (uint8_t *) resp + off, sizeof(*resp) - off);
+    if (sz < 0) 
+    {
+      LOG_ERROR("read failed");
+      perror("");
+      return -1;
+    }
+    off += sz;
+  }
+
+  return 0;
 }
 
 static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd)

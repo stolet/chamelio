@@ -1,10 +1,11 @@
 lib_inc = include_directories('include')
 
-lib_srcs = files('connect.c')
+lib_srcs = files('init.c')
 
 deps = [
   dependency('utils_dep'),
-  dependency('log_dep')
+  dependency('log_dep'),
+  dependency('queue_dep'),
 ]
 
 lib = library(
