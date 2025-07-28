@@ -68,7 +68,7 @@ int fast_process_packet_error(struct fast_context *ctx,
     struct rte_mbuf *mb, uint8_t type)
 {
   // struct rte_mbuf *mb_copy;
-  struct queue *q;
+  struct equeue *q;
   q = ctx->fast_slow_q;
 
   switch(type)

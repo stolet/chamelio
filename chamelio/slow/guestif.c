@@ -178,7 +178,9 @@ static int uxsocket_accept(struct slow_context *ctx)
   struct guest_event *gev;
   struct guest_slow *g;
   struct shm_allocator *alloc;
-  struct queue *guest_cham_q, *cham_guest_q;
+  struct shm_handle *gc_handle, *cg_handle;
+  struct dqueue *guest_cham_q; 
+  struct equeue *cham_guest_q;
 
   int64_t version = IVSHMEM_PROTOCOL_VERSION;
   uint64_t hostid = HOST_PEERID;
@@ -289,22 +291,36 @@ static int uxsocket_accept(struct slow_context *ctx)
 
   /* TODO: Have a configuration param specifically for size
      of queue between chamelio and the agent */
-  /* Create queue that holds messages from guest agebt to Chamelio */
-  guest_cham_q = queue_new(ctx->config->app_queue_len, alloc);
+  /* Create queue that holds messages from guest agent to Chamelio */
+  ret = shmalloc_alloc(alloc, ctx->config->app_queue_len, &gc_handle);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocated memory in shared memory");
+    goto free_alloc;
+  }
+
+  guest_cham_q = dqueue_new(ctx->config->app_queue_len, gc_handle);
   if (guest_cham_q == NULL)
   {
     LOG_ERROR("failed to create guest->chamelio queue");
-    goto free_alloc;
+    goto free_gc_handle;
   }
   assert(guest_cham_q->entries == alloc->shm_base);
   g->guest_cham_q = guest_cham_q;
 
   /* Create queue that holds messages from Chamelio to guest agent */
-  cham_guest_q = queue_new(ctx->config->app_queue_len, alloc);
+  ret = shmalloc_alloc(alloc, ctx->config->app_queue_len, &cg_handle);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocated memory in shared memory");
+    goto free_guest_cham_q;
+  }
+
+  cham_guest_q = equeue_new(ctx->config->app_queue_len, cg_handle);
   if (cham_guest_q == NULL)
   {
     LOG_ERROR("failed to create chamelio->guest queue");
-    goto free_guest_cham_q;
+    goto free_cg_handle;
   }
   assert(cham_guest_q->entries == 
       (alloc->shm_base + ctx->config->app_queue_len));
@@ -332,8 +348,12 @@ static int uxsocket_accept(struct slow_context *ctx)
 
 free_cham_guest_q:
   free(cham_guest_q);
+free_cg_handle:
+  free(cg_handle);
 free_guest_cham_q:
   free(guest_cham_q);
+free_gc_handle:
+  shmalloc_free(alloc, gc_handle);
 free_alloc:
   free(alloc);
 free_guest:

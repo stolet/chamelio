@@ -5,6 +5,7 @@
 #include "nic.h"
 #include "fast.h"
 #include "slow.h"
+#include "shmalloc.h"
 
 struct chamelio_context {
   /* Configuration parameters */
@@ -15,10 +16,10 @@ struct chamelio_context {
   struct slow_context sp_ctx;
   /* Context for the fast-path in each core */
   struct fast_context **f_ctxs;
-  /* Queues from the fast-path to slow-path. One per core. */
-  struct queue **fast_slow_qs;
-  /* Queues from the slow-path to the fast-path. One per core */
-  struct queue **slow_fast_qs;
+  /* Shared memory handles for the fast-path to slow-path queues. One per core. */
+  struct shm_handle **fast_slow_handles;
+  /* Shared memory handles for the slow-path to fast-path queues. One per core. */
+  struct shm_handle **slow_fast_handles;
 };
 
 #endif

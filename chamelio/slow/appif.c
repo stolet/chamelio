@@ -184,7 +184,9 @@ static int uxsocket_accept(struct slow_context *ctx)
   struct app_slow *a;
   struct guest_slow *g;
   struct shm_allocator *alloc;
-  struct queue *guest_cham_q, *cham_guest_q;
+  struct shm_handle *gc_handle, *cg_handle;
+  struct dqueue *guest_cham_q;
+  struct equeue *cham_guest_q;
 
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));
@@ -245,22 +247,36 @@ static int uxsocket_accept(struct slow_context *ctx)
 
   /* TODO: Have a configuration param specifically for size
      of queue between chamelio and the agent */
-  /* Create queue that holds messages from guest agebt to Chamelio */
-  guest_cham_q = queue_new(ctx->config->app_queue_len, alloc);
+  /* Create queue that holds messages from guest agent to Chamelio */
+  ret = shmalloc_alloc(alloc, ctx->config->app_queue_len, &gc_handle);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocated memory in shared memory");
+    goto free_alloc;
+  }
+
+  guest_cham_q = dqueue_new(ctx->config->app_queue_len, gc_handle);
   if (guest_cham_q == NULL)
   {
     LOG_ERROR("failed to create guest->chamelio queue");
-    goto free_alloc;
+    goto free_gc_handle;
   }
   assert(guest_cham_q->entries == alloc->shm_base);
   g->guest_cham_q = guest_cham_q;
 
   /* Create queue that holds messages from Chamelio to guest agent */
-  cham_guest_q = queue_new(ctx->config->app_queue_len, alloc);
+  ret = shmalloc_alloc(alloc, ctx->config->app_queue_len, &cg_handle);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocated memory in shared memory");
+    goto free_guest_cham_q;
+  }
+
+  cham_guest_q = equeue_new(ctx->config->app_queue_len, cg_handle);
   if (cham_guest_q == NULL)
   {
     LOG_ERROR("failed to create chamelio->guest queue");
-    goto free_guest_cham_q;
+    goto free_cg_handle;
   }
   assert(cham_guest_q->entries == 
       (alloc->shm_base + ctx->config->app_queue_len));
@@ -305,8 +321,12 @@ free_app:
   free(a);
 free_cham_guest_q:
   free(cham_guest_q);
+free_cg_handle:
+  shmalloc_free(alloc, cg_handle);
 free_guest_cham_q:
   free(guest_cham_q);
+free_gc_handle:
+  shmalloc_free(alloc, gc_handle);
 free_alloc:
   free(alloc);
 free_guest:
@@ -331,11 +351,12 @@ static void uxsocket_error(struct slow_context *ctx, struct app_event *aev)
 
 static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
 {
-  int n, i;
+  int n, i, ret;
   size_t res_sz;
   struct app_context *app_ctx;
-  struct queue *app_cham_q, *cham_app_q;
-  struct shm_handle **rxq, **txq;
+  struct dqueue *app_cham_q; 
+  struct equeue *cham_app_q;
+  struct shm_handle **rxq, **txq, *ac_handle, *ca_handle;
 
   struct shm_allocator *alloc = aev->guest->alloc;
 
@@ -424,29 +445,41 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
       goto free_txq;
     }
     
-    memset((uint8_t *) alloc->shm_base + app_ctx->rxq[i]->base, 
-        0, aev->ctx_req.rxq_len);
-    memset((uint8_t *) alloc->shm_base + app_ctx->txq[i]->base, 
-        0, aev->ctx_req.txq_len);
-    aev->ctx_res.rxq_offs[i] = app_ctx->rxq[i]->base;
-    aev->ctx_res.txq_offs[i] = app_ctx->txq[i]->base;
+    memset((uint8_t *) app_ctx->rxq[i]->addr, 0, aev->ctx_req.rxq_len);
+    memset((uint8_t *) app_ctx->txq[i]->addr, 0, aev->ctx_req.txq_len);
+    aev->ctx_res.rxq_offs[i] = app_ctx->rxq[i]->off;
+    aev->ctx_res.txq_offs[i] = app_ctx->txq[i]->off;
   }
 
   /* Create queue that holds messages from the app context to Chamelio */
-  app_cham_q = queue_new(ctx->config->app_queue_len, alloc);
+  ret = shmalloc_alloc(alloc, ctx->config->app_queue_len, &ac_handle);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocated memory in shared memory");
+    goto free_shm_allocs;
+  }
+
+  app_cham_q = dqueue_new(ctx->config->app_queue_len, ac_handle);
   if (app_cham_q == NULL)
   {
     LOG_ERROR("failed to create guest->chamelio queue");
-    goto free_shm_allocs;
+    goto free_app_cham_handle;
   }
   app_ctx->app_cham_q = app_cham_q;
 
   /* Create queue that holds messages from Chamelio to the app context */
-  cham_app_q = queue_new(ctx->config->app_queue_len, alloc);
+  ret = shmalloc_alloc(alloc, ctx->config->app_queue_len, &ca_handle);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocated memory in shared memory");
+    goto free_app_cham_q;
+  }
+
+  cham_app_q = equeue_new(ctx->config->app_queue_len, ca_handle);
   if (cham_app_q == NULL)
   {
     LOG_ERROR("failed to create chamelio->app queue");
-    goto free_app_cham_q;
+    goto free_cham_app_handle;
   }
   app_ctx->cham_app_q = cham_app_q;
 
@@ -457,9 +490,9 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
 
   /* Initialise response */
   aev->ctx_res.n_fp_cores = ctx->config->fp_cores_max;
-  aev->ctx_res.cham_app_q_off = cham_app_q->sh->base;
+  aev->ctx_res.cham_app_q_off = cham_app_q->sh->off;
   aev->ctx_res.cham_app_q_len = cham_app_q->sh->len;
-  aev->ctx_res.app_cham_q_off = app_cham_q->sh->base;
+  aev->ctx_res.app_cham_q_off = app_cham_q->sh->off;
   aev->ctx_res.app_cham_q_len = app_cham_q->sh->len;
   /* TODO: Add the actual queue offsets. This is a list so
      we need a struct larger than a cache line size */
@@ -473,18 +506,24 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   {
     LOG_ERROR("send failed");
     perror("");
-    goto free_app_cham_q;
+    goto free_cham_app_q;
   } 
   else if (n < res_sz) 
   {
     LOG_ERROR("short send for response");
-    goto free_app_cham_q;
+    goto free_cham_app_q;
   }
 
   return;
 
+free_cham_app_q:
+  free(cham_app_q);
+free_cham_app_handle:
+  shmalloc_free(alloc, ca_handle);
 free_app_cham_q:
-    free(app_cham_q);
+  free(app_cham_q);
+free_app_cham_handle:
+  shmalloc_free(alloc, ac_handle);
 free_shm_allocs:
     for (i = 0; i < ctx->config->fp_cores_max; i++)
     {

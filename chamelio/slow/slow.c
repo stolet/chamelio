@@ -12,19 +12,42 @@
 int poll_fast();
 
 int slow_context_init(struct slow_context *ctx, struct configuration *config,
-    struct queue **fast_slow_qs, struct queue **slow_fast_qs)
+    struct shm_handle **fs_handles, struct shm_handle **sf_handles)
 {
-  ctx->config = config;
-  ctx->fast_slow_qs = fast_slow_qs;
-  ctx->slow_fast_qs = slow_fast_qs;
+  int i;
+  struct equeue *sfq;
+  struct dqueue *fsq;
 
+  ctx->config = config;
+  
   ctx->guest_uxfd = -1;
   ctx->guest_epfd = -1;
   ctx->guest_id_next = 0;
-
+  
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;
   ctx->app_id_next = 0;
+
+  /* Create a queue with each shared memory handle */
+  for (i = 0; i < config->fp_cores_max; i++)
+  {
+    /* TODO: Pass len as a queue parameter */
+    sfq = equeue_new(sf_handles[i]->len, sf_handles[i]);
+    if (sfq == NULL)
+    {
+      LOG_ERROR("failed to create fast to slow path queue");
+      return -1;
+    }
+    ctx->slow_fast_qs[i] = sfq;
+
+    fsq = dqueue_new(fs_handles[i]->len, sf_handles[i]);
+    if (fsq == NULL)
+    {
+      LOG_ERROR("failed to create slow to fast path queue");
+      return -1;
+    }
+    ctx->fast_slow_qs[i] = fsq;
+  }
 
   return 0;
 }
@@ -58,7 +81,7 @@ int slow_loop(struct slow_context *ctx)
 int poll_fast(struct slow_context *ctx)
 {
   uint8_t type;
-  struct queue *q;
+  struct dqueue *q;
   struct queue_entry *qe;
   int i;
 

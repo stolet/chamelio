@@ -23,16 +23,32 @@ int poll_slow(struct fast_context *ctx);
 
 int fast_context_init(struct fast_context *f_ctx, 
     struct rte_eth_dev_info *eth_dev_info, 
-    struct queue *fast_slow_q, struct queue *slow_fast_q,
+    struct shm_handle *fs_handle, struct shm_handle *sf_handle,
     struct configuration *config, uint16_t thread_id, uint8_t port_id)
 {
+  struct dqueue *sfq;
+  struct equeue *fsq;
 
   f_ctx->id = thread_id;
   network_init(&f_ctx->net_ctx, 
       eth_dev_info, config, thread_id, port_id);
-  
-  f_ctx->fast_slow_q = fast_slow_q;
-  f_ctx->slow_fast_q = slow_fast_q;
+
+    /* TODO: Pass len as a queue parameter */
+  sfq = dqueue_new(sf_handle->len, sf_handle);
+  if (sfq == NULL)
+  {
+    LOG_ERROR("failed to create fast to slow path queue");
+    return -1;
+  }
+  f_ctx->slow_fast_q = sfq;
+
+  fsq = equeue_new(fs_handle->len, sf_handle);
+  if (fsq == NULL)
+  {
+    LOG_ERROR("failed to create slow to fast path queue");
+    return -1;
+  }
+  f_ctx->fast_slow_q = fsq;
 
   return 0;
 }
@@ -184,7 +200,7 @@ int poll_tx(struct fast_context *ctx)
 int poll_slow(struct fast_context *ctx)
 {
   uint8_t type;
-  struct queue *q;
+  struct dqueue *q;
   struct queue_entry *qe;
 
   q = ctx->slow_fast_q;

@@ -29,8 +29,7 @@ int main (int argc, char **argv)
   void *shm_base;
   struct configuration *config;
   struct slow_context *s_ctx;
-  struct queue *q;
-  struct queue **fast_slow_qs, **slow_fast_qs;
+  struct shm_handle *sh, **fs_handles, **sf_handles;
   struct fast_context **f_ctxs;
   struct shm_allocator *alloc;
   unsigned threads_launched;
@@ -57,7 +56,7 @@ int main (int argc, char **argv)
   if (ret != 0)
   {
     LOG_ERROR("failed to initialize nic");
-    goto error_nic;
+    goto cleanup_nic;
   }
 
   /* Initialize fast path contexts in hugepages */
@@ -66,7 +65,7 @@ int main (int argc, char **argv)
   if (f_ctxs == NULL)
   {
     LOG_ERROR("failed to allocated f_ctxs");
-    goto error_nic;
+    goto cleanup_nic;
   }
   cham_ctx.f_ctxs = f_ctxs;
 
@@ -77,7 +76,7 @@ int main (int argc, char **argv)
   if (shm_base == NULL)
   {
     LOG_ERROR("failed to initialise internal shared memory region");
-    goto error_shm;
+    goto free_fctxs;
   }
 
   /* Create allocator for internal shared memory region */
@@ -85,7 +84,7 @@ int main (int argc, char **argv)
   if (alloc == NULL)
   {
     LOG_ERROR("failed to initialise shared memory allocator");
-    goto error_shmalloc;
+    goto destroy_huge;
   }
 
   /* Create slow-path context */
@@ -93,51 +92,50 @@ int main (int argc, char **argv)
   if (s_ctx == NULL)
   {
     LOG_ERROR("failed to allocate slow path context");
-    goto error_sctx;
+    goto free_alloc;
   }
 
   /* Allocate fast->slow queues */
-  fast_slow_qs = malloc(sizeof(struct queue *) * config->fp_cores_max);
-  if (fast_slow_qs == NULL)
+  fs_handles = malloc(sizeof(struct shm_handle *) * config->fp_cores_max);
+  if (fs_handles == NULL)
   {
-    LOG_ERROR("failed to allocate list for fast-path to slow-path queues");
-    goto error_fast_slow_list;
+    LOG_ERROR("failed to allocate list for fast to slow queue handles");
+    goto free_sctx;
   }
-  s_ctx->fast_slow_qs = fast_slow_qs;
-  cham_ctx.fast_slow_qs = fast_slow_qs;
+  cham_ctx.fast_slow_handles = fs_handles;
   
   /* Allocate slow->fast queues */
-  slow_fast_qs = malloc(sizeof(struct queue *) * config->fp_cores_max);
-  if (slow_fast_qs == NULL)
+  sf_handles = malloc(sizeof(struct queue *) * config->fp_cores_max);
+  if (sf_handles == NULL)
   {
     LOG_ERROR("failed to allocate list for slow-path to fast-path queues");
-    goto error_slow_fast_list;
+    goto free_sh_fast_slow_list;
   }
-  s_ctx->slow_fast_qs = slow_fast_qs;
-  cham_ctx.slow_fast_qs = slow_fast_qs;
+  cham_ctx.slow_fast_handles = sf_handles;
 
-  /* Create pair of queues between slow path and fast path for each core */
+  /* Allocate memory for queues between the slow path and the fast path */
   for (i = 0; i < config->fp_cores_max; i++)
   {
-    q = queue_new(QUEUE_SIZE, alloc);
-    if (q == NULL)
+    /* TODO: Use config parameter for slow<->fast queues */
+    ret = shmalloc_alloc(alloc, QUEUE_SIZE, &sh);
+    if (ret != 0)
     {
-      LOG_ERROR("failed to allcoate fast to slow queue");
-      goto error_queues;
+      LOG_ERROR("failed to allocated memory in shared memory for fast to slow queue");
+      goto free_sh_slow_fast_list;
     }
-    fast_slow_qs[i] = q;
+    fs_handles[i] = sh;
 
-    q = queue_new(QUEUE_SIZE, alloc);
-    if (q == NULL)
+    ret = shmalloc_alloc(alloc, QUEUE_SIZE, &sh);
+    if (ret != 0)
     {
-      LOG_ERROR("failed to allcoate slow to fast queue");
-      goto error_queues;
+      LOG_ERROR("failed to allocated memory in shared memory for slow to fast queue");
+      goto free_sh_slow_fast_list;
     }
-    slow_fast_qs[i] = q;
+    sf_handles[i] = sh;
   }
 
   /* Initialize slow-path */
-  slow_context_init(s_ctx, config, fast_slow_qs, slow_fast_qs);
+  slow_context_init(s_ctx, config, fs_handles, sf_handles);
   
   /* Start fast-path threads */
   threads_launched = fast_start(&cham_ctx.config);
@@ -145,30 +143,32 @@ int main (int argc, char **argv)
   {
     LOG_ERROR("failed to initialize fast path launched=%d target=%d", 
         threads_launched, cham_ctx.config.fp_cores_max);
-    goto error_queues;
+    goto free_shs;
   }
 
   /* Loop in slow-path */
   slow_loop(s_ctx);
 
-error_queues:
+free_shs:
   for (j = 0; j < i; j++)
   {
-    free(fast_slow_qs[i]);
-    free(slow_fast_qs[i]);
+    shmalloc_free(alloc, fs_handles[i]);
+    shmalloc_free(alloc, sf_handles[i]);
   }
-error_slow_fast_list:
-  free(fast_slow_qs);
-error_fast_slow_list:
+free_sh_slow_fast_list:
+  free(fs_handles);
+free_sh_fast_slow_list:
+  free(sf_handles);
+free_sctx:
   free(s_ctx);
-error_sctx:
+free_alloc:
   free(alloc);
-error_shmalloc:
+destroy_huge:
   shm_destroy_huge(CHAMELIO_SHM_NAME_INTERNAL, 
       1024 * 1024 * 1024, shm_base, sfd);
-error_shm:
+free_fctxs:
   rte_free(f_ctxs);
-error_nic:
+cleanup_nic:
   nic_cleanup(&cham_ctx.nic_ctx);
 error_exit:
   return -1;
@@ -237,7 +237,7 @@ static int fast_thread(void *arg)
 
   /* initialize data plane context */
   ret = fast_context_init(f_ctx, &cham_ctx.nic_ctx.eth_dev_info,
-      cham_ctx.fast_slow_qs[id], cham_ctx.slow_fast_qs[id],
+      cham_ctx.fast_slow_handles[id], cham_ctx.slow_fast_handles[id],
       &cham_ctx.config, id, cham_ctx.nic_ctx.port_id);
   if (ret != 0) 
   {

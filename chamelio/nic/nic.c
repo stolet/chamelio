@@ -81,9 +81,6 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   //   port_conf->txmode.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
   // }
 
-  // TODO: Make this a parameter
-  port_conf->intr_conf.rxq = 0;
-
   /* Initialize port */
   ret = rte_eth_dev_configure(port_id, config->fp_cores_max, 
       config->fp_cores_max, port_conf);

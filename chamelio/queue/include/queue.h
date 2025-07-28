@@ -61,11 +61,21 @@ struct queue_entry {
 /* TODO: Uncomment this */
 // STATIC_ASSERT(sizeof(struct queue_entry) == 64, queue_entry_size);
 
-/* Note that this queue is only safe if only one thread enqueues 
-   and only one thread dequeues */
-struct queue {
-  /* TODO: Use pos instead of head and tail because only one side 
-     updates this value locally */
+
+/* This queue is only used for enqueuing */
+struct equeue {
+  /* Only the side that enqueues updates the tail */
+  uint32_t tail;
+  /* Size of the queue in bytes */
+  uint32_t size;
+  /* Handle for shared memory containing the base of this queue */
+  struct shm_handle *sh;
+  /* List of entries that points to the base of the shm_handle */
+  void *entries;
+};
+
+/* This queue is only used for dequeueing */
+struct dqueue {
   /* Only the side that dequeues updates the head */
   uint32_t head;
   /* Only the side that enqueues updates the tail */
@@ -78,9 +88,10 @@ struct queue {
   void *entries;
 };
 
-struct queue * queue_new(uint32_t size, struct shm_allocator *alloc);
-int queue_enqueue(struct queue *q, uint8_t type);
-int queue_dequeue(struct queue *q);
-struct queue_entry * queue_head(struct queue *q);
+struct equeue * equeue_new(uint32_t size, struct shm_handle *sh);
+struct dqueue * dqueue_new(uint32_t size, struct shm_handle *sh);
+int queue_enqueue(struct equeue *q, uint8_t type);
+int queue_dequeue(struct dqueue *q);
+struct queue_entry * queue_head(struct dqueue *q);
 
 #endif

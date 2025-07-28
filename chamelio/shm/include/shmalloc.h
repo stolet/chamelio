@@ -6,8 +6,10 @@
 
 /* Handle used to access a shared memory region */
 struct shm_handle {
-  /* The offset into a shared memory region */
-  uintptr_t base;
+  /* A pointer into an allocated shared memory region */
+  void *addr;
+  /* The offset into the shared memory region from the base */
+  uint64_t off;
   /* Length of this allocation */
   size_t len;
   /* Next handle in list */

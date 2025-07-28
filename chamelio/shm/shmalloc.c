@@ -21,7 +21,8 @@ struct shm_allocator * shmalloc_init(int shm_fd, void *shm_base, uint64_t len)
     return NULL;
   }
 
-  sh->base = 0;
+  sh->addr = NULL;
+  sh->off = 0;
   sh->len = len;
   sh->next = NULL;
 
@@ -79,11 +80,13 @@ int shmalloc_alloc(struct shm_allocator *alloc, size_t length,
       return -1;
     }
 
-    ph_new->base = sh->base;
+    ph_new->addr = sh->addr;
+    ph_new->off = sh->off;
     ph_new->len = length;
     ph_new->next = NULL;
 
-    sh->base += length;
+    sh->off += length;
+    sh->addr = alloc->shm_base + sh->off;
     sh->len -= length;
   }
 
@@ -99,7 +102,7 @@ void shmalloc_free(struct shm_allocator *alloc, struct shm_handle *handle)
   /* look for first successor */
   sh_prev = NULL;
   sh = alloc->freelist;
-  while (sh != NULL && sh->next != NULL && sh->next->base < handle->base) 
+  while (sh != NULL && sh->next != NULL && sh->next->off < handle->off) 
   {
     sh_prev = sh;
     sh = sh->next;
@@ -133,7 +136,7 @@ static inline void merge_items(struct shm_allocator *alloc,
   if (sh_prev != NULL) 
   {
     sh = sh_prev->next;
-    if (sh_prev->base + sh_prev->len == sh->base) 
+    if (sh_prev->off + sh_prev->len == sh->off) 
     {
       /* merge with predecessor */
       sh_prev->next = sh->next;
@@ -149,7 +152,7 @@ static inline void merge_items(struct shm_allocator *alloc,
 
   /* try to merge with successor if there is one */
   ph_next = sh->next;
-  if (ph_next != NULL && sh->base + sh->len == ph_next->base) 
+  if (ph_next != NULL && sh->off + sh->len == ph_next->off) 
   {
     sh->len += ph_next->len;
     sh->next = ph_next->next;

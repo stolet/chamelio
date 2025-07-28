@@ -11,9 +11,9 @@ struct app_context {
   struct app_slow *app;
 
   /* Queue from the application to the Chamelio slow-path */
-  struct queue *app_cham_q;
+  struct dqueue *app_cham_q;
   /* Queue from the Chamelio slow-path to the application */
-  struct queue *cham_app_q;
+  struct equeue *cham_app_q;
 
   /* List of rx queues for each application context and a fast-path core */
   struct shm_handle **rxq;
@@ -47,9 +47,9 @@ struct guest_slow {
   struct shm_allocator *alloc;
   
   /* Queue from the guest to the Chamelio slow-path */
-  struct queue *guest_cham_q;
+  struct dqueue *guest_cham_q;
   /* Queue from the Chamelio slow-path to the guest */
-  struct queue *cham_guest_q;
+  struct equeue *cham_guest_q;
   
   /* Applications registered in this guest */
   struct app_slow *apps;
@@ -62,9 +62,9 @@ struct slow_context {
   /* Configuration parameters */
   struct configuration *config;
   /* Queues from the fast-path to slow-path. One per core. */
-  struct queue **fast_slow_qs;
+  struct dqueue **fast_slow_qs;
   /* Queues from the slow-path to the fast-path. One per core */
-  struct queue **slow_fast_qs;
+  struct equeue **slow_fast_qs;
 
   /* File descriptor for internal shared memory */
   int shm_fd_internal;
@@ -90,7 +90,7 @@ struct slow_context {
 };
 
 int slow_context_init(struct slow_context *s_ctx, struct configuration *config,
-    struct queue **fast_slow_qs, struct queue **slow_fast_qs);
+    struct shm_handle **fs_handles, struct shm_handle **sf_handles);
 int slow_loop(struct slow_context *ctx);
 
 #endif
