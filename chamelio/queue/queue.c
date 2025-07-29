@@ -38,21 +38,29 @@ struct dqueue * dqueue_new(uint32_t size, struct shm_handle *sh)
   
   q->sh = sh;
   q->entries = sh->addr;
-  q->tail = 0;
+  q->head = 0;
   q->size = size;
 
   return q;
 }
 
 /* Only one thread can enqueue */
-int queue_enqueue(struct equeue *q, uint8_t type)
+int queue_enqueue(struct equeue *q, struct queue_entry *qe)
 {
   uint32_t tail;
-  struct queue_entry *qe = q->entries + q->tail;
+  struct queue_entry *tail_entry = q->entries + q->tail;
   
   /* Queue is full */
-  if (qe->type != QUEUE_EMPTY)
+  if (tail_entry->type != QUEUE_EMPTY)
     return -1;
+
+  /* TODO: This copy could be a performance bottleneck. Leave it here
+     for now unless we notice it is a problem. An alternative is to
+     expose a queue_head and queue_tail function so that the caller
+     can directly modify the returned queue_entry. The enqueue
+     and dequeue function would then just increment the tail and
+     head. Rename it to increment_head and increment_tail. */
+  memcpy(&tail_entry->data, &qe->data, sizeof(qe->data));
 
   tail = q->tail + sizeof(struct queue_entry);
   if (tail > q->size)
@@ -60,7 +68,7 @@ int queue_enqueue(struct equeue *q, uint8_t type)
   q->tail = tail;
     
   MEM_BARRIER();
-  qe->type = type;
+  tail_entry->type = qe->type;
 
   return 0;
 }

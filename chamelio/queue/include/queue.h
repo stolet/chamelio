@@ -11,48 +11,70 @@
 /* TODO: Don't have this hardcoded */
 #define MAX_FP_CORES 16
 
+/* Type of queue entries */
 enum queue_type {
+  /* Signals that the queue is empty */
   QUEUE_EMPTY = 0,
+  /* Entry for fast path error */
   QUEUE_ERROR,
 
+  /* Entry for ARP in TX */
   QUEUE_ARP_TX,
+  /* Entry for ARP in RX */
   QUEUE_ARP_RX,
 
+  /* Entry for new app registration */
   QUEUE_NEW_APP,
 };
 
+/* Request for registering new application */
 struct queue_new_app_req {
 } __attribute__((packed));
 
+/* Response for registering new application */
 struct queue_new_app_res {
 
 } __attribute__((packed));
 
+/* Request for registering new application context */
 struct queue_new_app_ctx_req {
+  /* Length of rx queue for this context */
   uint32_t rxq_len;
+  /* Length of tx queue for this context */
   uint32_t txq_len;
 } __attribute__((packed));
 
+/* Response for registering new application context */
 struct queue_new_app_ctx_res {
+  /* Number of fast-path cores */
   uint32_t n_fp_cores;
 
+  /* Offset in shared memory for Chamelio->App queue */
   uint64_t cham_app_q_off;
+  /* Length in shared memory for Chamelio->App queue */
   uint32_t cham_app_q_len;
 
+  /* Offset in shared memory for App->Chamelio queue */
   uint64_t app_cham_q_off;
+  /* Length in shared memory for App->Chamelio queue */
   uint32_t app_cham_q_len;
 
+  /* Offset in shared memory for rx queues for each fast-path core */
   uint64_t rxq_offs[MAX_FP_CORES];
+  /* Offser in shared memory for tx queues for each fast-path core */
   uint64_t txq_offs[MAX_FP_CORES];
 } __attribute__((packed));
 
 struct queue_entry {
+  /* Type of queue entry */
   volatile uint8_t type;
+  /* Data section of queue entry */
   union {
     struct queue_new_app_req new_app_req;
     struct queue_new_app_res new_app_res;
     struct queue_new_app_ctx_req new_app_ctx_req;
     struct queue_new_app_ctx_res new_app_ctx_res;
+    /* Keeps queue entry the size of a cache line */
     uint8_t raw[63];
   } __attribute__((packed)) data;
 } __attribute__((packed));
@@ -78,8 +100,6 @@ struct equeue {
 struct dqueue {
   /* Only the side that dequeues updates the head */
   uint32_t head;
-  /* Only the side that enqueues updates the tail */
-  uint32_t tail;
   /* Size of the queue in bytes */
   uint32_t size;
   /* Handle for shared memory containing the base of this queue */
@@ -88,10 +108,17 @@ struct dqueue {
   void *entries;
 };
 
+/* Creates a new queue that can only enqueue entries. 
+   Prevents race conditions */
 struct equeue * equeue_new(uint32_t size, struct shm_handle *sh);
+/* Creates a new queue that can only dequeue entries. 
+   Prevents race conditions */
 struct dqueue * dqueue_new(uint32_t size, struct shm_handle *sh);
-int queue_enqueue(struct equeue *q, uint8_t type);
+/* Advances the tail pointer for the queue */
+int queue_enqueue(struct equeue *q, struct queue_entry *qe);
+/* Advances the head pointer for the queue */
 int queue_dequeue(struct dqueue *q);
+/* Returns a pointer to the queue entry at the head of the queue */
 struct queue_entry * queue_head(struct dqueue *q);
 
 #endif

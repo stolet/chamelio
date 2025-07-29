@@ -69,17 +69,20 @@ int fast_process_packet_error(struct fast_context *ctx,
 {
   // struct rte_mbuf *mb_copy;
   struct equeue *q;
+  struct queue_entry qe;
   q = ctx->fast_slow_q;
 
   switch(type)
   {
     case QUEUE_ARP_RX:
-      LOG_DEBUG("sending arp rx to slow");
-      queue_enqueue(q, type);
+    LOG_DEBUG("sending arp rx to slow");
+      qe.type = type;
+      queue_enqueue(q, &qe);
       break;
     case QUEUE_ARP_TX:
       LOG_DEBUG("sending arp tx to slow");
-      queue_enqueue(q, type);
+      qe.type = type;
+      queue_enqueue(q, &qe);
       break;
     default:
       LOG_ERROR("got unknown error");
