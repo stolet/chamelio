@@ -252,6 +252,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     LOG_ERROR("failed to allocated memory in shared memory");
     goto free_alloc;
   }
+  memset(agt_cham_handle->addr, 0, ctx->config->agt_queue_len);
 
   agt_cham_q = dqueue_new(ctx->config->agt_queue_len, agt_cham_handle);
   if (agt_cham_q == NULL)
@@ -269,6 +270,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     LOG_ERROR("failed to allocated memory in shared memory");
     goto free_agt_cham_q;
   }
+  memset(cham_agt_handle->addr, 0, ctx->config->agt_queue_len);
 
   cham_agt_q = equeue_new(ctx->config->agt_queue_len, cham_agt_handle);
   if (cham_agt_q == NULL)
@@ -436,7 +438,7 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
       LOG_ERROR("shmalloc_alloc for rxq=%d failed", i);
       goto free_txq;
     }
-
+    
     if (shmalloc_alloc(alloc, aev->ctx_req.txq_len, &app_ctx->txq[i]))
     {
       LOG_ERROR("shmalloc_alloc for txq=%d failed", i);
@@ -456,6 +458,7 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
     LOG_ERROR("failed to allocated memory in shared memory");
     goto free_shm_allocs;
   }
+  memset(ac_handle->addr, 0, ctx->config->app_queue_len);
 
   app_cham_q = dqueue_new(ctx->config->app_queue_len, ac_handle);
   if (app_cham_q == NULL)
@@ -472,6 +475,7 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
     LOG_ERROR("failed to allocated memory in shared memory");
     goto free_app_cham_q;
   }
+  memset(ca_handle->addr, 0, ctx->config->app_queue_len);
 
   cham_app_q = equeue_new(ctx->config->app_queue_len, ca_handle);
   if (cham_app_q == NULL)

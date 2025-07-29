@@ -119,6 +119,7 @@ int main (int argc, char **argv)
       LOG_ERROR("failed to allocated memory in shared memory for fast to slow queue");
       goto free_sh_slow_fast_list;
     }
+    memset(sh->addr, 0, config->cham_queue_len);
     fs_handles[i] = sh;
 
     ret = shmalloc_alloc(alloc, config->cham_queue_len, &sh);
@@ -127,6 +128,7 @@ int main (int argc, char **argv)
       LOG_ERROR("failed to allocated memory in shared memory for slow to fast queue");
       goto free_sh_slow_fast_list;
     }
+    memset(sh->addr, 0, config->cham_queue_len);
     sf_handles[i] = sh;
   }
 

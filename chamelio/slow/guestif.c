@@ -296,6 +296,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     LOG_ERROR("failed to allocated memory in shared memory");
     goto free_alloc;
   }
+  memset(agt_cham_handle->addr, 0, ctx->config->agt_queue_len);
 
   agt_cham_q = dqueue_new(ctx->config->agt_queue_len, agt_cham_handle);
   if (agt_cham_q == NULL)
@@ -313,6 +314,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     LOG_ERROR("failed to allocated memory in shared memory");
     goto free_agt_cham_q;
   }
+  memset(cham_agent_handle->addr, 0, ctx->config->agt_queue_len);
 
   cham_agt_q = equeue_new(ctx->config->agt_queue_len, cham_agent_handle);
   if (cham_agt_q == NULL)
