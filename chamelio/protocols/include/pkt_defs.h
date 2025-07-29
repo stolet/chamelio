@@ -49,10 +49,10 @@ struct eth_pkt {
 #define IP_PROTO_DCCP	   33
 #define IP_PROTO_GRE     47
 
-#define TAS_IP_ECN_NONE      0x0
-#define TAS_IP_ECN_ECT0      0x2
-#define TAS_IP_ECN_ECT1      0x1
-#define TAS_IP_ECN_CE        0x3
+#define CHAM_IP_ECN_NONE      0x0
+#define CHAM_IP_ECN_ECT0      0x2
+#define CHAM_IP_ECN_ECT1      0x1
+#define CHAM_IP_ECN_CE        0x3
 
 typedef beui32_t ip_addr_t;
 
