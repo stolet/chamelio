@@ -102,11 +102,6 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   return 0;
 }
 
-int nic_fast_init()
-{
-  return 0;
-}
-
 void nic_cleanup(struct nic_context *nic_ctx)
 {
   struct rte_flow_error error;

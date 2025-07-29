@@ -4,7 +4,8 @@
 #include <rte_mbuf.h>
 #include <rte_malloc.h>
 
-#include "network.h"
+#include "nic_fast.h"
+#include "nic.h"
 #include "log.h"
 
 #define BUFFER_SIZE 2048
@@ -22,18 +23,18 @@ static struct rte_mempool *mempool_alloc(uint16_t pool_id);
 static int reta_setup(uint8_t port_id, 
     uint16_t fp_cores_max, uint16_t reta_size);
 
-int network_init(struct network_context *net_ctx, 
-  struct rte_eth_dev_info *eth_dev_info, struct configuration *config,
-  uint16_t queue_id,uint8_t port_id)
+int nic_fast_init(struct nic_context *nic_ctx,
+    struct nic_fast_context *nic_fast_ctx, uint16_t queue_id,
+    struct configuration *config)
 {
   int ret;
   unsigned int rx_socket_id, tx_socket_id;
   
-  net_ctx->port_id = port_id;
-  net_ctx->queue_id = queue_id;
+  nic_fast_ctx->port_id = nic_ctx->port_id;
+  nic_fast_ctx->queue_id = queue_id;
 
   /* Allocate memory pool that will hold packets */
-  if ((net_ctx->pool = mempool_alloc(queue_id)) == NULL) 
+  if ((nic_fast_ctx->pool = mempool_alloc(queue_id)) == NULL) 
   {
     goto error_mempool;
   }
@@ -41,8 +42,9 @@ int network_init(struct network_context *net_ctx,
   /* Initialize TX queue */
   rte_spinlock_lock(&initlock);
   tx_socket_id = rte_socket_id();
-  ret = rte_eth_tx_queue_setup(port_id, net_ctx->queue_id, TX_DESCRIPTORS,
-      tx_socket_id, &eth_dev_info->default_txconf);
+  ret = rte_eth_tx_queue_setup(nic_ctx->port_id, nic_fast_ctx->queue_id, 
+      TX_DESCRIPTORS, tx_socket_id, 
+      &nic_ctx->eth_dev_info.default_txconf);
   rte_spinlock_unlock(&initlock);
 
   if (ret != 0) 
@@ -58,9 +60,9 @@ int network_init(struct network_context *net_ctx,
   /* Initialize RX queue */
   rte_spinlock_lock(&initlock);
   rx_socket_id = rte_socket_id();
-  ret = rte_eth_rx_queue_setup(port_id, net_ctx->queue_id, 
+  ret = rte_eth_rx_queue_setup(nic_ctx->port_id, nic_fast_ctx->queue_id, 
       RX_DESCRIPTORS, rx_socket_id, 
-      &eth_dev_info->default_rxconf, net_ctx->pool);
+      &nic_ctx->eth_dev_info.default_rxconf, nic_fast_ctx->pool);
   rte_spinlock_unlock(&initlock);
 
   if (ret != 0) 
@@ -76,15 +78,15 @@ int network_init(struct network_context *net_ctx,
   /* Start device if this is core 0 */
   if (queue_id == 0) 
   {
-    if (rte_eth_dev_start(port_id) != 0) 
+    if (rte_eth_dev_start(nic_ctx->port_id) != 0) 
     {
       LOG_ERROR("rte_eth_dev_start failed");
       goto error_tx_queue;
     }
 
     /* Setting up RETA failed */
-    if (reta_setup(port_id, config->fp_cores_max, 
-        eth_dev_info->reta_size) != 0) 
+    if (reta_setup(nic_ctx->port_id, config->fp_cores_max, 
+        nic_ctx->eth_dev_info.reta_size) != 0) 
     {
       LOG_ERROR("RETA setup failed\n");
       goto error_tx_queue;
@@ -100,49 +102,10 @@ int network_init(struct network_context *net_ctx,
 
 error_rx_queue:
 error_tx_queue:
-  rte_mempool_free(net_ctx->pool);
+  rte_mempool_free(nic_fast_ctx->pool);
 error_mempool:
-  free(net_ctx);
+  free(nic_ctx);
   return -1;
-}
-
-/* TODO: Move this to nic directory and rename things  */
-/* TODO: Move this to network.h so we can inline function.
-   only static functions can be inlined by compiler */
-int network_rx(struct network_context *ctx, 
-    unsigned num, struct rte_mbuf **mbs)
-{
-  uint8_t port_id;
-  uint16_t queue_id;
-  
-  port_id = ctx->port_id;
-  queue_id = ctx->queue_id;
-  num = rte_eth_rx_burst(port_id, queue_id, mbs, num);
-
-  return num;
-}
-
-int network_tx(struct network_context *ctx, 
-    unsigned num, struct rte_mbuf **mbs)
-{
-  unsigned sent;
-  uint8_t port_id;
-  uint16_t queue_id;
-  
-  port_id = ctx->port_id;
-  queue_id = ctx->queue_id;
-
-  sent = rte_eth_tx_burst(port_id, queue_id, mbs, num);
-
-  /* TODO: Deal with the case where we don't send everything 
-     (queue is full) gracefully */
-  if (sent == 0)
-  {
-    LOG_ERROR("We didn't send everything for some reason");
-    abort();
-  }
-
-  return sent;
 }
 
 static struct rte_mempool *mempool_alloc(uint16_t pool_id)

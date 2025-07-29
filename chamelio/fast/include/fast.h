@@ -5,7 +5,8 @@
 
 #include <rte_ethdev.h>
 
-#include "network.h" 
+#include "nic.h"
+#include "nic_fast.h" 
 #include "config.h"
 #include "queue.h"
 
@@ -52,7 +53,7 @@ struct guest_fast {
 
 struct fast_context {
   uint8_t id;
-  struct network_context net_ctx;
+  struct nic_fast_context nic_ctx;
   
   uint8_t n_guests;
   struct guest_fast *guests;
@@ -67,9 +68,9 @@ struct fast_context {
 };
 
 int fast_context_init(struct fast_context *f_ctx, 
-    struct rte_eth_dev_info *eth_dev_info, 
+    struct nic_context *nic_ctx, uint16_t thread_id,
     struct shm_handle *fs_handle, struct shm_handle *sf_handle,
-    struct configuration *config, uint16_t thread_id, uint8_t port_id);
+    struct configuration *config);
 int fast_loop(struct fast_context *ctx);
 void fast_context_destroy();
 

@@ -1,6 +1,6 @@
 nic_inc = include_directories('include')
 
-nic_srcs = files('nic.c')
+nic_srcs = files('nic.c', 'nic_fast.c')
 
 deps = [
   dependency('chamelio_dep'),
@@ -18,6 +18,7 @@ nic_lib = static_library(
 
 nic_dep = declare_dependency(
   link_with : nic_lib,
+  dependencies: deps,
   include_directories : nic_inc,
 )
 

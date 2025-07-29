@@ -3,10 +3,11 @@
 
 #include <rte_malloc.h>
 
-#include "network.h"
+#include "nic_fast.h"
 #include "fast_process.h"
-
 #include "fast.h"
+#include "nic.h"
+#include "nic_fast.h"
 #include "queue.h"
 #include "udp.h"
 #include "log.h"
@@ -22,16 +23,15 @@ int poll_tx(struct fast_context *ctx);
 int poll_slow(struct fast_context *ctx);
 
 int fast_context_init(struct fast_context *f_ctx, 
-    struct rte_eth_dev_info *eth_dev_info, 
+    struct nic_context *nic_ctx, uint16_t thread_id,
     struct shm_handle *fs_handle, struct shm_handle *sf_handle,
-    struct configuration *config, uint16_t thread_id, uint8_t port_id)
+    struct configuration *config)
 {
   struct dqueue *sfq;
   struct equeue *fsq;
 
   f_ctx->id = thread_id;
-  network_init(&f_ctx->net_ctx, 
-      eth_dev_info, config, thread_id, port_id);
+  nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
 
   sfq = dqueue_new(config->cham_queue_len, sf_handle);
   if (sfq == NULL)
@@ -101,7 +101,7 @@ int poll_rx(struct fast_context *ctx)
     n = TXBUF_SIZE - ctx->tx_n;
 
   /* Receive packets from the NIC */
-  n = network_rx(&ctx->net_ctx, n, mbs);
+  n = nic_fast_rx(&ctx->nic_ctx, n, mbs);
 
   if (n <= 0)
   {
@@ -146,7 +146,7 @@ int poll_tx(struct fast_context *ctx)
 
   /* Allocate mbufs to use for transmission */
   /* TODO: Have a cache for the mempool, free only what we used and don't allocate every loop */
-  ret = rte_pktmbuf_alloc_bulk(ctx->net_ctx.pool, mbs, n);
+  ret = rte_pktmbuf_alloc_bulk(ctx->nic_ctx.pool, mbs, n);
   if (ret < 0)
   {
     LOG_ERROR("not enough entries in the mempool");
@@ -175,7 +175,7 @@ int poll_tx(struct fast_context *ctx)
     return 0;
 
   /* Push packets to the NIC */
-  ret = network_tx(&ctx->net_ctx, ctx->tx_n, ctx->tx_mbs);
+  ret = nic_fast_tx(&ctx->nic_ctx, ctx->tx_n, ctx->tx_mbs);
   rte_pktmbuf_free_bulk(mbs, n);
 
   if (ret == ctx->tx_n)

@@ -1,6 +1,6 @@
 fast_inc = include_directories('include')
 
-fast_srcs = files('fast.c', 'fast_process.c', 'network.c')
+fast_srcs = files('fast.c', 'fast_process.c')
 
 deps = [
   dependency('config_dep'),
@@ -8,6 +8,7 @@ deps = [
   dependency('ip_dep'),
   dependency('eth_dep'),
   dependency('utils_dep'),
+  dependency('nic_dep'),
   dependency('queue_dep'),
   dependency('chamelio_dep'),
 ]

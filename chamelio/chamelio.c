@@ -233,9 +233,9 @@ static int fast_thread(void *arg)
   f_ctx->id = id;
 
   /* initialize data plane context */
-  ret = fast_context_init(f_ctx, &cham_ctx.nic_ctx.eth_dev_info,
+  ret = fast_context_init(f_ctx, &cham_ctx.nic_ctx, id,
       cham_ctx.fast_slow_handles[id], cham_ctx.slow_fast_handles[id],
-      &cham_ctx.config, id, cham_ctx.nic_ctx.port_id);
+      &cham_ctx.config);
   if (ret != 0) 
   {
     LOG_ERROR("failed to initialize fast path context");
