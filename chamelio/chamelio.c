@@ -76,7 +76,7 @@ int main (int argc, char **argv)
   }
 
   /* Create allocator for internal shared memory region */
-  alloc = shmalloc_init(sfd, shm_base, 1024 * 1024 * 1024);
+  alloc = shmalloc_init(sfd, shm_base, config->shm_internal_len);
   if (alloc == NULL)
   {
     LOG_ERROR("failed to initialise shared memory allocator");
