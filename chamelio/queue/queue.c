@@ -21,9 +21,6 @@ struct equeue * equeue_new(uint32_t size, struct shm_handle *sh)
   q->entries = sh->addr;
   q->tail = 0;
   q->size = size;
-  /* TODO: Set region to zero when we initialise both equeue and dqueue queues.
-     Don't do it in this function though because you don't want it to be cleared
-     twice. Maybe only do it in one of dequeue or enqueue. */
 
   return q;
 }

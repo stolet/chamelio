@@ -11,6 +11,7 @@
 
 enum cfg_params {
   CP_SHM_LEN,
+  CP_SHM_INTERNAL_LEN,
   CP_CHAM_QUEUE_LEN,
   CP_APP_QUEUE_LEN,
   CP_AGT_QUEUE_LEN,
@@ -27,6 +28,9 @@ static struct option opts[] = {
   { .name = "shm-len",
     .has_arg = required_argument,
     .val = CP_SHM_LEN },
+  { .name = "shm-internal-len",
+    .has_arg = required_argument,
+    .val = CP_SHM_INTERNAL_LEN },
   { .name = "cham-queue-len",
     .has_arg = required_argument,
     .val = CP_CHAM_QUEUE_LEN },
@@ -87,6 +91,12 @@ int config_parse(struct configuration *c, int argc, char **argv)
       case CP_SHM_LEN:
         if (parse_int64(optarg, &c->shm_len) != 0) {
           fprintf(stderr, "shm len parsing failed\n");
+          goto failed;
+        }
+        break;
+      case CP_SHM_INTERNAL_LEN:
+        if (parse_int64(optarg, &c->shm_internal_len) != 0) {
+          fprintf(stderr, "shm internal len parsing failed\n");
           goto failed;
         }
         break;
@@ -167,6 +177,7 @@ static int config_defaults(struct configuration *c, char *progname)
 {
   c->ip = 0;
   c->shm_len = 1024 * 1024 * 1024;
+  c->shm_internal_len = 1024 * 1024 * 32;
   c->cham_queue_len = 16 * 1024;
   c->app_queue_len = 1024 * 1024;
   c->agt_queue_len = 16 * 1024;
@@ -193,6 +204,8 @@ static void print_usage(struct configuration *c, char *progname)
       "Memory sizes:\n"
       "  --shm-len=LEN                           Shared memory len"
            "[default: %"PRIu64"]\n"
+      "  --shm-internal-len=LEN                  Internal shared memory len"
+           "[default: %"PRIu64"]\n"
       "  --cham-queue-len=LEN                    Chamelio Fast <-> Slow queue len"
            "[default: %"PRIu64"]\n"
       "  --app-queue-len=LEN                     Application <-> Chamelio queue len"
@@ -215,7 +228,7 @@ static void print_usage(struct configuration *c, char *progname)
       "  --dpdk-extra=ARG                        Add extra DPDK argument"
       "\n"
       ,progname, 
-      c->shm_len, 
+      c->shm_len, c->shm_internal_len,
       c->cham_queue_len, c->app_queue_len,  c->agt_queue_len,
       c->rxbuf_len, c->txbuf_len, 
       c->fp_cores_max);

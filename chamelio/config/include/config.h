@@ -21,6 +21,8 @@ struct configuration {
   /* SHM configurations */
   /* Shared memory size for one guest */
   uint64_t shm_len;
+  /* Internal Chamelio shared memory size */
+  uint64_t shm_internal_len;
   /* Size of queue between slow and fast path in Chamelio */
   uint64_t cham_queue_len;
   /* Size of queue between application and slow path */

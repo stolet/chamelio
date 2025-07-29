@@ -67,9 +67,8 @@ int main (int argc, char **argv)
   cham_ctx.f_ctxs = f_ctxs;
 
   /* Create internal shared memory region */
-  /* TODO: Pass internal shared memory size dynamically */
   shm_base = shm_create_huge(CHAMELIO_SHM_NAME_INTERNAL, 
-      1024 * 1024 * 1024, NULL, &sfd);
+      config->shm_internal_len, NULL, &sfd);
   if (shm_base == NULL)
   {
     LOG_ERROR("failed to initialise internal shared memory region");
