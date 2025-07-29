@@ -7,10 +7,11 @@
 
 /* ETH */
 
-#define ETH_ADDR_LEN 6
-
+/* Values for Ethernet protocol types */
 #define ETH_TYPE_IP   0x0800
 #define ETH_TYPE_ARP  0x0806
+
+#define ETH_ADDR_LEN 6
 
 struct eth_addr {
   uint8_t addr[ETH_ADDR_LEN];
@@ -28,17 +29,25 @@ struct eth_pkt {
 
 /* IP */
 
+/* Gets version from IP header */
 #define IPH_V(hdr)  ((hdr)->_v_hl >> 4)
+/* Gets header length from IP header */
 #define IPH_HL(hdr) ((hdr)->_v_hl & 0x0f)
+/* Gets the type of service from the IP header */
 #define IPH_TOS(hdr) ((hdr)->_tos)
+/* Gets ECN value from the IP header */
 #define IPH_ECN(hdr) ((hdr)->_tos & 0x3)
 
+/* Sets version and header length */
 #define IPH_VHL_SET(hdr, v, hl) (hdr)->_v_hl = (((v) << 4) | (hl))
+/* Sets the type of service */
 #define IPH_TOS_SET(hdr, tos) (hdr)->_tos = (tos)
+/* Sets ECN value */
 #define IPH_ECN_SET(hdr, e) (hdr)->_tos = ((hdr)->_tos & 0xffc) | (e)
 
 #define IP_HLEN 20
 
+/* Values for IP protocol types */
 #define IP_PROTO_IP      0
 #define IP_PROTO_ICMP    1
 #define IP_PROTO_IGMP    2
@@ -49,9 +58,13 @@ struct eth_pkt {
 #define IP_PROTO_DCCP	   33
 #define IP_PROTO_GRE     47
 
+/* No congestion experienced */
 #define CHAM_IP_ECN_NONE      0x0
+/* ECN capable transport */
 #define CHAM_IP_ECN_ECT0      0x2
+/* ECN capable transport */
 #define CHAM_IP_ECN_ECT1      0x1
+/* Congestion experienced */
 #define CHAM_IP_ECN_CE        0x3
 
 typedef beui32_t ip_addr_t;
