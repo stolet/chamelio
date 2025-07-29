@@ -15,9 +15,6 @@
 #include "shmalloc.h"
 
 
-/* TODO: Make this a parameter in the start */
-#define QUEUE_SIZE 256
-
 struct chamelio_context cham_ctx;
 
 static int fast_thread(void *arg);
@@ -116,8 +113,7 @@ int main (int argc, char **argv)
   /* Allocate memory for queues between the slow path and the fast path */
   for (i = 0; i < config->fp_cores_max; i++)
   {
-    /* TODO: Use config parameter for slow<->fast queues */
-    ret = shmalloc_alloc(alloc, QUEUE_SIZE, &sh);
+    ret = shmalloc_alloc(alloc, config->cham_queue_len, &sh);
     if (ret != 0)
     {
       LOG_ERROR("failed to allocated memory in shared memory for fast to slow queue");
@@ -125,7 +121,7 @@ int main (int argc, char **argv)
     }
     fs_handles[i] = sh;
 
-    ret = shmalloc_alloc(alloc, QUEUE_SIZE, &sh);
+    ret = shmalloc_alloc(alloc, config->cham_queue_len, &sh);
     if (ret != 0)
     {
       LOG_ERROR("failed to allocated memory in shared memory for slow to fast queue");

@@ -46,10 +46,10 @@ struct guest_slow {
   /* Allocator for shared memory region */
   struct shm_allocator *alloc;
   
-  /* Queue from the guest to the Chamelio slow-path */
-  struct dqueue *guest_cham_q;
-  /* Queue from the Chamelio slow-path to the guest */
-  struct equeue *cham_guest_q;
+  /* Queue from the guest agent to the Chamelio slow-path */
+  struct dqueue *agt_cham_q;
+  /* Queue from the Chamelio slow-path to the guest agent */
+  struct equeue *cham_agt_q;
   
   /* Applications registered in this guest */
   struct app_slow *apps;

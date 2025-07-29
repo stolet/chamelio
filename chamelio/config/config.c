@@ -13,6 +13,7 @@ enum cfg_params {
   CP_SHM_LEN,
   CP_CHAM_QUEUE_LEN,
   CP_APP_QUEUE_LEN,
+  CP_AGT_QUEUE_LEN,
   CP_RXBUF_LEN,
   CP_TXBUF_LEN,
   CP_IP_ADDR,
@@ -32,6 +33,9 @@ static struct option opts[] = {
   { .name = "app-queue-len",
     .has_arg = required_argument,
     .val = CP_APP_QUEUE_LEN },
+  { .name = "agt-queue-len",
+    .has_arg = required_argument,
+    .val = CP_AGT_QUEUE_LEN },
   { .name = "rxbuf-len",
     .has_arg = required_argument,
     .val = CP_RXBUF_LEN },
@@ -98,6 +102,12 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
+      case CP_AGT_QUEUE_LEN:
+        if (parse_int64(optarg, &c->agt_queue_len) != 0) {
+          fprintf(stderr, "agent queue len parsing failed\n");
+          goto failed;
+        }
+        break;
       case CP_RXBUF_LEN:
         if (parse_int64(optarg, &c->rxbuf_len) != 0) {
           fprintf(stderr, "rx buffer len parsing failed\n");
@@ -159,6 +169,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->shm_len = 1024 * 1024 * 1024;
   c->cham_queue_len = 16 * 1024;
   c->app_queue_len = 1024 * 1024;
+  c->agt_queue_len = 16 * 1024;
   c->rxbuf_len = 8192;
   c->txbuf_len = 8192;
   c->fp_cores_max = 1;
@@ -186,6 +197,8 @@ static void print_usage(struct configuration *c, char *progname)
            "[default: %"PRIu64"]\n"
       "  --app-queue-len=LEN                     Application <-> Chamelio queue len"
            "[default: %"PRIu64"]\n"
+      "  --agt-queue-len=LEN                     Guest agent <-> Chamelio queue len"
+           "[default: %"PRIu64"]\n"
       "  --rxbuf-len=LEN                         Application RX buffer len"
            "[default: %"PRIu64"]\n"
       "  --txbuf-len=LEN                         Application TX buffer len len"
@@ -203,7 +216,7 @@ static void print_usage(struct configuration *c, char *progname)
       "\n"
       ,progname, 
       c->shm_len, 
-      c->cham_queue_len, c->app_queue_len, 
+      c->cham_queue_len, c->app_queue_len,  c->agt_queue_len,
       c->rxbuf_len, c->txbuf_len, 
       c->fp_cores_max);
 }

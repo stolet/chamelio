@@ -25,6 +25,8 @@ struct configuration {
   uint64_t cham_queue_len;
   /* Size of queue between application and slow path */
   uint64_t app_queue_len;
+  /* Size of queue between guest agent and chamelio */
+  uint64_t agt_queue_len;
   /* Size of application receive buffer */
   uint64_t rxbuf_len;
   /* Size of application transmit buffer */
