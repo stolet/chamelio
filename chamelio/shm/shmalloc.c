@@ -21,7 +21,7 @@ struct shm_allocator * shmalloc_init(int shm_fd, void *shm_base, uint64_t len)
     return NULL;
   }
 
-  sh->addr = NULL;
+  sh->addr = shm_base;
   sh->off = 0;
   sh->len = len;
   sh->next = NULL;

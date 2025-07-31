@@ -1,6 +1,10 @@
 fast_inc = include_directories('include')
 
-fast_srcs = files('fast.c', 'fast_process.c')
+fast_srcs = files(
+  'fast.c', 
+  'fast_process.c',
+  'slowif.c'
+)
 
 deps = [
   dependency('config_dep'),

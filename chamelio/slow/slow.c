@@ -17,6 +17,8 @@ int slow_context_init(struct slow_context *ctx, struct configuration *config,
   int i;
   struct equeue *sfq;
   struct dqueue *fsq;
+  struct dqueue **fast_slow_qs;
+  struct equeue **slow_fast_qs;
 
   ctx->config = config;
   
@@ -28,6 +30,23 @@ int slow_context_init(struct slow_context *ctx, struct configuration *config,
   ctx->app_epfd = -1;
   ctx->app_id_next = 0;
 
+  /* Allocate pointer list for queues */
+  fast_slow_qs = malloc(sizeof(struct dqueue *) * config->fp_cores_max);
+  if (fast_slow_qs == NULL)
+  {
+    LOG_ERROR("failed to allocate list of fast->slow queues");
+    return -1;
+  }
+  ctx->fast_slow_qs = fast_slow_qs;
+
+  slow_fast_qs = malloc(sizeof(struct equeue *) * config->fp_cores_max);
+  if (slow_fast_qs == NULL)
+  {
+    LOG_ERROR("failed to alloacate list of slow->fast queues");
+    goto free_fast_slow_list;
+  }
+  ctx->slow_fast_qs = slow_fast_qs;
+
   /* Create a queue with each shared memory handle */
   for (i = 0; i < config->fp_cores_max; i++)
   {
@@ -35,20 +54,26 @@ int slow_context_init(struct slow_context *ctx, struct configuration *config,
     if (sfq == NULL)
     {
       LOG_ERROR("failed to create fast to slow path queue");
-      return -1;
+      goto free_slow_fast_list;
     }
     ctx->slow_fast_qs[i] = sfq;
 
-    fsq = dqueue_new(config->cham_queue_len, sf_handles[i]);
+    fsq = dqueue_new(config->cham_queue_len, fs_handles[i]);
     if (fsq == NULL)
     {
       LOG_ERROR("failed to create slow to fast path queue");
-      return -1;
+      goto free_slow_fast_list;
     }
     ctx->fast_slow_qs[i] = fsq;
   }
 
   return 0;
+
+free_slow_fast_list:
+  free(slow_fast_qs);
+free_fast_slow_list:
+  free(fast_slow_qs);
+  return -1;
 }
 
 int slow_loop(struct slow_context *ctx)
@@ -96,18 +121,17 @@ int poll_fast(struct slow_context *ctx)
       type = qe->type;
       switch (type)
       {
+        case QUEUE_EMPTY:
+          break;
         case QUEUE_ARP_TX:
-          LOG_DEBUG("sending arp tx to slow");
           break;
         case QUEUE_ARP_RX:
-          LOG_DEBUG("sending arp rx to slow");
           break;
         default:
-          LOG_ERROR("unknown queue entry type from fast path to slow path");
+          LOG_ERROR("unknown queue entry type from "
+              "fast path to slow path type=%d", type);
           abort();
       }
-
-      assert(queue_dequeue(q) == 0);
     }
   }
 

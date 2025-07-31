@@ -46,6 +46,9 @@ static inline int nic_fast_tx(struct nic_fast_context *ctx,
   unsigned sent;
   uint8_t port_id;
   uint16_t queue_id;
+
+  if (num == 0)
+    return 0;
   
   port_id = ctx->port_id;
   queue_id = ctx->queue_id;

@@ -4,21 +4,7 @@
 #include <stdint.h>
 
 struct configuration {
-  /* IP address configurations */
-  /* IP address for this host */
-  uint32_t ip;
-  /* IP prefix length for this host */
-  uint8_t ip_prefix;
-  /* List of routes */
-  struct config_route *routes;
-
-  /* Fast-path configurations */
-  /* Enable checksum offload */
-  uint32_t fp_xsumoffloads;
-  /* Max number of fast-path cores */
-  uint32_t fp_cores_max;
-
-  /* SHM configurations */
+  /*** SHM configurations ***/
   /* Shared memory size for one guest */
   uint64_t shm_len;
   /* Internal Chamelio shared memory size */
@@ -33,23 +19,43 @@ struct configuration {
   uint64_t rxbuf_len;
   /* Size of application transmit buffer */
   uint64_t txbuf_len;
+
+  /*** IP address configurations ***/
+  /* IP address for this host */
+  uint32_t ip;
+  /* IP prefix length for this host */
+  uint8_t ip_prefix;
+  /* List of routes */
+  struct config_route *routes;
+
+  /*** Number of apps and guests ***/
+  /* Max number of guests supported */
+  uint32_t max_guests;
+  /* Max number of applications per guest */
+  uint32_t max_apps;
+
+  /*** Fast-path configurations ***/
+  /* Enable checksum offload */
+  uint32_t fp_xsumoffloads;
+  /* Max number of fast-path cores */
+  uint32_t fp_cores_max;
   
-  /* DPDK configurations */
+  /*** DPDK configurations ***/
   /* DPDK extra argument count */
   int dpdk_argc;
   /* DPDK extra argument vector */
   char **dpdk_argv;
 };
 
-/** Route entry in configuration */
+/* Route entry in configuration */
 struct config_route {
-  /** Destination IP address */
+  /* Destination IP address */
   uint32_t ip;
-  /** Destination prefix length */
+  /* Destination prefix length */
   uint8_t ip_prefix;
-  /** Next hop IP */
+  /* Next hop IP */
   uint32_t next_hop_ip;
-  /** Next pointer for route list */
+  /* Next pointer for route list */
   struct config_route *next;
 };
 

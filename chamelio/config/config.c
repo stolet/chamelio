@@ -19,6 +19,8 @@ enum cfg_params {
   CP_TXBUF_LEN,
   CP_IP_ADDR,
   CP_IP_ROUTE,
+  CP_MAX_GUESTS,
+  CP_MAX_APPS,
   CP_FP_CORES_MAX,
   CP_FP_NO_XSUMOFFLOAD,
   CP_DPDK_EXTRA,
@@ -52,6 +54,12 @@ static struct option opts[] = {
   { .name = "ip-route",
     .has_arg = required_argument,
     .val = CP_IP_ROUTE },
+  { .name = "max-guests",
+    .has_arg = required_argument,
+    .val = CP_MAX_GUESTS },
+  { .name = "max-apps",
+    .has_arg = required_argument,
+    .val = CP_MAX_APPS },
   { .name = "fp-cores-max",
     .has_arg = required_argument,
     .val = CP_FP_CORES_MAX },
@@ -142,6 +150,18 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
+      case CP_MAX_GUESTS:
+        if (parse_int32(optarg, &c->max_guests) != 0) {
+          LOG_ERROR("max guests parsing failed");
+          goto failed;
+        }
+        break;
+      case CP_MAX_APPS:
+        if (parse_int32(optarg, &c->max_apps) != 0) {
+          LOG_ERROR("max apps parsing failed");
+          goto failed;
+        }
+        break;
       case CP_FP_CORES_MAX:
         if (parse_int32(optarg, &c->fp_cores_max) != 0) {
           LOG_ERROR("fp cores max parsing failed");
@@ -175,7 +195,6 @@ failed:
 
 static int config_defaults(struct configuration *c, char *progname)
 {
-  c->ip = 0;
   c->shm_len = 1024 * 1024 * 1024;
   c->shm_internal_len = 1024 * 1024 * 32;
   c->cham_queue_len = 16 * 1024;
@@ -183,6 +202,9 @@ static int config_defaults(struct configuration *c, char *progname)
   c->agt_queue_len = 16 * 1024;
   c->rxbuf_len = 8192;
   c->txbuf_len = 8192;
+  c->ip = 0;
+  c->max_guests = 128;
+  c->max_apps = 32;
   c->fp_cores_max = 1;
   c->fp_xsumoffloads = 1;
 
@@ -216,21 +238,27 @@ static void print_usage(struct configuration *c, char *progname)
            "[default: %"PRIu64"]\n"
       "  --txbuf-len=LEN                         Application TX buffer len len"
            "[default: %"PRIu64"]\n"
+      "IP protocol parameters:\n"
+      "  --ip-route=DEST[/PREFIX],NEXTHOP        Add route\n"
+      "  --ip-addr=ADDR[/PREFIXLEN]              Set local IP address\n"
+      "Max values:\n"
+      "  --max-guests=GUESTS                     Max number of guests\n"
+          "[default: %"PRIu32"]\n"
+      "  --max-apps=APPS                         Max number of apps per guest\n"
+          "[default: %"PRIu32"]\n"
       "Fast path:\n"
       "  --fp-cores-max=CORES                    Max cores used for fast path"
            "[default: %"PRIu32"]\n"
       "  --fp-no-xsumoffload                     Disable TX Checksum offload "
           "[default: enabled]\n"
-      "IP protocol parameters:\n"
-      "  --ip-route=DEST[/PREFIX],NEXTHOP        Add route\n"
-      "  --ip-addr=ADDR[/PREFIXLEN]              Set local IP address\n"
       "Miscelaneous:\n"
       "  --dpdk-extra=ARG                        Add extra DPDK argument"
       "\n"
       ,progname, 
       c->shm_len, c->shm_internal_len,
-      c->cham_queue_len, c->app_queue_len,  c->agt_queue_len,
-      c->rxbuf_len, c->txbuf_len, 
+      c->cham_queue_len, c->app_queue_len, c->agt_queue_len,
+      c->rxbuf_len, c->txbuf_len,
+      c->max_guests, c->max_apps,
       c->fp_cores_max);
 }
 

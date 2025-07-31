@@ -61,10 +61,6 @@ int guestif_poll(struct slow_context *ctx)
         {
           uxsocket_error(ctx, gev);
         }
-        else if ((evs[i].events & EPOLLIN) != 0)
-        {
-          LOG_DEBUG("EPOLLIN");
-        }
         break;
       default:
         LOG_WARN("unknown guest event type");
@@ -171,7 +167,7 @@ error_close:
 
 static int uxsocket_accept(struct slow_context *ctx)
 {
-  int ret, cfd, ifd, nfd, sfd;
+  int i, ret, cfd, ifd, nfd, sfd;
   void *shm_base;
   char shm_name[30];
   struct epoll_event ev;
@@ -181,6 +177,8 @@ static int uxsocket_accept(struct slow_context *ctx)
   struct shm_handle *agt_cham_handle, *cham_agent_handle;
   struct dqueue *agt_cham_q; 
   struct equeue *cham_agt_q;
+  struct queue_entry qe_new_guest;
+  struct queue_new_guest_req *new_guest_req;
 
   int64_t version = IVSHMEM_PROTOCOL_VERSION;
   uint64_t hostid = HOST_PEERID;
@@ -339,13 +337,32 @@ static int uxsocket_accept(struct slow_context *ctx)
     LOG_ERROR("epoll_ctl failed");
     perror("");
     goto free_cham_agt_q;
-  }  
+  }
+
+  /* Register new guest with the fast-path */
+  qe_new_guest.type = QUEUE_NEW_GUEST;
+  new_guest_req = (struct queue_new_guest_req *) &qe_new_guest.data;
+  new_guest_req->id = g->id;
+  new_guest_req->shm_base = shm_base;
+  new_guest_req->shm_len = ctx->config->shm_len;
+
+  for (i = 0; i < ctx->config->fp_cores_max; i++)
+  {
+    ret = queue_enqueue(ctx->slow_fast_qs[i], &qe_new_guest);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue new guest req to fast-path");
+      goto remove_from_epoll;
+    }
+  }
 
   ctx->guest_id_next++;
   g->next = ctx->guests;
   ctx->guests = g;
   return 0;
 
+remove_from_epoll:
+  epoll_ctl(ctx->guest_epfd, EPOLL_CTL_DEL, gev->fd, NULL);
 free_cham_agt_q:
   free(cham_agt_q);
 free_cham_agt_handle:

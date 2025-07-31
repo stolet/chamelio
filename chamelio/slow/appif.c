@@ -64,7 +64,6 @@ int appif_poll(struct slow_context *ctx)
         else if ((evs[i].events & EPOLLIN) != 0)
         {
           uxsocket_receive(ctx, aev);
-          LOG_DEBUG("EPOLLIN");
         }
         break;
       default:
@@ -176,7 +175,7 @@ error_close:
 
 static int uxsocket_accept(struct slow_context *ctx)
 {
-  int ret, cfd, sfd;
+  int i, ret, cfd, sfd;
   void *shm_base;
   char shm_name[30];
   struct epoll_event ev;
@@ -187,6 +186,9 @@ static int uxsocket_accept(struct slow_context *ctx)
   struct shm_handle *agt_cham_handle, *cham_agt_handle;
   struct dqueue *agt_cham_q;
   struct equeue *cham_agt_q;
+  struct queue_entry qe_new_guest, qe_new_app;
+  struct queue_new_guest_req *new_guest_req;
+  struct queue_new_app_req *new_app_req;
 
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));
@@ -279,7 +281,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     goto free_cham_agt_handle;
   }
   assert(cham_agt_q->entries == 
-      (alloc->shm_base + ctx->config->app_queue_len));
+      (alloc->shm_base + ctx->config->agt_queue_len));
   g->cham_agt_q = cham_agt_q;
 
   /* Allocate slow path struct for application */
@@ -309,12 +311,45 @@ static int uxsocket_accept(struct slow_context *ctx)
     goto free_app;
   }  
 
+  /* Register new guest with the fast-path */
+  qe_new_guest.type = QUEUE_NEW_GUEST;
+  new_guest_req = (struct queue_new_guest_req *) &qe_new_guest.data;
+  new_guest_req->id = g->id;
+  new_guest_req->shm_base = shm_base;
+  new_guest_req->shm_len = ctx->config->shm_len;
+
+  for (i = 0; i < ctx->config->fp_cores_max; i++)
+  {
+    ret = queue_enqueue(ctx->slow_fast_qs[i], &qe_new_guest);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue new guest req to fast-path");
+      goto free_app;
+    }
+  }
+
+  /* Register new application with the fast-path */
+  qe_new_app.type = QUEUE_NEW_APP;
+  new_app_req = (struct queue_new_app_req *) &qe_new_app.data;
+  new_app_req->id = a->id;
+
+  for (i = 0; i < ctx->config->fp_cores_max; i++)
+  {
+    ret = queue_enqueue(ctx->slow_fast_qs[i], &qe_new_app);
+        if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue new app req to fast-path");
+      goto free_app;
+    }
+  }
+
   ctx->guest_id_next++;
   ctx->app_id_next++;
   a->next = g->apps;
   g->apps = a;
   g->next = ctx->guests;
   ctx->guests = g;
+
   return 0;
 
 free_app:
@@ -515,6 +550,8 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
     LOG_ERROR("short send for response");
     goto free_cham_app_q;
   }
+
+  /* Register new application context with the fast-path */
 
   return;
 

@@ -12,10 +12,11 @@
 #include "udp.h"
 #include "log.h"
 #include "config.h"
+#include "slowif.h"
 
 
 struct guest_fast * init_guest(uint8_t id, uint64_t shm_len);
-struct application_fast * init_application(uint8_t id);
+struct app_fast * init_app(uint8_t id);
 
 int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
@@ -27,8 +28,11 @@ int fast_context_init(struct fast_context *f_ctx,
     struct shm_handle *fs_handle, struct shm_handle *sf_handle,
     struct configuration *config)
 {
+  int i, j;
   struct dqueue *sfq;
   struct equeue *fsq;
+  struct guest_fast *guests;
+  struct app_fast *apps;
 
   f_ctx->id = thread_id;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
@@ -41,7 +45,7 @@ int fast_context_init(struct fast_context *f_ctx,
   }
   f_ctx->slow_fast_q = sfq;
 
-  fsq = equeue_new(config->cham_queue_len, sf_handle);
+  fsq = equeue_new(config->cham_queue_len, fs_handle);
   if (fsq == NULL)
   {
     LOG_ERROR("failed to create slow to fast path queue");
@@ -49,7 +53,35 @@ int fast_context_init(struct fast_context *f_ctx,
   }
   f_ctx->fast_slow_q = fsq;
 
+  /* TODO: Maybe allocate this in hugepages instead */
+  guests = calloc(config->max_guests, sizeof(struct guest_fast));
+  if (guests == NULL)
+  {
+    LOG_ERROR("failed to allocate guest list for fast-path context");
+    return -1;
+  }
+  f_ctx->guests = guests;
+
+  for (i = 0; i < config->max_guests; i++)
+  {
+    /* TODO: Maybe allocate this in hugepages instead */
+    apps = calloc(config->max_apps, sizeof(struct app_fast));
+    if (apps == NULL)
+    {
+      LOG_ERROR("failed to allocate app list for fast-path context");
+      goto free_apps;
+    }
+    f_ctx->guests[i].apps = apps;
+  }
+
   return 0;
+
+free_apps:
+  for (j = 0; j < i; j++)
+    free(f_ctx->guests[j].apps);
+
+  free(guests);
+  return -1;
 }
 
 void fast_context_destroy()
@@ -145,7 +177,8 @@ int poll_tx(struct fast_context *ctx)
     n = TXBUF_SIZE - ctx->tx_n;
 
   /* Allocate mbufs to use for transmission */
-  /* TODO: Have a cache for the mempool, free only what we used and don't allocate every loop */
+  /* TODO: Have a cache for the mempool, 
+     free only what we used and don't allocate every loop */
   ret = rte_pktmbuf_alloc_bulk(ctx->nic_ctx.pool, mbs, n);
   if (ret < 0)
   {
@@ -171,9 +204,6 @@ int poll_tx(struct fast_context *ctx)
     guest = guest->next_guest;
   }
 
-  if (ctx->tx_n == 0)
-    return 0;
-
   /* Push packets to the NIC */
   ret = nic_fast_tx(&ctx->nic_ctx, ctx->tx_n, ctx->tx_mbs);
   rte_pktmbuf_free_bulk(mbs, n);
@@ -198,27 +228,5 @@ int poll_tx(struct fast_context *ctx)
 
 int poll_slow(struct fast_context *ctx)
 {
-  uint8_t type;
-  struct dqueue *q;
-  struct queue_entry *qe;
-
-  q = ctx->slow_fast_q;
-  qe = queue_head(q);
-  
-  if (qe != NULL)
-  {
-    type = qe->type;
-    switch (type)
-    {
-    case QUEUE_ARP_TX:
-      queue_dequeue(q);
-      LOG_DEBUG("received arp tx from slow");
-      break;
-    default:
-      LOG_WARN("unknown queue tryt type from slow path to fast path");
-      break;
-    }
-  }
-
-  return 0;
+  return slowif_poll(ctx);
 }

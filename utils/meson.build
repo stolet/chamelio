@@ -6,7 +6,7 @@ utils_inc = include_directories('include')
 utils_lib = static_library(
   'utils',
   include_directories : utils_inc,
-  install : false
+  install : false,
 )
 
 deps = [

@@ -23,12 +23,30 @@ enum queue_type {
   /* Entry for ARP in RX */
   QUEUE_ARP_RX,
 
+  /* Entry for new guest registration */
+  QUEUE_NEW_GUEST,
   /* Entry for new app registration */
   QUEUE_NEW_APP,
 };
 
+/* Request for registering new guest */
+struct queue_new_guest_req {
+  /* Guest ID */
+  uint8_t id;
+  /* Base pointer to shared memory region for this guest */
+  void *shm_base;
+  /* Length of shared memory region for this guest */
+  uint64_t shm_len;
+} __attribute__((packed));
+
 /* Request for registering new application */
 struct queue_new_app_req {
+  /* Application ID */
+  uint8_t id;
+  /* Guest ID */
+  uint8_t gid;
+  /* Protocol ID */
+  uint8_t pid;
 } __attribute__((packed));
 
 /* Response for registering new application */
