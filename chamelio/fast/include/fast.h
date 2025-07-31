@@ -71,7 +71,6 @@ struct fast_context {
   /* Number of guests registered so far in this fast-path */
   uint8_t n_guests;
   /* List of guests registered so far in this fast-path */
-  /* TODO pre-allocate this list when fast path context is initialised */
   struct guest_fast *guests;
 
   /* Number of mbufs that are processed and ready to be transmitted */

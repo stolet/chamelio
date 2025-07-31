@@ -53,8 +53,8 @@ int fast_context_init(struct fast_context *f_ctx,
   }
   f_ctx->fast_slow_q = fsq;
 
-  /* TODO: Maybe allocate this in hugepages instead */
-  guests = calloc(config->max_guests, sizeof(struct guest_fast));
+  guests = rte_calloc("fast path guests", config->max_guests, 
+      sizeof(struct guest_fast), 0);
   if (guests == NULL)
   {
     LOG_ERROR("failed to allocate guest list for fast-path context");
@@ -64,8 +64,8 @@ int fast_context_init(struct fast_context *f_ctx,
 
   for (i = 0; i < config->max_guests; i++)
   {
-    /* TODO: Maybe allocate this in hugepages instead */
-    apps = calloc(config->max_apps, sizeof(struct app_fast));
+    apps = rte_calloc("fast path apps", config->max_apps, 
+        sizeof(struct app_fast), 0);
     if (apps == NULL)
     {
       LOG_ERROR("failed to allocate app list for fast-path context");
