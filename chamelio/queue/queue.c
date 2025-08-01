@@ -7,7 +7,7 @@
 #include "shmalloc.h"
 
 /* TODO: Pass addr and off instead of the handle */
-struct equeue * equeue_new(uint32_t size, struct shm_handle *sh)
+struct equeue * equeue_new(uint32_t size, void *base, uint64_t off)
 {
   struct equeue *q;
 
@@ -18,8 +18,8 @@ struct equeue * equeue_new(uint32_t size, struct shm_handle *sh)
     return NULL;
   }
   
-  q->sh = sh;
-  q->entries = sh->addr;
+  q->off = off;
+  q->entries = base;
   q->tail = 0;
   q->size = size;
 
@@ -27,7 +27,7 @@ struct equeue * equeue_new(uint32_t size, struct shm_handle *sh)
 }
 
 /* TODO: Pass addr and off instead of the handle */
-struct dqueue * dqueue_new(uint32_t size, struct shm_handle *sh)
+struct dqueue * dqueue_new(uint32_t size, void *base, uint64_t off)
 {
   struct dqueue *q;
 
@@ -38,8 +38,8 @@ struct dqueue * dqueue_new(uint32_t size, struct shm_handle *sh)
     return NULL;
   }
   
-  q->sh = sh;
-  q->entries = sh->addr;
+  q->off = off;
+  q->entries = base;
   q->head = 0;
   q->size = size;
 
@@ -47,7 +47,7 @@ struct dqueue * dqueue_new(uint32_t size, struct shm_handle *sh)
 }
 
 /* Only one thread can enqueue */
-int queue_enqueue(struct equeue *q, struct queue_entry *qe)
+int queue_enqueue(struct equeue *q, uint8_t type)
 {
   uint32_t tail;
   struct queue_entry *tail_entry = q->entries + q->tail;
@@ -56,20 +56,13 @@ int queue_enqueue(struct equeue *q, struct queue_entry *qe)
   if (tail_entry->type != QUEUE_EMPTY)
     return -1;
 
-  /* TODO: Leave copy for now. An alternative is to
-     expose a queue_head and queue_tail function so that the caller
-     can directly modify the returned queue_entry. The enqueue
-     and dequeue function would then just increment the tail and
-     head. Rename it to increment_head and increment_tail. */
-  memcpy(&tail_entry->data, &qe->data, sizeof(qe->data));
-
   tail = q->tail + sizeof(struct queue_entry);
   if (tail > q->size)
     tail = 0;
   q->tail = tail;
     
   MEM_BARRIER();
-  tail_entry->type = qe->type;
+  tail_entry->type = type;
 
   return 0;
 }
@@ -102,6 +95,18 @@ struct queue_entry * queue_head(struct dqueue *q)
   
   /* Queue is empty */
   if (qe->type == QUEUE_EMPTY)
+    return NULL;
+
+  return qe;
+}
+
+struct queue_entry * queue_tail(struct equeue *q)
+{
+  struct queue_entry *qe;
+  qe = (void *) q->entries + q->tail;
+  
+  /* Queue is empty */
+  if (qe->type != QUEUE_EMPTY)
     return NULL;
 
   return qe;

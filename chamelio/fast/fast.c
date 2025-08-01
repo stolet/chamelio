@@ -38,7 +38,7 @@ int fast_context_init(struct fast_context *f_ctx,
   f_ctx->id = thread_id;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
 
-  sfq = dqueue_new(config->cham_queue_len, sf_handle);
+  sfq = dqueue_new(config->cham_queue_len, sf_handle->addr, sf_handle->off);
   if (sfq == NULL)
   {
     LOG_ERROR("failed to create fast to slow path queue");
@@ -46,7 +46,7 @@ int fast_context_init(struct fast_context *f_ctx,
   }
   f_ctx->slow_fast_q = sfq;
 
-  fsq = equeue_new(config->cham_queue_len, fs_handle);
+  fsq = equeue_new(config->cham_queue_len, fs_handle->addr, fs_handle->off);
   if (fsq == NULL)
   {
     LOG_ERROR("failed to create slow to fast path queue");

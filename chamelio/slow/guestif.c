@@ -177,7 +177,7 @@ static int uxsocket_accept(struct slow_context *ctx)
   struct shm_handle *agt_cham_handle, *cham_agent_handle;
   struct dqueue *agt_cham_q; 
   struct equeue *cham_agt_q;
-  struct queue_entry qe_new_guest;
+  struct queue_entry *qe_new_guest;
   struct queue_new_guest_req *new_guest_req;
 
   int64_t version = IVSHMEM_PROTOCOL_VERSION;
@@ -296,7 +296,8 @@ static int uxsocket_accept(struct slow_context *ctx)
   }
   memset(agt_cham_handle->addr, 0, ctx->config->agt_queue_len);
 
-  agt_cham_q = dqueue_new(ctx->config->agt_queue_len, agt_cham_handle);
+  agt_cham_q = dqueue_new(ctx->config->agt_queue_len, 
+      agt_cham_handle->addr, agt_cham_handle->off);
   if (agt_cham_q == NULL)
   {
     LOG_ERROR("failed to create guest->chamelio queue");
@@ -314,7 +315,8 @@ static int uxsocket_accept(struct slow_context *ctx)
   }
   memset(cham_agent_handle->addr, 0, ctx->config->agt_queue_len);
 
-  cham_agt_q = equeue_new(ctx->config->agt_queue_len, cham_agent_handle);
+  cham_agt_q = equeue_new(ctx->config->agt_queue_len, 
+      cham_agent_handle->addr, cham_agent_handle->off);
   if (cham_agt_q == NULL)
   {
     LOG_ERROR("failed to create chamelio->guest queue");
@@ -340,15 +342,14 @@ static int uxsocket_accept(struct slow_context *ctx)
   }
 
   /* Register new guest with the fast-path */
-  qe_new_guest.type = QUEUE_NEW_GUEST;
-  new_guest_req = (struct queue_new_guest_req *) &qe_new_guest.data;
-  new_guest_req->id = g->id;
-  new_guest_req->shm_base = shm_base;
-  new_guest_req->shm_len = ctx->config->shm_len;
-
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
-    ret = queue_enqueue(ctx->slow_fast_qs[i], &qe_new_guest);
+    qe_new_guest = queue_tail(ctx->slow_fast_qs[i]);
+    new_guest_req = (struct queue_new_guest_req *) &qe_new_guest->data;
+    new_guest_req->id = g->id;
+    new_guest_req->shm_base = shm_base;
+    new_guest_req->shm_len = ctx->config->shm_len;
+    ret = queue_enqueue(ctx->slow_fast_qs[i], QUEUE_NEW_GUEST);
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new guest req to fast-path");

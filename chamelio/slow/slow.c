@@ -50,7 +50,8 @@ int slow_context_init(struct slow_context *ctx, struct configuration *config,
   /* Create a queue with each shared memory handle */
   for (i = 0; i < config->fp_cores_max; i++)
   {
-    sfq = equeue_new(config->cham_queue_len, sf_handles[i]);
+    sfq = equeue_new(config->cham_queue_len, 
+        sf_handles[i]->addr, sf_handles[i]->off);
     if (sfq == NULL)
     {
       LOG_ERROR("failed to create fast to slow path queue");
@@ -58,7 +59,8 @@ int slow_context_init(struct slow_context *ctx, struct configuration *config,
     }
     ctx->slow_fast_qs[i] = sfq;
 
-    fsq = dqueue_new(config->cham_queue_len, fs_handles[i]);
+    fsq = dqueue_new(config->cham_queue_len, 
+        fs_handles[i]->addr, fs_handles[i]->off);
     if (fsq == NULL)
     {
       LOG_ERROR("failed to create slow to fast path queue");

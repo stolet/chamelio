@@ -102,7 +102,7 @@ struct queue_new_app_ctx_res {
 } __attribute__((packed));
 
 struct queue_entry {
-  /* Type of queue entry */
+  /* Type of queue entry. Don't update outside of enqueue or dequeue */
   volatile uint8_t type;
   /* Data section of queue entry */
   union {
@@ -127,9 +127,9 @@ struct equeue {
   uint32_t tail;
   /* Size of the queue in bytes */
   uint32_t size;
-  /* Handle for shared memory containing the base of this queue */
-  struct shm_handle *sh;
-  /* List of entries that points to the base of the shm_handle */
+  /* Offset from the shared memory region to start of the queue */
+  uint64_t off;
+  /* List of entries that points to the start of the queue in the shm region */
   void *entries;
 };
 
@@ -139,23 +139,25 @@ struct dqueue {
   uint32_t head;
   /* Size of the queue in bytes */
   uint32_t size;
-  /* Handle for shared memory containing the base of this queue */
-  struct shm_handle *sh;
-  /* List of entries that points to the base of the shm_handle */
+  /* Offset from the shared memory region to start of the queue */
+  uint64_t off;
+  /* List of entries that points to the start of the queue in the shm region */
   void *entries;
 };
 
 /* Creates a new queue that can only enqueue entries. 
    Prevents race conditions */
-struct equeue * equeue_new(uint32_t size, struct shm_handle *sh);
+struct equeue * equeue_new(uint32_t size, void *base, uint64_t off);
 /* Creates a new queue that can only dequeue entries. 
    Prevents race conditions */
-struct dqueue * dqueue_new(uint32_t size, struct shm_handle *sh);
+struct dqueue * dqueue_new(uint32_t size, void *base, uint64_t off);
 /* Advances the tail pointer for the queue */
-int queue_enqueue(struct equeue *q, struct queue_entry *qe);
+int queue_enqueue(struct equeue *q, uint8_t type);
 /* Advances the head pointer for the queue */
 int queue_dequeue(struct dqueue *q);
 /* Returns a pointer to the queue entry at the head of the queue */
 struct queue_entry * queue_head(struct dqueue *q);
+/* Returns a pointer to the next empty queue entry at the tail of the queue */
+struct queue_entry * queue_tail(struct equeue *q);
 
 #endif

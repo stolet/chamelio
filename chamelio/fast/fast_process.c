@@ -68,17 +68,15 @@ int fast_process_packet_error(struct fast_context *ctx,
     struct rte_mbuf *mb, uint8_t type)
 {
   struct equeue *q;
-  struct queue_entry qe;
   q = ctx->fast_slow_q;
 
   switch(type)
   {
     case QUEUE_ARP_RX:
-      qe.type = type;
-      queue_enqueue(q, &qe);
+      queue_enqueue(q, QUEUE_ARP_RX);
       break;
     case QUEUE_ARP_TX:
-      queue_enqueue(q, &qe);
+      queue_enqueue(q, QUEUE_ARP_TX);
       break;
     default:
       LOG_ERROR("got unknown error");

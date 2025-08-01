@@ -186,7 +186,7 @@ static int uxsocket_accept(struct slow_context *ctx)
   struct shm_handle *agt_cham_handle, *cham_agt_handle;
   struct dqueue *agt_cham_q;
   struct equeue *cham_agt_q;
-  struct queue_entry qe_new_guest, qe_new_app;
+  struct queue_entry *qe_new_guest, *qe_new_app;
   struct queue_new_guest_req *new_guest_req;
   struct queue_new_app_req *new_app_req;
 
@@ -256,7 +256,8 @@ static int uxsocket_accept(struct slow_context *ctx)
   }
   memset(agt_cham_handle->addr, 0, ctx->config->agt_queue_len);
 
-  agt_cham_q = dqueue_new(ctx->config->agt_queue_len, agt_cham_handle);
+  agt_cham_q = dqueue_new(ctx->config->agt_queue_len, 
+      agt_cham_handle->addr, agt_cham_handle->off);
   if (agt_cham_q == NULL)
   {
     LOG_ERROR("failed to create guest->chamelio queue");
@@ -274,7 +275,8 @@ static int uxsocket_accept(struct slow_context *ctx)
   }
   memset(cham_agt_handle->addr, 0, ctx->config->agt_queue_len);
 
-  cham_agt_q = equeue_new(ctx->config->agt_queue_len, cham_agt_handle);
+  cham_agt_q = equeue_new(ctx->config->agt_queue_len, 
+      cham_agt_handle->addr, cham_agt_handle->off);
   if (cham_agt_q == NULL)
   {
     LOG_ERROR("failed to create chamelio->guest queue");
@@ -311,16 +313,15 @@ static int uxsocket_accept(struct slow_context *ctx)
     goto free_app;
   }  
 
-  /* Register new guest with the fast-path */
-  qe_new_guest.type = QUEUE_NEW_GUEST;
-  new_guest_req = (struct queue_new_guest_req *) &qe_new_guest.data;
-  new_guest_req->id = g->id;
-  new_guest_req->shm_base = shm_base;
-  new_guest_req->shm_len = ctx->config->shm_len;
-
+  /* Register new guest with the fast-path cores */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
-    ret = queue_enqueue(ctx->slow_fast_qs[i], &qe_new_guest);
+    qe_new_guest = queue_tail(ctx->slow_fast_qs[i]);
+    new_guest_req = (struct queue_new_guest_req *) &qe_new_guest->data;
+    new_guest_req->id = g->id;
+    new_guest_req->shm_base = shm_base;
+    new_guest_req->shm_len = ctx->config->shm_len;
+    ret = queue_enqueue(ctx->slow_fast_qs[i], QUEUE_NEW_GUEST);
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new guest req to fast-path");
@@ -329,13 +330,12 @@ static int uxsocket_accept(struct slow_context *ctx)
   }
 
   /* Register new application with the fast-path */
-  qe_new_app.type = QUEUE_NEW_APP;
-  new_app_req = (struct queue_new_app_req *) &qe_new_app.data;
-  new_app_req->id = a->id;
-
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
-    ret = queue_enqueue(ctx->slow_fast_qs[i], &qe_new_app);
+    qe_new_app = queue_tail(ctx->slow_fast_qs[i]);
+    new_app_req = (struct queue_new_app_req *) &qe_new_app->data;
+    new_app_req->id = a->id;
+    ret = queue_enqueue(ctx->slow_fast_qs[i], QUEUE_NEW_APP);
         if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new app req to fast-path");
@@ -392,10 +392,8 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   struct dqueue *app_cham_q; 
   struct equeue *cham_app_q;
   struct shm_handle **rxq, **txq, *ac_handle, *ca_handle;
-  struct queue_entry qe_new_ctx;
-
-  struct queue_new_app_ctx_fast_req *new_ctx_req = 
-      (struct queue_new_app_ctx_fast_req *) &qe_new_ctx.data;
+  struct queue_entry *qe_new_ctx;
+  struct queue_new_app_ctx_fast_req *new_ctx_req;
 
   struct shm_allocator *alloc = aev->guest->alloc;
 
@@ -503,7 +501,8 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   }
   memset(ac_handle->addr, 0, ctx->config->app_queue_len);
 
-  app_cham_q = dqueue_new(ctx->config->app_queue_len, ac_handle);
+  app_cham_q = dqueue_new(ctx->config->app_queue_len, 
+      ac_handle->addr, ac_handle->off);
   if (app_cham_q == NULL)
   {
     LOG_ERROR("failed to create guest->chamelio queue");
@@ -520,7 +519,8 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   }
   memset(ca_handle->addr, 0, ctx->config->app_queue_len);
 
-  cham_app_q = equeue_new(ctx->config->app_queue_len, ca_handle);
+  cham_app_q = equeue_new(ctx->config->app_queue_len,
+      ca_handle->addr, ca_handle->off);
   if (cham_app_q == NULL)
   {
     LOG_ERROR("failed to create chamelio->app queue");
@@ -538,22 +538,22 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
 
   /* Initialise response */
   aev->ctx_res.n_fp_cores = ctx->config->fp_cores_max;
-  aev->ctx_res.cham_app_q_off = cham_app_q->sh->off;
-  aev->ctx_res.cham_app_q_len = cham_app_q->sh->len;
-  aev->ctx_res.app_cham_q_off = app_cham_q->sh->off;
-  aev->ctx_res.app_cham_q_len = app_cham_q->sh->len;
-
-  /* Register application context with fast-path */
-  qe_new_ctx.type = QUEUE_NEW_APP_CTX_FAST;
-  new_ctx_req->aid = aev->app->id;
-  new_ctx_req->gid = aev->guest->id;
-  new_ctx_req->proto_type = aev->ctx_req.proto_type;
-
+  aev->ctx_res.cham_app_q_off = cham_app_q->off;
+  aev->ctx_res.cham_app_q_len = cham_app_q->size;
+  aev->ctx_res.app_cham_q_off = app_cham_q->off;
+  aev->ctx_res.app_cham_q_len = app_cham_q->size;
+  
+  /* Register application context with fast-path cores */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
+    qe_new_ctx = queue_tail(ctx->slow_fast_qs[i]);
+    new_ctx_req = (struct queue_new_app_ctx_fast_req *) &qe_new_ctx->data;
+    new_ctx_req->aid = aev->app->id;
+    new_ctx_req->gid = aev->guest->id;
+    new_ctx_req->proto_type = aev->ctx_req.proto_type;
     new_ctx_req->rxq_off = app_ctx->rxq[i]->off;
     new_ctx_req->txq_off = app_ctx->txq[i]->off;
-    ret = queue_enqueue(ctx->slow_fast_qs[i], &qe_new_ctx);
+    ret = queue_enqueue(ctx->slow_fast_qs[i], QUEUE_NEW_APP_CTX_FAST);
         if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new app ctx req to fast-path");
