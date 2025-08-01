@@ -13,6 +13,10 @@ struct configuration {
   uint64_t cham_queue_len;
   /* Size of queue between application and slow path */
   uint64_t app_queue_len;
+  /* Size of RX bump queue between application and slow path */
+  uint64_t app_ctx_rx_queue_len;
+  /* Size of TX bump queue between application and slow path */
+  uint64_t app_ctx_tx_queue_len;
   /* Size of queue between guest agent and chamelio */
   uint64_t agt_queue_len;
   /* Size of application receive buffer */
@@ -28,11 +32,13 @@ struct configuration {
   /* List of routes */
   struct config_route *routes;
 
-  /*** Number of apps and guests ***/
+  /*** Max values ***/
   /* Max number of guests supported */
   uint32_t max_guests;
   /* Max number of applications per guest */
   uint32_t max_apps;
+  /* Max number of application contexts per app */
+  uint32_t max_app_ctxs;
 
   /*** Fast-path configurations ***/
   /* Enable checksum offload */

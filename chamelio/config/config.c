@@ -14,6 +14,8 @@ enum cfg_params {
   CP_SHM_INTERNAL_LEN,
   CP_CHAM_QUEUE_LEN,
   CP_APP_QUEUE_LEN,
+  CP_APP_CTX_RX_QUEUE_LEN,
+  CP_APP_CTX_TX_QUEUE_LEN,
   CP_AGT_QUEUE_LEN,
   CP_RXBUF_LEN,
   CP_TXBUF_LEN,
@@ -21,6 +23,7 @@ enum cfg_params {
   CP_IP_ROUTE,
   CP_MAX_GUESTS,
   CP_MAX_APPS,
+  CP_MAX_APP_CTXS,
   CP_FP_CORES_MAX,
   CP_FP_NO_XSUMOFFLOAD,
   CP_DPDK_EXTRA,
@@ -39,6 +42,12 @@ static struct option opts[] = {
   { .name = "app-queue-len",
     .has_arg = required_argument,
     .val = CP_APP_QUEUE_LEN },
+  { .name = "app-ctx-rx-queue-len",
+    .has_arg = required_argument,
+    .val = CP_APP_CTX_RX_QUEUE_LEN },
+  { .name = "app-ctx-tx-queue-len",
+    .has_arg = required_argument,
+    .val = CP_APP_CTX_TX_QUEUE_LEN },
   { .name = "agt-queue-len",
     .has_arg = required_argument,
     .val = CP_AGT_QUEUE_LEN },
@@ -60,6 +69,9 @@ static struct option opts[] = {
   { .name = "max-apps",
     .has_arg = required_argument,
     .val = CP_MAX_APPS },
+  { .name = "max-app-ctxs",
+    .has_arg = required_argument,
+    .val = CP_MAX_APP_CTXS },
   { .name = "fp-cores-max",
     .has_arg = required_argument,
     .val = CP_FP_CORES_MAX },
@@ -120,6 +132,18 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
+      case CP_APP_CTX_RX_QUEUE_LEN:
+        if (parse_int64(optarg, &c->app_ctx_rx_queue_len) != 0) {
+          fprintf(stderr, "app ctx rx queue len parsing failed\n");
+          goto failed;
+        }
+        break;
+      case CP_APP_CTX_TX_QUEUE_LEN:
+        if (parse_int64(optarg, &c->app_ctx_tx_queue_len) != 0) {
+          fprintf(stderr, "app ctx tx queue len parsing failed\n");
+          goto failed;
+        }
+        break;
       case CP_AGT_QUEUE_LEN:
         if (parse_int64(optarg, &c->agt_queue_len) != 0) {
           fprintf(stderr, "agent queue len parsing failed\n");
@@ -162,6 +186,12 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
+      case CP_MAX_APP_CTXS:
+        if (parse_int32(optarg, &c->max_app_ctxs) != 0) {
+          LOG_ERROR("max apps ctxs parsing failed");
+          goto failed;
+        }
+        break;
       case CP_FP_CORES_MAX:
         if (parse_int32(optarg, &c->fp_cores_max) != 0) {
           LOG_ERROR("fp cores max parsing failed");
@@ -199,12 +229,15 @@ static int config_defaults(struct configuration *c, char *progname)
   c->shm_internal_len = 1024 * 1024 * 32;
   c->cham_queue_len = 16 * 1024;
   c->app_queue_len = 1024 * 1024;
+  c->app_ctx_rx_queue_len = 64 * 32 * 1024;
+  c->app_ctx_tx_queue_len = 64 * 8192;
   c->agt_queue_len = 16 * 1024;
   c->rxbuf_len = 8192;
   c->txbuf_len = 8192;
   c->ip = 0;
   c->max_guests = 128;
   c->max_apps = 32;
+  c->max_app_ctxs = 32;
   c->fp_cores_max = 1;
   c->fp_xsumoffloads = 1;
 
@@ -232,6 +265,10 @@ static void print_usage(struct configuration *c, char *progname)
            "[default: %"PRIu64"]\n"
       "  --app-queue-len=LEN                     Application <-> Chamelio queue len"
            "[default: %"PRIu64"]\n"
+      "  --app-ctx-rx-queue-len=LEN              RX bump messages to app context queue len"
+           "[default: %"PRIu64"]\n"
+      "  --app-ctx-tx-queue-len=LEN              TX bump messages to app context queue len"
+           "[default: %"PRIu64"]\n"
       "  --agt-queue-len=LEN                     Guest agent <-> Chamelio queue len"
            "[default: %"PRIu64"]\n"
       "  --rxbuf-len=LEN                         Application RX buffer len"
@@ -246,6 +283,8 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: %"PRIu32"]\n"
       "  --max-apps=APPS                         Max number of apps per guest\n"
           "[default: %"PRIu32"]\n"
+      "  --max-app-ctxs=CTXS                     Max number of app ctxs per guest\n"
+          "[default: %"PRIu32"]\n"
       "Fast path:\n"
       "  --fp-cores-max=CORES                    Max cores used for fast path"
            "[default: %"PRIu32"]\n"
@@ -256,9 +295,11 @@ static void print_usage(struct configuration *c, char *progname)
       "\n"
       ,progname, 
       c->shm_len, c->shm_internal_len,
-      c->cham_queue_len, c->app_queue_len, c->agt_queue_len,
+      c->cham_queue_len, c->app_queue_len, 
+      c->app_ctx_rx_queue_len, c->app_ctx_tx_queue_len,
+      c->agt_queue_len,
       c->rxbuf_len, c->txbuf_len,
-      c->max_guests, c->max_apps,
+      c->max_guests, c->max_apps, c->max_app_ctxs,
       c->fp_cores_max);
 }
 

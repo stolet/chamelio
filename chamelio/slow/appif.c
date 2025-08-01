@@ -388,10 +388,14 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
 {
   int n, i, ret;
   size_t res_sz;
-  struct app_context *app_ctx;
+  struct app_context_slow *app_ctx;
   struct dqueue *app_cham_q; 
   struct equeue *cham_app_q;
   struct shm_handle **rxq, **txq, *ac_handle, *ca_handle;
+  struct queue_entry qe_new_ctx;
+
+  struct queue_new_app_ctx_fast_req *new_ctx_req = 
+      (struct queue_new_app_ctx_fast_req *) &qe_new_ctx.data;
 
   struct shm_allocator *alloc = aev->guest->alloc;
 
@@ -440,7 +444,7 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   aev->req_rx = 0;
 
   /* Allocate application context */
-  app_ctx = malloc(sizeof(struct app_context));
+  app_ctx = malloc(sizeof(struct app_context_slow));
   if (app_ctx == NULL)
   {
     LOG_ERROR("failed to allocated app_ctx");
@@ -465,23 +469,27 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   }
   app_ctx->txq = txq;
 
-  /* Allocate memory in the shared memory region for each queue */
+  /* Allocate memory in the shared memory region for rx and tx bump queues */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
-    if (shmalloc_alloc(alloc, aev->ctx_req.rxq_len, &app_ctx->rxq[i]))
+    if (shmalloc_alloc(alloc, 
+        ctx->config->app_ctx_rx_queue_len, &app_ctx->rxq[i]))
     {
       LOG_ERROR("shmalloc_alloc for rxq=%d failed", i);
       goto free_txq;
     }
     
-    if (shmalloc_alloc(alloc, aev->ctx_req.txq_len, &app_ctx->txq[i]))
+    if (shmalloc_alloc(alloc, 
+        ctx->config->app_ctx_tx_queue_len, &app_ctx->txq[i]))
     {
       LOG_ERROR("shmalloc_alloc for txq=%d failed", i);
       goto free_txq;
     }
     
-    memset((uint8_t *) app_ctx->rxq[i]->addr, 0, aev->ctx_req.rxq_len);
-    memset((uint8_t *) app_ctx->txq[i]->addr, 0, aev->ctx_req.txq_len);
+    memset((uint8_t *) app_ctx->rxq[i]->addr, 
+      0, ctx->config->app_ctx_rx_queue_len);
+    memset((uint8_t *) app_ctx->txq[i]->addr, 
+      0, ctx->config->app_ctx_tx_queue_len);
     aev->ctx_res.rxq_offs[i] = app_ctx->rxq[i]->off;
     aev->ctx_res.txq_offs[i] = app_ctx->txq[i]->off;
   }
@@ -520,6 +528,9 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   }
   app_ctx->cham_app_q = cham_app_q;
 
+  /* Set protocol ID of the application */
+  aev->app->proto_type = aev->ctx_req.proto_type;
+
   /* Add context to application */
   app_ctx->app = aev->app;
   app_ctx->next = aev->app->ctxs;
@@ -531,10 +542,24 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   aev->ctx_res.cham_app_q_len = cham_app_q->sh->len;
   aev->ctx_res.app_cham_q_off = app_cham_q->sh->off;
   aev->ctx_res.app_cham_q_len = app_cham_q->sh->len;
-  /* TODO: Add the actual queue offsets. This is a list so
-     we need a struct larger than a cache line size */
-  // aev->ctx_resp->rxq_offs =;
-  // aev->ctx_resp->txq_offs =;
+
+  /* Register application context with fast-path */
+  qe_new_ctx.type = QUEUE_NEW_APP_CTX_FAST;
+  new_ctx_req->aid = aev->app->id;
+  new_ctx_req->gid = aev->guest->id;
+  new_ctx_req->proto_type = aev->ctx_req.proto_type;
+
+  for (i = 0; i < ctx->config->fp_cores_max; i++)
+  {
+    new_ctx_req->rxq_off = app_ctx->rxq[i]->off;
+    new_ctx_req->txq_off = app_ctx->txq[i]->off;
+    ret = queue_enqueue(ctx->slow_fast_qs[i], &qe_new_ctx);
+        if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue new app ctx req to fast-path");
+      goto free_cham_app_q;
+    }
+  }
 
   /* Send out response */
   res_sz = sizeof(struct queue_new_app_ctx_res);
@@ -550,8 +575,6 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
     LOG_ERROR("short send for response");
     goto free_cham_app_q;
   }
-
-  /* Register new application context with the fast-path */
 
   return;
 

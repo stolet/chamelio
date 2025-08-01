@@ -25,13 +25,24 @@ enum protocol_type {
 
 struct protocol {
   /* Protocol ID */
-  enum protocol_type id;
+  enum protocol_type type;
   /* Processes one received packet */
   uint8_t (*process_rx)(void *, struct rte_mbuf *);
   /* Processes one packet to transmit */
   uint8_t (*process_tx)(void *, struct rte_mbuf *);
   /* Polls application queues to check how much data to transmit */
   uint8_t (*process_queues)();
+};
+
+struct app_context_fast {
+  /* Application context ID */
+  uint8_t id;
+  /* Pointer to the application for this context */
+  struct app_fast *app;
+  /* List of rx queue offset for each app context and fast-path core */
+  uint64_t rxq_off;
+  /* List of tx queue offset for each app context and fast-path core */
+  uint64_t txq_off;
 };
 
 struct app_fast {
@@ -41,21 +52,19 @@ struct app_fast {
   struct guest_fast *guest;
   /* Protocol registered for this application */
   struct protocol proto;
-  /* Next application the guest list */
-  struct app_fast *next_app;
+  /* Number of application contexts */
+  uint8_t n_app_ctxs;
+  /* List of application contexts */
+  struct app_context_fast *app_ctxs;
 };
 
 struct guest_fast {
   /* Guest ID */
   uint8_t id;
-  /* Next guest in the fast-path context guest list */
-  struct guest_fast *next_guest;
-
   /* Number of apps registered in this guest */
   uint8_t n_apps;
   /* List of apps registered in this guest */
   struct app_fast *apps;
-
   /* Base pointer to shared memory region for this guest */
   void *shm_base;
   /* Length of shared memory region for this guest */

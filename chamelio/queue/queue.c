@@ -6,6 +6,7 @@
 #include "utils.h"
 #include "shmalloc.h"
 
+/* TODO: Pass addr and off instead of the handle */
 struct equeue * equeue_new(uint32_t size, struct shm_handle *sh)
 {
   struct equeue *q;
@@ -25,6 +26,7 @@ struct equeue * equeue_new(uint32_t size, struct shm_handle *sh)
   return q;
 }
 
+/* TODO: Pass addr and off instead of the handle */
 struct dqueue * dqueue_new(uint32_t size, struct shm_handle *sh)
 {
   struct dqueue *q;
@@ -54,8 +56,7 @@ int queue_enqueue(struct equeue *q, struct queue_entry *qe)
   if (tail_entry->type != QUEUE_EMPTY)
     return -1;
 
-  /* TODO: This copy could be a performance bottleneck. Leave it here
-     for now unless we notice it is a problem. An alternative is to
+  /* TODO: Leave copy for now. An alternative is to
      expose a queue_head and queue_tail function so that the caller
      can directly modify the returned queue_entry. The enqueue
      and dequeue function would then just increment the tail and

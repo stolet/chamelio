@@ -28,11 +28,12 @@ int fast_context_init(struct fast_context *f_ctx,
     struct shm_handle *fs_handle, struct shm_handle *sf_handle,
     struct configuration *config)
 {
-  int i, j;
+  int i, j, n_apps, n_app_ctxs;
   struct dqueue *sfq;
   struct equeue *fsq;
   struct guest_fast *guests;
   struct app_fast *apps;
+  struct app_context_fast *app_ctxs;
 
   f_ctx->id = thread_id;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
@@ -57,7 +58,7 @@ int fast_context_init(struct fast_context *f_ctx,
       sizeof(struct guest_fast), 0);
   if (guests == NULL)
   {
-    LOG_ERROR("failed to allocate guest list for fast-path context");
+    LOG_ERROR("failed to allocate guest list");
     return -1;
   }
   f_ctx->guests = guests;
@@ -68,17 +69,36 @@ int fast_context_init(struct fast_context *f_ctx,
         sizeof(struct app_fast), 0);
     if (apps == NULL)
     {
-      LOG_ERROR("failed to allocate app list for fast-path context");
+      LOG_ERROR("failed to allocate app list");
       goto free_apps;
     }
     f_ctx->guests[i].apps = apps;
+    n_apps++;
+
+    for (j = 0; j < config->max_apps; j++)
+    {
+      app_ctxs = rte_calloc("fast path app ctxs", config->max_app_ctxs, 
+          sizeof(struct app_context_fast), 0);
+
+      if (app_ctxs == NULL)
+      {
+        LOG_ERROR("failed to allocate app context list");
+        goto free_app_ctxs;
+      }
+      f_ctx->guests[i].apps[j].app_ctxs = app_ctxs;
+      n_app_ctxs++;
+    }
   }
 
   return 0;
 
+free_app_ctxs:
+  for (i = 0; i < n_apps; i++)
+    for (j = 0; j < n_app_ctxs; j++)
+      free(f_ctx->guests[i].apps[j].app_ctxs);
 free_apps:
-  for (j = 0; j < i; j++)
-    free(f_ctx->guests[j].apps);
+  for (i = 0; i < n_apps; i++)
+    free(f_ctx->guests[i].apps);
 
   free(guests);
   return -1;
@@ -201,7 +221,6 @@ int poll_tx(struct fast_context *ctx)
       ctx->tx_mbs[ctx->tx_n] = mbs[i];
       ctx->tx_n++;
     }
-    guest = guest->next_guest;
   }
 
   /* Push packets to the NIC */

@@ -4,6 +4,7 @@
 
 int init_new_guest(struct fast_context *ctx, struct queue_entry *qe);
 int init_new_app(struct fast_context *ctx, struct queue_entry *qe);
+int init_new_app_ctx(struct fast_context *ctx, struct queue_entry *qe);
 void * select_rx(enum protocol_type type);
 void * select_tx(enum protocol_type type);
 void * select_queues(enum protocol_type type);
@@ -36,8 +37,13 @@ int slowif_poll(struct fast_context *ctx)
         init_new_app(ctx, qe);
         queue_dequeue(q);
         break;
+      case QUEUE_NEW_APP_CTX_FAST:
+        init_new_app_ctx(ctx, qe);
+        queue_dequeue(q);
+        break;
       default:
-        LOG_WARN("unknown queue tryt type from slow path to fast path");
+        LOG_WARN("unknown queue tryt type from slow path" 
+            "to fast path type=%d", type);
         break;
     }
   }
@@ -57,8 +63,6 @@ int init_new_guest(struct fast_context *ctx, struct queue_entry *qe)
   g->shm_base = req->shm_base;
   g->shm_len = req->shm_len;
   
-  g->next_guest = ctx->guests;
-  ctx->guests = g;
   ctx->n_guests++;
 
   return 0;
@@ -72,18 +76,36 @@ int init_new_app(struct fast_context *ctx, struct queue_entry *qe)
 
   a = &ctx->guests[req->gid].apps[req->id];
   a->id = req->id;
-  a->proto.id = req->pid;
-  a->proto.process_rx = select_rx(req->pid);
-  a->proto.process_tx = select_tx(req->pid);
-  a->proto.process_queues = select_queues(req->pid);
+  a->proto.type = req->proto_type;
+  a->proto.process_rx = select_rx(req->proto_type);
+  a->proto.process_tx = select_tx(req->proto_type);
+  a->proto.process_queues = select_queues(req->proto_type);
   
   g = &ctx->guests[req->gid];
   a->guest = g;
 
-  a->next_app = g->apps;
-  g->apps = a;
   g->n_apps++;
 
+  return 0;
+}
+
+int init_new_app_ctx(struct fast_context *ctx, struct queue_entry *qe)
+{
+  struct app_fast *a;
+  struct app_context_fast *actx;
+  struct queue_new_app_ctx_fast_req *req = 
+    (struct queue_new_app_ctx_fast_req *) &qe->data;
+
+  a = &ctx->guests[req->gid].apps[req->aid];
+  actx = &ctx->guests[req->gid].apps[req->aid].app_ctxs[req->cid];
+
+  actx->id = req->cid;
+  actx->app = a;
+  actx->rxq_off = req->rxq_off;
+  actx->txq_off = req->txq_off;
+
+  a->n_app_ctxs++;
+  
   return 0;
 }
 

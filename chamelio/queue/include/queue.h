@@ -27,6 +27,10 @@ enum queue_type {
   QUEUE_NEW_GUEST,
   /* Entry for new app registration */
   QUEUE_NEW_APP,
+  /* Entry for new app context registration */
+  QUEUE_NEW_APP_CTX,
+  /* Entry for new app context registration with fast-path */
+  QUEUE_NEW_APP_CTX_FAST,
 };
 
 /* Request for registering new guest */
@@ -46,7 +50,7 @@ struct queue_new_app_req {
   /* Guest ID */
   uint8_t gid;
   /* Protocol ID */
-  uint8_t pid;
+  uint8_t proto_type;
 } __attribute__((packed));
 
 /* Response for registering new application */
@@ -56,10 +60,24 @@ struct queue_new_app_res {
 
 /* Request for registering new application context */
 struct queue_new_app_ctx_req {
-  /* Length of rx queue for this context */
-  uint32_t rxq_len;
-  /* Length of tx queue for this context */
-  uint32_t txq_len;
+  /* Protocol type to register for this context */
+  uint8_t proto_type; 
+} __attribute__((packed));
+
+/* Request for registering new application context with fast-path */
+struct queue_new_app_ctx_fast_req {
+  /* Guest ID */
+  uint8_t gid;
+  /* Application ID */
+  uint8_t aid;
+  /* Application context ID */
+  uint8_t cid;
+  /* Protocol type to register for this context */
+  uint8_t proto_type; 
+  /* Offset in shared memory for rx bump queue for this app context */
+  uint64_t rxq_off;
+  /* Offser in shared memory for tx bump queue for this app context */
+  uint64_t txq_off;
 } __attribute__((packed));
 
 /* Response for registering new application context */
@@ -79,7 +97,7 @@ struct queue_new_app_ctx_res {
 
   /* Offset in shared memory for rx queues for each fast-path core */
   uint64_t rxq_offs[MAX_FP_CORES];
-  /* Offser in shared memory for tx queues for each fast-path core */
+  /* Offset in shared memory for tx queues for each fast-path core */
   uint64_t txq_offs[MAX_FP_CORES];
 } __attribute__((packed));
 
@@ -93,7 +111,8 @@ struct queue_entry {
     struct queue_new_app_ctx_req new_app_ctx_req;
     struct queue_new_app_ctx_res new_app_ctx_res;
     /* Keeps queue entry the size of a cache line */
-    uint8_t raw[63];
+    /* TODO: Move this back to a cache line size */
+    uint8_t raw[256];
   } __attribute__((packed)) data;
 } __attribute__((packed));
 

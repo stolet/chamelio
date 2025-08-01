@@ -15,8 +15,6 @@
 #define IVSHMEM_PROTOCOL_VERSION 0
 #define HOST_PEERID 255
 #define MAX_FP_CORES 16
-#define NIC_RXQ_LEN (64 * 32 * 1024)
-#define NIC_TXQ_LEN (64 * 8192)
 
 static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd);
 
@@ -133,14 +131,14 @@ err_close:
   return 0;
 }
 
-int cham_init_app_ctx()
+/* TODO: Pass enum protocol_type instead of uint8_t */
+int cham_init_app_ctx(uint8_t proto_type)
 {
   ssize_t sz, off;
   struct queue_new_app_ctx_res *resp;
   uint8_t resp_buf[sizeof(*resp)];
   struct queue_new_app_ctx_req req = {
-    .rxq_len = NIC_RXQ_LEN,
-    .txq_len = NIC_TXQ_LEN,
+    .proto_type = proto_type,
   };
 
   /* send request on kernel socket */
