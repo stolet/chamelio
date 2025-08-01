@@ -2,8 +2,9 @@
 
 int main (int argc, char **argv)
 {
+  struct app_lib *a;
   // cham_init_guest();
-  cham_init_app();
-  cham_init_app_ctx(0);
+  a = cham_init_app();
+  cham_init_app_ctx(a, 0);
   while (1) {}
 }
