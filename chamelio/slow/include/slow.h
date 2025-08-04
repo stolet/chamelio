@@ -19,10 +19,6 @@ struct app_context_slow {
   struct shm_handle **rxq;
   /* List of tx queue handles for each app context and fast-path core */
   struct shm_handle **txq;
-
-  /* TODO: Don't use next and instead index into list with id */
-  /* Next app context in the list */
-  struct app_context_slow *next;
 };
 
 struct app_slow {
@@ -32,12 +28,11 @@ struct app_slow {
   uint8_t proto_type;
   /* Guest where this application is running */
   struct guest_slow *guest;
+
+  /* Number of contexts for this app */
+  uint8_t n_ctxs;
   /* Application contexts. One per app core. */
-  /* TODO: Malloc this at once when Chamelio starts */
   struct app_context_slow *ctxs;
-  /* TODO: Don't use next and instead index into list with id */
-  /* Next application in the list */
-  struct app_slow *next;
 };
 
 struct guest_slow {
@@ -56,13 +51,10 @@ struct guest_slow {
   /* Queue from the Chamelio slow-path to the guest agent */
   struct equeue *cham_agt_q;
   
+  /* Number of registered applications */
+  uint8_t n_apps;
   /* Applications registered in this guest */
-  /* TODO: Malloc this at once when Chamelio starts */
   struct app_slow *apps;
-
-  /* TODO: Don't use next and instead index into list with id */
-  /* Next guest in the list */
-  struct guest_slow *next;
 };
 
 struct slow_context {
@@ -82,18 +74,15 @@ struct slow_context {
   int guest_uxfd;
   /* Epoll object used by UX guest socket */
   int guest_epfd;
-  /* Next unused VM ID */
-  int guest_id_next;
 
   /* Listening UX sockets for apps */
   int app_uxfd;
   /* Epoll object used by UX app socket */
   int app_epfd;
-  /* Next unused application id */
-  int app_id_next;
 
+  /* Number of registered guests */
+  uint8_t n_guests;
   /* Guests that have registered with chamelio */
-  /* TODO: Malloc this at once when Chamelio starts */
   struct guest_slow *guests;
 };
 

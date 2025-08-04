@@ -14,7 +14,10 @@ int poll_fast();
 int slow_context_init(struct slow_context *ctx, struct configuration *config,
     struct shm_handle **fs_handles, struct shm_handle **sf_handles)
 {
-  int i;
+  int i, j;
+  struct guest_slow *guests;
+  struct app_slow *apps;
+  struct app_context_slow *actxs;
   struct equeue *sfq;
   struct dqueue *fsq;
   struct dqueue **fast_slow_qs;
@@ -24,11 +27,9 @@ int slow_context_init(struct slow_context *ctx, struct configuration *config,
   
   ctx->guest_uxfd = -1;
   ctx->guest_epfd = -1;
-  ctx->guest_id_next = 0;
   
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;
-  ctx->app_id_next = 0;
 
   /* Allocate pointer list for queues */
   fast_slow_qs = malloc(sizeof(struct dqueue *) * config->fp_cores_max);
@@ -69,8 +70,45 @@ int slow_context_init(struct slow_context *ctx, struct configuration *config,
     ctx->fast_slow_qs[i] = fsq;
   }
 
+  /* Allocate guests */
+  guests = calloc(config->max_guests, sizeof(struct guest_slow));
+  if (guests == NULL)
+  {
+    LOG_ERROR("failed to allocate guest list");
+    goto free_slow_fast_list;
+  }
+  ctx->guests = guests;
+  ctx->n_guests = 0;
+
+  for (i = 0; i < config->max_guests; i++)
+  {
+    apps = calloc(config->max_apps, sizeof(struct app_slow));
+    if (apps == NULL)
+    {
+      LOG_ERROR("failed to allocate app list for guest=%d", i);
+      goto free_guests;
+    }
+    ctx->guests[i].apps = apps;
+    ctx->guests[i].n_apps = 0;
+
+    for (j = 0; j < config->max_app_ctxs; j++)
+    {
+      actxs = calloc(config->max_app_ctxs, sizeof(struct app_context_slow));
+      if (actxs == NULL)
+      {
+        LOG_ERROR("failed to allocated app context list"
+            "for guest=%d app=%d", i, j);
+        goto free_guests;
+      }
+      ctx->guests[i].apps[j].ctxs = actxs;
+      ctx->guests[i].apps[j].n_ctxs = 0;
+    }
+  }
+
   return 0;
 
+free_guests:
+  free(guests);
 free_slow_fast_list:
   free(slow_fast_qs);
 free_fast_slow_list:

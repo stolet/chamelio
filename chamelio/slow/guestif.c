@@ -123,7 +123,7 @@ static int uxsocket_init_fd(struct slow_context *ctx)
   {
     LOG_ERROR("bind failed");
     perror("");
-    goto error_close;
+    goto close_fd;
   }
 
   ret = listen(fd, 5);
@@ -131,7 +131,7 @@ static int uxsocket_init_fd(struct slow_context *ctx)
   {
     LOG_ERROR("listen failed");
     perror("");
-    goto error_close;
+    goto close_fd;
   }
 
   gev = malloc(sizeof(struct guest_event));
@@ -139,7 +139,7 @@ static int uxsocket_init_fd(struct slow_context *ctx)
   {
     LOG_ERROR("failed to malloc guest event");
     perror("");
-    goto error_close;
+    goto close_fd;
   }
 
   gev->type = EP_LISTEN_GUEST;
@@ -150,16 +150,16 @@ static int uxsocket_init_fd(struct slow_context *ctx)
   if (ret != 0) {
     LOG_ERROR("epoll_ctl listen failed");
     perror("");
-    goto error_free_gev;
+    goto free_gev;
   }
 
   ctx->guest_uxfd = fd;
 
   return 0;
 
-error_free_gev:
+free_gev:
   free(gev);
-error_close:
+close_fd:
   close(fd);
 
   return -1;
@@ -197,11 +197,11 @@ static int uxsocket_accept(struct slow_context *ctx)
 
   /* Create shared memory region */
   snprintf(shm_name, sizeof(shm_name), "%s_%d", 
-      CHAMELIO_SHM_NAME, ctx->guest_id_next);
+      CHAMELIO_SHM_NAME, ctx->n_guests);
   shm_base = shm_create_huge(shm_name, ctx->config->shm_len, NULL, &sfd);
   if (shm_base == NULL)
   {
-    LOG_ERROR("failed to initialise shared memory for guest %d", ctx->guest_id_next);
+    LOG_ERROR("failed to initialise shared memory for guest %d", ctx->n_guests);
     goto close_cfd;
   }
 
@@ -214,7 +214,7 @@ static int uxsocket_accept(struct slow_context *ctx)
   }
 
   /* Send guest ID to QEMU */
-  ret = uxsocket_send_int(cfd, ctx->guest_id_next);
+  ret = uxsocket_send_int(cfd, ctx->n_guests);
   if (ret < 0)
   {
     LOG_ERROR("failed to send vm id");
@@ -254,7 +254,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     goto close_nfd;
   }
 
-  ret = uxsocket_sendfd(cfd, ifd, ctx->guest_id_next);
+  ret = uxsocket_sendfd(cfd, ifd, ctx->n_guests);
   if (ret < 0)
   {
     LOG_ERROR("failed to senf interrupt fd");
@@ -269,13 +269,8 @@ static int uxsocket_accept(struct slow_context *ctx)
     goto close_ifd;
   }
 
-  g = malloc(sizeof(struct guest_slow));
-  if (g == NULL)
-  {
-    LOG_ERROR("failed to allocate guest_slow struct");
-    goto free_gev;
-  }
-  g->id = ctx->guest_id_next;
+  g = &ctx->guests[ctx->n_guests];
+  g->id = ctx->n_guests;
   g->shm_fd = sfd;
   g->shm_base = shm_base;
 
@@ -283,7 +278,7 @@ static int uxsocket_accept(struct slow_context *ctx)
   if (alloc == NULL)
   {
     LOG_ERROR("failed to initialise shm allocator");
-    goto free_guest;
+    goto free_gev;
   }
   g->alloc = alloc;
 
@@ -329,7 +324,7 @@ static int uxsocket_accept(struct slow_context *ctx)
   /* Add connection to epoll */
   gev->type = EP_GUEST;
   gev->fd = cfd;
-  gev->gid = ctx->guest_id_next;
+  gev->gid = ctx->n_guests;
 
   ev.events = EPOLLIN | EPOLLRDHUP | EPOLLERR;
   ev.data.ptr = gev;
@@ -357,9 +352,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     }
   }
 
-  ctx->guest_id_next++;
-  g->next = ctx->guests;
-  ctx->guests = g;
+  ctx->n_guests++;
   return 0;
 
 remove_from_epoll:
@@ -374,8 +367,6 @@ free_agt_cham_handle:
   shmalloc_free(alloc, agt_cham_handle);
 free_alloc:
   free(alloc);
-free_guest:
-  free(g);
 free_gev:
   free(gev);
 close_ifd:

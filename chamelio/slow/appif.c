@@ -204,11 +204,11 @@ static int uxsocket_accept(struct slow_context *ctx)
 
   /* Create shared memory region */
   snprintf(shm_name, sizeof(shm_name), "%s_%d", 
-      CHAMELIO_SHM_NAME, ctx->app_id_next);
+      CHAMELIO_SHM_NAME, ctx->n_guests);
   shm_base = shm_create_huge(shm_name, ctx->config->shm_len, NULL, &sfd);
   if (shm_base == NULL)
   {
-    LOG_ERROR("failed to initialise shared memory for app %d", ctx->app_id_next);
+    LOG_ERROR("failed to initialise shared memory for guest %d", ctx->n_guests);
     goto close_cfd;
   }
 
@@ -229,13 +229,8 @@ static int uxsocket_accept(struct slow_context *ctx)
   }
 
   /* Allocate slow path struct for guest */
-  g = malloc(sizeof(struct guest_slow));
-  if (g == NULL)
-  {
-    LOG_ERROR("failed to allocate guest_slow struct");
-    goto free_aev;
-  }
-  g->id = ctx->guest_id_next;
+  g = &ctx->guests[ctx->n_guests];
+  g->id = ctx->n_guests;
   g->shm_fd = sfd;
   g->shm_base = shm_base;
 
@@ -243,7 +238,7 @@ static int uxsocket_accept(struct slow_context *ctx)
   if (alloc == NULL)
   {
     LOG_ERROR("failed to initialise shm allocator");
-    goto free_guest;
+    goto free_aev;
   }
   g->alloc = alloc;
 
@@ -287,15 +282,9 @@ static int uxsocket_accept(struct slow_context *ctx)
   g->cham_agt_q = cham_agt_q;
 
   /* Allocate slow path struct for application */
-  a = malloc(sizeof(struct app_slow));
-  if (a == NULL)
-  {
-    LOG_ERROR("failed to allocate app_slow struct");
-    goto free_cham_agt_q;
-  }
-  a->id = ctx->app_id_next;
+  a = &ctx->guests[g->id].apps[g->n_apps];
+  a->id = g->n_apps;
   a->guest = g;
-  a->ctxs = NULL;
 
   /* Add connection to epoll */
   aev->type = EP_APP;
@@ -310,7 +299,7 @@ static int uxsocket_accept(struct slow_context *ctx)
   {
     LOG_ERROR("epoll_ctl failed");
     perror("");
-    goto free_app;
+    goto free_cham_agt_q;
   }  
 
   /* Register new guest with the fast-path cores */
@@ -325,7 +314,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new guest req to fast-path");
-      goto free_app;
+      goto free_cham_agt_q;
     }
   }
 
@@ -339,21 +328,15 @@ static int uxsocket_accept(struct slow_context *ctx)
         if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new app req to fast-path");
-      goto free_app;
+      goto free_cham_agt_q;
     }
   }
 
-  ctx->guest_id_next++;
-  ctx->app_id_next++;
-  a->next = g->apps;
-  g->apps = a;
-  g->next = ctx->guests;
-  ctx->guests = g;
+  ctx->n_guests++;
+  g->n_apps++;
 
   return 0;
 
-free_app:
-  free(a);
 free_cham_agt_q:
   free(cham_agt_q);
 free_cham_agt_handle:
@@ -364,8 +347,6 @@ free_agt_cham_handle:
   shmalloc_free(alloc, agt_cham_handle);
 free_alloc:
   free(alloc);
-free_guest:
-  free(g);
 free_aev:
   free(aev);
 shm_destroy:
@@ -440,14 +421,7 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
 
   /* Request complete */
   aev->req_rx = 0;
-
-  /* Allocate application context */
-  app_ctx = malloc(sizeof(struct app_context_slow));
-  if (app_ctx == NULL)
-  {
-    LOG_ERROR("failed to allocated app_ctx");
-    goto error_uxsocket;
-  }
+  app_ctx = &aev->app->ctxs[aev->app->n_ctxs];
 
   /* Allocate list to hold shm handles for rx queues */
   rxq = malloc(sizeof(struct shm_handle *) * ctx->config->fp_cores_max);
@@ -531,10 +505,8 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   /* Set protocol ID of the application */
   aev->app->proto_type = aev->ctx_req.proto_type;
 
-  /* Add context to application */
+  /* Set app for app context */
   app_ctx->app = aev->app;
-  app_ctx->next = aev->app->ctxs;
-  aev->app->ctxs = app_ctx;
 
   /* Initialise response */
   aev->ctx_res.n_fp_cores = ctx->config->fp_cores_max;
@@ -575,6 +547,8 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
     LOG_ERROR("short send for response");
     goto free_cham_app_q;
   }
+
+  aev->app->n_ctxs++;
 
   return;
 

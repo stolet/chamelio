@@ -104,7 +104,8 @@ struct app_lib * cham_init_app()
 
   if (connect(sock_fd, (struct sockaddr *)&s_un, sizeof(s_un)) < 0) 
   {
-    LOG_ERROR("cannot connect to chamelio");
+    LOG_ERROR("cannot connect to chamelio, %s", APP_SOCKET_PATH);
+    perror("");
     goto err_close;
   }
 

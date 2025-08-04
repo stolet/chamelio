@@ -6,7 +6,6 @@
 #include "utils.h"
 #include "shmalloc.h"
 
-/* TODO: Pass addr and off instead of the handle */
 struct equeue * equeue_new(uint32_t size, void *base, uint64_t off)
 {
   struct equeue *q;
@@ -26,7 +25,6 @@ struct equeue * equeue_new(uint32_t size, void *base, uint64_t off)
   return q;
 }
 
-/* TODO: Pass addr and off instead of the handle */
 struct dqueue * dqueue_new(uint32_t size, void *base, uint64_t off)
 {
   struct dqueue *q;
