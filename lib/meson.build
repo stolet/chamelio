@@ -19,7 +19,8 @@ lib = library(
 
 lib_dep = declare_dependency(
   link_with : lib,
-  include_directories : lib_inc
+  include_directories : lib_inc,
+  dependencies : deps,
 )
 
 meson.override_dependency('chamelio_lib', lib_dep)

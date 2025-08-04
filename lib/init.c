@@ -10,13 +10,6 @@
 #include "queue.h"
 #include "cham_lib.h"
 
-// TODO: Don't duplicate this
-#define GUEST_SOCKET_PATH "guest_socket"
-#define APP_SOCKET_PATH "app_socket"
-#define IVSHMEM_PROTOCOL_VERSION 0
-#define HOST_PEERID 255
-#define MAX_FP_CORES 16
-
 static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd);
 
 int cham_init_guest()
@@ -137,11 +130,15 @@ err_close:
 }
 
 /* TODO: Pass enum protocol_type instead of uint8_t */
-int cham_init_app_ctx(struct app_lib *a, uint8_t proto_type)
+struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type)
 {
+  int i;
   ssize_t sz, off;
-  struct queue_new_app_ctx_res *resp;
-  uint8_t resp_buf[sizeof(*resp)];
+  struct dqueue *rxq;
+  struct equeue *txq;
+  struct app_context_lib *actx;
+  struct queue_new_app_ctx_res *res;
+  uint8_t resp_buf[sizeof(*res)];
   struct queue_new_app_ctx_req req = {
     .proto_type = proto_type,
   };
@@ -175,21 +172,62 @@ int cham_init_app_ctx(struct app_lib *a, uint8_t proto_type)
   assert(sz == sizeof(req));
 
   /* Receive response on kernel socket */
-  resp = (struct queue_new_app_ctx_res *) resp_buf;
+  res = (struct queue_new_app_ctx_res *) resp_buf;
   off = 0;
-  while (off < sizeof(*resp)) 
+  while (off < sizeof(*res)) 
   {
-    sz = read(a->uxsocket_fd, (uint8_t *) resp + off, sizeof(*resp) - off);
+    sz = read(a->uxsocket_fd, (uint8_t *) res + off, sizeof(*res) - off);
     if (sz < 0) 
     {
       LOG_ERROR("read failed");
       perror("");
-      return -1;
+      return NULL;
     }
     off += sz;
   }
 
-  return 0;
+  actx = malloc(sizeof(struct app_context_lib));
+  if (actx == NULL)
+  {
+    LOG_ERROR("failed to allocate app context");
+    return NULL;
+  }
+
+  actx->id = a->n_ctxs;
+  
+  /* Create bump queues for each fast-path core */
+  for (i = 0; i < res->n_fp_cores; i++)
+  {
+    rxq = dqueue_new(res->rx_bump_q_len, 
+        a->shm_base + res->rx_bump_q_offs[i], res->rx_bump_q_offs[i]);
+    if (rxq == NULL)
+    {
+      LOG_ERROR("failed to create rx bump queue=%d for app ctx=%d", 
+          i, actx->id);
+      goto free_actx;
+    }
+    actx->rx_bump_q[i] = rxq;
+
+    txq = equeue_new(res->tx_bump_q_len,
+      a->shm_base + res->tx_bump_q_offs[i], res->tx_bump_q_offs[i]);
+    if (txq == NULL)
+    {
+      LOG_ERROR("failed to create tx bump queue=%d for app ctx=%d",
+        i, actx->id);
+      goto free_actx;
+    }
+    actx->tx_bump_q[i] = txq;
+  }
+
+  a->n_ctxs++;
+  actx->next = a->ctxs;
+  a->ctxs = actx;
+
+  return actx;
+
+free_actx:
+  free(actx);
+  return NULL;
 }
 
 int cham_init_queue(struct app_lib *a)

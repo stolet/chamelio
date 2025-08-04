@@ -14,9 +14,9 @@ struct configuration {
   /* Size of queue between application and slow path */
   uint64_t app_queue_len;
   /* Size of RX bump queue between application and slow path */
-  uint64_t app_ctx_rx_queue_len;
+  uint64_t bump_rx_queue_len;
   /* Size of TX bump queue between application and slow path */
-  uint64_t app_ctx_tx_queue_len;
+  uint64_t bump_tx_queue_len;
   /* Size of queue between guest agent and chamelio */
   uint64_t agt_queue_len;
   /* Size of application receive buffer */

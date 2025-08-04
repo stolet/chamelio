@@ -31,6 +31,9 @@ enum queue_type {
   QUEUE_NEW_APP_CTX,
   /* Entry for new app context registration with fast-path */
   QUEUE_NEW_APP_CTX_FAST,
+
+  /* Entry for new Chamelio buffer used for RX or TX */
+  QUEUE_NEW_BUF,
 };
 
 /* Request for registering new guest */
@@ -95,10 +98,15 @@ struct queue_new_app_ctx_res {
   /* Length in shared memory for App->Chamelio queue */
   uint32_t app_cham_q_len;
 
+  /* TODO: Can we not hardcode a macro here? */
+  /* Length of each RX bump queue */
+  uint32_t rx_bump_q_len;
   /* Offset in shared memory for rx queues for each fast-path core */
-  uint64_t rxq_offs[MAX_FP_CORES];
+  uint64_t rx_bump_q_offs[MAX_FP_CORES];
+  /* Lengyh of each TX bump queue */
+  uint32_t tx_bump_q_len;
   /* Offset in shared memory for tx queues for each fast-path core */
-  uint64_t txq_offs[MAX_FP_CORES];
+  uint64_t tx_bump_q_offs[MAX_FP_CORES];
 } __attribute__((packed));
 
 struct queue_entry {
@@ -147,10 +155,10 @@ struct dqueue {
 
 /* Creates a new queue that can only enqueue entries. 
    Prevents race conditions */
-struct equeue * equeue_new(uint32_t size, void *base, uint64_t off);
+struct equeue * equeue_new(uint32_t size, void *addr, uint64_t off);
 /* Creates a new queue that can only dequeue entries. 
    Prevents race conditions */
-struct dqueue * dqueue_new(uint32_t size, void *base, uint64_t off);
+struct dqueue * dqueue_new(uint32_t size, void *addr, uint64_t off);
 /* Advances the tail pointer for the queue */
 int queue_enqueue(struct equeue *q, uint8_t type);
 /* Advances the head pointer for the queue */

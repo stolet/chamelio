@@ -445,26 +445,28 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
     if (shmalloc_alloc(alloc, 
-        ctx->config->app_ctx_rx_queue_len, &app_ctx->rxq[i]))
+        ctx->config->bump_rx_queue_len, &app_ctx->rxq[i]))
     {
       LOG_ERROR("shmalloc_alloc for rxq=%d failed", i);
       goto free_txq;
     }
     
     if (shmalloc_alloc(alloc, 
-        ctx->config->app_ctx_tx_queue_len, &app_ctx->txq[i]))
+        ctx->config->bump_tx_queue_len, &app_ctx->txq[i]))
     {
       LOG_ERROR("shmalloc_alloc for txq=%d failed", i);
       goto free_txq;
     }
     
     memset((uint8_t *) app_ctx->rxq[i]->addr, 
-      0, ctx->config->app_ctx_rx_queue_len);
+      0, ctx->config->bump_rx_queue_len);
     memset((uint8_t *) app_ctx->txq[i]->addr, 
-      0, ctx->config->app_ctx_tx_queue_len);
-    aev->ctx_res.rxq_offs[i] = app_ctx->rxq[i]->off;
-    aev->ctx_res.txq_offs[i] = app_ctx->txq[i]->off;
+      0, ctx->config->bump_tx_queue_len);
+    aev->ctx_res.rx_bump_q_offs[i] = app_ctx->rxq[i]->off;
+    aev->ctx_res.tx_bump_q_offs[i] = app_ctx->txq[i]->off;
   }
+  aev->ctx_res.rx_bump_q_len = ctx->config->bump_rx_queue_len;
+  aev->ctx_res.tx_bump_q_len = ctx->config->bump_tx_queue_len;
 
   /* Create queue that holds messages from the app context to Chamelio */
   ret = shmalloc_alloc(alloc, ctx->config->app_queue_len, &ac_handle);

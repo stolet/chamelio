@@ -1,16 +1,19 @@
-#include <rte_malloc.h>
-
 #include "queue.h"
 
 #include "log.h"
 #include "utils.h"
 #include "shmalloc.h"
 
-struct equeue * equeue_new(uint32_t size, void *base, uint64_t off)
+/*  Maybe we want to use the DPDK rte_malloc function here
+    so we allocate from hugepages. But this is a bit annoying since
+    the library also uses the queue interface but it can't allocate
+    from hugepages. */
+
+struct equeue * equeue_new(uint32_t size, void *addr, uint64_t off)
 {
   struct equeue *q;
 
-  q = rte_malloc("queue", sizeof(struct equeue), 0);
+  q = malloc(sizeof(struct equeue));
   if (q == NULL)
   {
     LOG_ERROR("Failed to allocate queue from hugepages");
@@ -18,18 +21,18 @@ struct equeue * equeue_new(uint32_t size, void *base, uint64_t off)
   }
   
   q->off = off;
-  q->entries = base;
+  q->entries = addr;
   q->tail = 0;
   q->size = size;
 
   return q;
 }
 
-struct dqueue * dqueue_new(uint32_t size, void *base, uint64_t off)
+struct dqueue * dqueue_new(uint32_t size, void *addr, uint64_t off)
 {
   struct dqueue *q;
 
-  q = rte_malloc("queue", sizeof(struct dqueue), 0);
+  q = malloc(sizeof(struct dqueue));
   if (q == NULL)
   {
     LOG_ERROR("Failed to allocate queue from hugepages");
@@ -37,7 +40,7 @@ struct dqueue * dqueue_new(uint32_t size, void *base, uint64_t off)
   }
   
   q->off = off;
-  q->entries = base;
+  q->entries = addr;
   q->head = 0;
   q->size = size;
 
