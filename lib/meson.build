@@ -1,6 +1,6 @@
 lib_inc = include_directories('include')
 
-lib_srcs = files('init.c')
+lib_srcs = files('init.c', 'poll.c')
 
 deps = [
   dependency('utils_dep'),

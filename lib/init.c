@@ -134,8 +134,8 @@ struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type
 {
   int i;
   ssize_t sz, off;
-  struct dqueue *rxq;
-  struct equeue *txq;
+  struct dqueue *rxq, *cham_app_q;
+  struct equeue *txq, *app_cham_q;
   struct app_context_lib *actx;
   struct queue_new_app_ctx_res *res;
   uint8_t resp_buf[sizeof(*res)];
@@ -192,9 +192,30 @@ struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type
     LOG_ERROR("failed to allocate app context");
     return NULL;
   }
-
   actx->id = a->n_ctxs;
-  
+  actx->app = a;
+  actx->n_fp_cores = res->n_fp_cores;
+
+  /* Create queue for messages from app context to Chamelio */
+  app_cham_q = equeue_new(res->app_cham_q_len,
+    a->shm_base + res->app_cham_q_off, res->app_cham_q_off);
+  if (app_cham_q == NULL)
+  {
+    LOG_ERROR("failed to create queue from app context to Chamelio");
+    goto free_actx;
+  }
+  actx->app_cham_q = app_cham_q;
+
+  /* Create queue for messages from Chamelio to app context */
+  cham_app_q = dqueue_new(res->cham_app_q_len,
+    a->shm_base + res->cham_app_q_off, res->cham_app_q_off);
+  if (cham_app_q == NULL)
+  {
+    LOG_ERROR("failed to create queue from Chamelio to app context");
+    goto free_actx;
+  }
+  actx->cham_app_q = cham_app_q;
+
   /* Create bump queues for each fast-path core */
   for (i = 0; i < res->n_fp_cores; i++)
   {
@@ -230,8 +251,26 @@ free_actx:
   return NULL;
 }
 
-int cham_init_queue(struct app_lib *a)
+int cham_init_buf(struct app_context_lib *actx)
 {
+  struct buff_lib *buf;
+  struct queue_entry *qe;
+
+  buf = malloc(sizeof(struct buff_lib));
+  if (buf == NULL)
+  {
+    LOG_ERROR("failed to allocate buffer");
+    return -1;
+  }
+
+  qe = queue_tail(actx->app_cham_q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+
+  queue_enqueue(actx->app_cham_q, QUEUE_NEW_BUF);
   return 0;
 }
 
