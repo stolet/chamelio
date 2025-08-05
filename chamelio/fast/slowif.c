@@ -2,12 +2,13 @@
 #include "queue.h"
 #include "udp.h"
 
-int init_new_guest(struct fast_context *ctx, struct queue_entry *qe);
-int init_new_app(struct fast_context *ctx, struct queue_entry *qe);
-int init_new_app_ctx(struct fast_context *ctx, struct queue_entry *qe);
-void * select_rx(enum protocol_type type);
-void * select_tx(enum protocol_type type);
-void * select_queues(enum protocol_type type);
+static int handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
+static int handle_new_app(struct fast_context *ctx, struct queue_entry *qe);
+static int handle_new_app_ctx(struct fast_context *ctx, struct queue_entry *qe);
+static int handle_new_buf(struct fast_context *ctx, struct queue_entry *qe);
+static void * select_rx(enum protocol_type type);
+static void * select_tx(enum protocol_type type);
+static void * select_queues(enum protocol_type type);
 
 int slowif_poll(struct fast_context *ctx)
 {
@@ -30,17 +31,20 @@ int slowif_poll(struct fast_context *ctx)
         queue_dequeue(q);
         break;
       case QUEUE_NEW_GUEST:
-        init_new_guest(ctx, qe);
+        handle_new_guest(ctx, qe);
         queue_dequeue(q);
         break;
       case QUEUE_NEW_APP:
-        init_new_app(ctx, qe);
+        handle_new_app(ctx, qe);
         queue_dequeue(q);
         break;
       case QUEUE_NEW_APP_CTX_FAST:
-        init_new_app_ctx(ctx, qe);
+        handle_new_app_ctx(ctx, qe);
         queue_dequeue(q);
         break;
+      case QUEUE_NEW_BUF:
+        handle_new_buf(ctx, qe);
+        queue_dequeue(q);
       default:
         LOG_WARN("unknown queue tryt type from slow path" 
             "to fast path type=%d", type);
@@ -51,7 +55,7 @@ int slowif_poll(struct fast_context *ctx)
   return 0;
 }
 
-int init_new_guest(struct fast_context *ctx, struct queue_entry *qe)
+static int handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
 {
   struct guest_fast *g;
   struct queue_new_guest_req *req = (struct queue_new_guest_req *) &qe->data;
@@ -68,7 +72,7 @@ int init_new_guest(struct fast_context *ctx, struct queue_entry *qe)
   return 0;
 }
 
-int init_new_app(struct fast_context *ctx, struct queue_entry *qe)
+static int handle_new_app(struct fast_context *ctx, struct queue_entry *qe)
 {
   struct app_fast *a;
   struct guest_fast *g;
@@ -89,7 +93,7 @@ int init_new_app(struct fast_context *ctx, struct queue_entry *qe)
   return 0;
 }
 
-int init_new_app_ctx(struct fast_context *ctx, struct queue_entry *qe)
+static int handle_new_app_ctx(struct fast_context *ctx, struct queue_entry *qe)
 {
   struct app_fast *a;
   struct app_context_fast *actx;
@@ -101,15 +105,20 @@ int init_new_app_ctx(struct fast_context *ctx, struct queue_entry *qe)
 
   actx->id = req->cid;
   actx->app = a;
-  actx->rxq_off = req->rxq_off;
-  actx->txq_off = req->txq_off;
+  actx->app_bump_q_off = req->app_bump_q_off;
+  actx->cham_bump_q_off = req->cham_bump_q_off;
 
   a->n_app_ctxs++;
   
   return 0;
 }
 
-void * select_rx(enum protocol_type type)
+static int handle_new_buf(struct fast_context *ctx, struct queue_entry *qe)
+{
+  return 0;
+}
+
+static void * select_rx(enum protocol_type type)
 {
   void *process_rx;
 
@@ -128,7 +137,7 @@ void * select_rx(enum protocol_type type)
   return process_rx;
 }
 
-void * select_tx(enum protocol_type type)
+static void * select_tx(enum protocol_type type)
 {
   void *process_tx;
 
@@ -147,7 +156,7 @@ void * select_tx(enum protocol_type type)
   return process_tx;
 }
 
-void * select_queues(enum protocol_type type)
+static void * select_queues(enum protocol_type type)
 {
   void *process_queue;
 

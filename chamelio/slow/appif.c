@@ -372,7 +372,7 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   struct app_context_slow *app_ctx;
   struct dqueue *app_cham_q; 
   struct equeue *cham_app_q;
-  struct shm_handle **rxq, **txq, *ac_handle, *ca_handle;
+  struct shm_handle **app_bumpq, **cham_bumpq, *ac_handle, *ca_handle;
   struct queue_entry *qe_new_ctx;
   struct queue_new_app_ctx_fast_req *new_ctx_req;
 
@@ -424,49 +424,49 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   app_ctx = &aev->app->ctxs[aev->app->n_ctxs];
 
   /* Allocate list to hold shm handles for rx queues */
-  rxq = malloc(sizeof(struct shm_handle *) * ctx->config->fp_cores_max);
-  if (rxq == NULL)
+  app_bumpq = malloc(sizeof(struct shm_handle *) * ctx->config->fp_cores_max);
+  if (app_bumpq == NULL)
   {
-    LOG_ERROR("failed to allocate rxq");
+    LOG_ERROR("failed to allocate app_bumpq");
     goto free_app_ctx;
   }
-  app_ctx->rxq = rxq;
+  app_ctx->app_bumpq = app_bumpq;
 
   /* Allocate list to hold shm handles for tx queues */
-  txq = malloc(sizeof(struct shm_handle *) * ctx->config->fp_cores_max);
-  if (txq == NULL)
+  cham_bumpq = malloc(sizeof(struct shm_handle *) * ctx->config->fp_cores_max);
+  if (cham_bumpq == NULL)
   {
-    LOG_ERROR("failed to allocate txq");
-    goto free_rxq;
+    LOG_ERROR("failed to allocate cham_bumpq");
+    goto free_app_bumpq;
   }
-  app_ctx->txq = txq;
+  app_ctx->cham_bumpq = cham_bumpq;
 
   /* Allocate memory in the shared memory region for rx and tx bump queues */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
     if (shmalloc_alloc(alloc, 
-        ctx->config->bump_rx_queue_len, &app_ctx->rxq[i]))
+        ctx->config->bump_rx_queue_len, &app_ctx->app_bumpq[i]))
     {
-      LOG_ERROR("shmalloc_alloc for rxq=%d failed", i);
-      goto free_txq;
+      LOG_ERROR("shmalloc_alloc for app_bumpq=%d failed", i);
+      goto free_cham_bumpq;
     }
     
     if (shmalloc_alloc(alloc, 
-        ctx->config->bump_tx_queue_len, &app_ctx->txq[i]))
+        ctx->config->bump_tx_queue_len, &app_ctx->cham_bumpq[i]))
     {
-      LOG_ERROR("shmalloc_alloc for txq=%d failed", i);
-      goto free_txq;
+      LOG_ERROR("shmalloc_alloc for cham_bumpq=%d failed", i);
+      goto free_cham_bumpq;
     }
     
-    memset((uint8_t *) app_ctx->rxq[i]->addr, 
+    memset((uint8_t *) app_ctx->app_bumpq[i]->addr, 
       0, ctx->config->bump_rx_queue_len);
-    memset((uint8_t *) app_ctx->txq[i]->addr, 
+    memset((uint8_t *) app_ctx->cham_bumpq[i]->addr, 
       0, ctx->config->bump_tx_queue_len);
-    aev->ctx_res.rx_bump_q_offs[i] = app_ctx->rxq[i]->off;
-    aev->ctx_res.tx_bump_q_offs[i] = app_ctx->txq[i]->off;
+    aev->ctx_res.app_bump_q_offs[i] = app_ctx->app_bumpq[i]->off;
+    aev->ctx_res.cham_bump_q_offs[i] = app_ctx->cham_bumpq[i]->off;
   }
-  aev->ctx_res.rx_bump_q_len = ctx->config->bump_rx_queue_len;
-  aev->ctx_res.tx_bump_q_len = ctx->config->bump_tx_queue_len;
+  aev->ctx_res.app_bump_q_len = ctx->config->bump_rx_queue_len;
+  aev->ctx_res.cham_bump_q_len = ctx->config->bump_tx_queue_len;
 
   /* Create queue that holds messages from the app context to Chamelio */
   ret = shmalloc_alloc(alloc, ctx->config->app_queue_len, &ac_handle);
@@ -525,8 +525,8 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
     new_ctx_req->aid = aev->app->id;
     new_ctx_req->gid = aev->guest->id;
     new_ctx_req->proto_type = aev->ctx_req.proto_type;
-    new_ctx_req->rxq_off = app_ctx->rxq[i]->off;
-    new_ctx_req->txq_off = app_ctx->txq[i]->off;
+    new_ctx_req->app_bump_q_off = app_ctx->app_bumpq[i]->off;
+    new_ctx_req->cham_bump_q_off = app_ctx->cham_bumpq[i]->off;
     ret = queue_enqueue(ctx->slow_fast_qs[i], QUEUE_NEW_APP_CTX_FAST);
         if (ret != 0)
     {
@@ -565,13 +565,13 @@ free_app_cham_handle:
 free_shm_allocs:
     for (i = 0; i < ctx->config->fp_cores_max; i++)
     {
-      shmalloc_free(alloc, app_ctx->rxq[i]);
-      shmalloc_free(alloc, app_ctx->txq[i]);
+      shmalloc_free(alloc, app_ctx->app_bumpq[i]);
+      shmalloc_free(alloc, app_ctx->cham_bumpq[i]);
     }
-free_txq:
-    free(txq);
-free_rxq:
-    free(rxq);
+free_cham_bumpq:
+    free(cham_bumpq);
+free_app_bumpq:
+    free(app_bumpq);
 free_app_ctx:
     free(app_ctx);
 error_uxsocket:

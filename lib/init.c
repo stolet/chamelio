@@ -134,8 +134,8 @@ struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type
 {
   int i;
   ssize_t sz, off;
-  struct dqueue *rxq, *cham_app_q;
-  struct equeue *txq, *app_cham_q;
+  struct dqueue *app_bump_q, *cham_app_q;
+  struct equeue *cham_bump_q, *app_cham_q;
   struct app_context_lib *actx;
   struct queue_new_app_ctx_res *res;
   uint8_t resp_buf[sizeof(*res)];
@@ -219,25 +219,25 @@ struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type
   /* Create bump queues for each fast-path core */
   for (i = 0; i < res->n_fp_cores; i++)
   {
-    rxq = dqueue_new(res->rx_bump_q_len, 
-        a->shm_base + res->rx_bump_q_offs[i], res->rx_bump_q_offs[i]);
-    if (rxq == NULL)
+    app_bump_q = dqueue_new(res->app_bump_q_len, 
+        a->shm_base + res->app_bump_q_offs[i], res->app_bump_q_offs[i]);
+    if (app_bump_q == NULL)
     {
       LOG_ERROR("failed to create rx bump queue=%d for app ctx=%d", 
           i, actx->id);
       goto free_actx;
     }
-    actx->rx_bump_q[i] = rxq;
+    actx->bump_app_q[i] = app_bump_q;
 
-    txq = equeue_new(res->tx_bump_q_len,
-      a->shm_base + res->tx_bump_q_offs[i], res->tx_bump_q_offs[i]);
-    if (txq == NULL)
+    cham_bump_q = equeue_new(res->cham_bump_q_len,
+      a->shm_base + res->cham_bump_q_offs[i], res->cham_bump_q_offs[i]);
+    if (cham_bump_q == NULL)
     {
       LOG_ERROR("failed to create tx bump queue=%d for app ctx=%d",
         i, actx->id);
       goto free_actx;
     }
-    actx->tx_bump_q[i] = txq;
+    actx->bump_cham_q[i] = cham_bump_q;
   }
 
   a->n_ctxs++;

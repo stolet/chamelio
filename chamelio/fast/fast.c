@@ -26,7 +26,7 @@ int poll_slow(struct fast_context *ctx);
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, uint16_t thread_id,
     struct shm_handle *fs_handle, struct shm_handle *sf_handle,
-    struct configuration *config)
+    struct configuration *config, int shm_fd_internal, void *shm_base_internal)
 {
   int i, j, n_apps, n_app_ctxs;
   struct dqueue *sfq;
@@ -36,6 +36,8 @@ int fast_context_init(struct fast_context *f_ctx,
   struct app_context_fast *app_ctxs;
 
   f_ctx->id = thread_id;
+  f_ctx->shm_fd_internal = shm_fd_internal;
+  f_ctx->shm_base_internal= shm_base_internal;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
 
   sfq = dqueue_new(config->cham_queue_len, sf_handle->addr, sf_handle->off);

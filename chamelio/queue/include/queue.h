@@ -43,13 +43,25 @@ struct queue_buf_bump {
   /* Opaque pointer to buffer in application library */
   uint64_t opaque;
   /* How much to bump the head of this buffer */
-  uint64_t bump;
+  uint64_t head_bump;
+  /* How much to bump the avail of this buffer */
+  uint64_t avail_bump;
 };
 
 /* Request for registering new buf */
 struct queue_new_buf_req {
   /* Opaque pointer to buffer in application library */
   uint64_t opaque;
+  /* Guest ID */
+  uint8_t gid;
+  /* Application ID */
+  uint8_t aid;
+  /* Application context ID */
+  uint8_t cid;
+  /* Buffer base */
+  uint64_t base;
+  /* Length of the buffer */
+  uint32_t len;
 };
 
 /* Response for registering new buf */
@@ -105,13 +117,13 @@ struct queue_new_app_ctx_res {
 
   /* TODO: Can we not hardcode a macro here? */
   /* Length of each RX bump queue */
-  uint32_t rx_bump_q_len;
+  uint32_t app_bump_q_len;
   /* Offset in shared memory for rx queues for each fast-path core */
-  uint64_t rx_bump_q_offs[MAX_FP_CORES];
+  uint64_t app_bump_q_offs[MAX_FP_CORES];
   /* Lengyh of each TX bump queue */
-  uint32_t tx_bump_q_len;
+  uint32_t cham_bump_q_len;
   /* Offset in shared memory for tx queues for each fast-path core */
-  uint64_t tx_bump_q_offs[MAX_FP_CORES];
+  uint64_t cham_bump_q_offs[MAX_FP_CORES];
 } __attribute__((packed));
 
 /* Request for registering new application context with fast-path */
@@ -125,9 +137,9 @@ struct queue_new_app_ctx_fast_req {
   /* Protocol type to register for this context */
   uint8_t proto_type; 
   /* Offset in shared memory for rx bump queue for this app context */
-  uint64_t rxq_off;
-  /* Offser in shared memory for tx bump queue for this app context */
-  uint64_t txq_off;
+  uint64_t app_bump_q_off;
+  /* Offset in shared memory for tx bump queue for this app context */
+  uint64_t cham_bump_q_off;
 } __attribute__((packed));
 
 struct queue_entry {

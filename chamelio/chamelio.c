@@ -74,6 +74,8 @@ int main (int argc, char **argv)
     LOG_ERROR("failed to initialise internal shared memory region");
     goto free_fctxs;
   }
+  cham_ctx.shm_fd_internal = sfd;
+  cham_ctx.shm_base_internal = shm_base;
 
   /* Create allocator for internal shared memory region */
   alloc = shmalloc_init(sfd, shm_base, config->shm_internal_len);
@@ -235,7 +237,7 @@ static int fast_thread(void *arg)
   /* initialize data plane context */
   ret = fast_context_init(f_ctx, &cham_ctx.nic_ctx, id,
       cham_ctx.fast_slow_handles[id], cham_ctx.slow_fast_handles[id],
-      &cham_ctx.config);
+      &cham_ctx.config, cham_ctx.shm_fd_internal, cham_ctx.shm_base_internal);
   if (ret != 0) 
   {
     LOG_ERROR("failed to initialize fast path context");

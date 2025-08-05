@@ -2,6 +2,7 @@
 #define CHAM_LIB_H_
 
 #include <stdint.h>
+#include <stddef.h>
 
 #include "utils.h"
 
@@ -18,7 +19,7 @@ struct buff_lib {
   uint64_t base;
   /* Length of the buffer */
   uint32_t len;
-  /* Head of the queue */
+  /* Head of the buffer */
   uint64_t head;
   /* Number of bytes available */
   uint32_t avail;
@@ -39,9 +40,9 @@ struct app_context_lib {
   /* Queue from the Chamelio slow-path to the application context */
   struct dqueue *cham_app_q;
   /* Queues for RX bumps. One per FP core. */
-  struct dqueue *rx_bump_q[MAX_FP_CORES];
+  struct dqueue *bump_app_q[MAX_FP_CORES];
   /* Queues for TX bumps. One per FP core. */
-  struct equeue *tx_bump_q[MAX_FP_CORES];
+  struct equeue *bump_cham_q[MAX_FP_CORES];
   /* Next context in list */
   struct app_context_lib *next;
 };
@@ -67,9 +68,16 @@ struct app_lib * cham_init_app();
 /* Initialises a new application context with Chamelio*/
 struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type);
 
+/* Creates new buffer */
+struct buff_lib * cham_new_buf(struct app_context_lib *ctx);
+/* Writes to the buffer */
+int cham_write(struct buff_lib *dst, void *src, size_t len);
+/* Reads the buffer */
+int cham_read(struct buff_lib *src, void *dst, size_t len);
+
 /* Polls for messages from Chamelio slow-path */
-int poll_chamelio(struct app_context_lib *actx);
+int cham_poll_slow(struct app_context_lib *actx);
 /* Polls for bump messages from rx */
-int poll_bump(struct app_context_lib *actx);
+int cham_poll_bump(struct app_context_lib *actx);
 
 #endif

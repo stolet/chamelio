@@ -3,13 +3,17 @@
 #include <assert.h>
 
 #include "slow.h"
+#include "shmalloc.h"
 #include "guestif.h"
 #include "appif.h"
 #include "config.h"
 #include "log.h"
 #include "queue.h"
 
-int poll_fast();
+static int poll_fast(struct slow_context *ctx);
+static int poll_app_contexts(struct slow_context *ctx);
+static int handle_new_buf(struct slow_context *ctx, struct queue_entry *qe, 
+    struct app_context_slow *actx);
 
 int slow_context_init(struct slow_context *ctx, struct configuration *config,
     struct shm_handle **fs_handles, struct shm_handle **sf_handles)
@@ -139,12 +143,12 @@ int slow_loop(struct slow_context *ctx)
     guestif_poll(ctx);
     appif_poll(ctx);
     poll_fast(ctx);
+    poll_app_contexts(ctx);
   }
 }
 
-int poll_fast(struct slow_context *ctx)
+static int poll_fast(struct slow_context *ctx)
 {
-  uint8_t type;
   struct dqueue *q;
   struct queue_entry *qe;
   int i;
@@ -158,8 +162,7 @@ int poll_fast(struct slow_context *ctx)
 
     if (qe != NULL)
     {
-      type = qe->type;
-      switch (type)
+      switch (qe->type)
       {
         case QUEUE_EMPTY:
           break;
@@ -169,11 +172,84 @@ int poll_fast(struct slow_context *ctx)
           break;
         default:
           LOG_ERROR("unknown queue entry type from "
-              "fast path to slow path type=%d", type);
+              "fast path to slow path type=%d", qe->type);
           abort();
       }
     }
   }
+
+  return 0;
+}
+
+static int poll_app_contexts(struct slow_context *ctx)
+{
+  int i, j, z;
+  struct dqueue *q;
+  struct queue_entry *qe;
+  struct guest_slow *g;
+  struct app_slow *a;
+  struct app_context_slow *actx;
+
+  for (i = 0; i < ctx->n_guests; i++)
+  {
+    g = &ctx->guests[i];
+    for (j = 0; j < g->n_apps; j++)
+    {
+      a = &g->apps[j];
+      for (z = 0; z < a->n_ctxs; z++)
+      {
+        actx = &a->ctxs[z];
+        q = actx->app_cham_q;
+        qe = queue_head(q);
+
+        switch (qe->type)
+        {
+          case QUEUE_NEW_BUF:
+            handle_new_buf(ctx, qe, actx);
+            queue_dequeue(q);
+            break;
+          default:
+            LOG_ERROR("unknown queue entry type from "
+              "app ctx to slow path type=%d", qe->type);
+            return -1;
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
+static int handle_new_buf(struct slow_context *ctx, struct queue_entry *qe, 
+    struct app_context_slow *actx)
+{
+  int ret;
+  struct equeue *q;
+  struct shm_handle *sh;
+  struct shm_allocator *alloc;
+  struct queue_new_buf_res *res;
+  struct queue_new_buf_req *req_app;
+
+  req_app = (struct queue_new_buf_req *) &qe->data;
+
+  /* Allocate space for buffer from shared memory region */
+  alloc = actx->app->guest->alloc;
+  /* TODO: Don't always pass the rxbuf len. Differentiate TX and RX bufs */
+  ret = shmalloc_alloc(alloc, ctx->config->rxbuf_len, &sh);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocate buffer in shm");
+    return -1;
+  }
+
+  /* Send response to application */
+  q = actx->cham_app_q;
+  qe = queue_tail(q);
+  res = (struct queue_new_buf_res *) &qe->data;
+  res->opaque = req_app->opaque;
+  res->base = sh->off;
+  res->len = ctx->config->rxbuf_len;
+  queue_enqueue(q, QUEUE_NEW_BUF);
 
   return 0;
 }

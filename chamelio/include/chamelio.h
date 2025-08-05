@@ -20,6 +20,10 @@ struct chamelio_context {
   struct shm_handle **fast_slow_handles;
   /* Shared memory handles for the slow-path to fast-path queues. One per core. */
   struct shm_handle **slow_fast_handles;
+  /* File descriptor for internal shared memory region */
+  int shm_fd_internal;
+  /* Base pointer to internal shared memory region */
+  void *shm_base_internal;
 };
 
 #endif

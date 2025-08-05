@@ -39,10 +39,10 @@ struct app_context_fast {
   uint8_t id;
   /* Pointer to the application for this context */
   struct app_fast *app;
-  /* List of rx queue offset for each app context and fast-path core */
-  uint64_t rxq_off;
+  /* List of app bump queue offset */
+  uint64_t app_bump_q_off;
   /* List of tx queue offset for each app context and fast-path core */
-  uint64_t txq_off;
+  uint64_t cham_bump_q_off;
 };
 
 struct app_fast {
@@ -56,6 +56,8 @@ struct app_fast {
   uint8_t n_app_ctxs;
   /* List of application contexts */
   struct app_context_fast *app_ctxs;
+  /* Table with registered send or tx Chamelio buffers */
+  struct cham_buf_ht *buf_ht;
 };
 
 struct guest_fast {
@@ -91,13 +93,19 @@ struct fast_context {
   struct equeue *fast_slow_q;
   /* Queue from the slow-path to the fast-path */
   struct dqueue *slow_fast_q;
+
+  /* TODO: Pass internnal fd and base to fast-path */
+  /* File descriptor for internal shared memory */
+  int shm_fd_internal;
+  /* Base pointer for internal shared memory region */
+  void *shm_base_internal;
 };
 
 /* Initialises the fast-path context when a core is launched */
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, uint16_t thread_id,
     struct shm_handle *fs_handle, struct shm_handle *sf_handle,
-    struct configuration *config);
+    struct configuration *config, int shm_fd_internal, void *shm_base_internal);
 /* Dataplane loop in a fast-path core */
 int fast_loop(struct fast_context *ctx);
 /* Cleansup the fast-path */

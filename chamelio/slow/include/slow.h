@@ -15,10 +15,10 @@ struct app_context_slow {
   /* Queue from the Chamelio slow-path to the application context */
   struct equeue *cham_app_q;
 
-  /* List of rx queue handles for each app context and fast-path core */
-  struct shm_handle **rxq;
-  /* List of tx queue handles for each app context and fast-path core */
-  struct shm_handle **txq;
+  /* List of rx queue handles for each app bump queue */
+  struct shm_handle **app_bumpq;
+  /* List of tx queue handles for each Chamelio bump queue */
+  struct shm_handle **cham_bumpq;
 };
 
 struct app_slow {
@@ -28,11 +28,14 @@ struct app_slow {
   uint8_t proto_type;
   /* Guest where this application is running */
   struct guest_slow *guest;
+  /* Table with registered send or tx Chamelio buffers */
+  struct cham_buf_ht *buf_ht;
 
   /* Number of contexts for this app */
   uint8_t n_ctxs;
   /* Application contexts. One per app core. */
   struct app_context_slow *ctxs;
+
 };
 
 struct guest_slow {
