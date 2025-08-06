@@ -5,7 +5,7 @@ int main (int argc, char **argv)
 {
   struct app_lib *a;
   struct app_context_lib *actx;
-  struct buff_lib *buf;
+  struct buf_lib *buf;
 
   // cham_init_guest();
   a = cham_init_app();

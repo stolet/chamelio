@@ -63,11 +63,11 @@ int cham_poll_bump(struct app_context_lib *actx)
 
 static int handle_new_buf(struct queue_entry *qe)
 {
-  struct buff_lib *buf;
+  struct buf_lib *buf;
   struct queue_new_buf_res *res;
   
   res = (struct queue_new_buf_res *) &qe->data;
-  buf = (struct buff_lib *) res->opaque;
+  buf = (struct buf_lib *) res->opaque;
   buf->base = res->base;
   buf->len = res->len;
 
@@ -77,11 +77,11 @@ static int handle_new_buf(struct queue_entry *qe)
 static int handle_bump(struct queue_entry *qe)
 {
   uint64_t head;
-  struct buff_lib *buf;
+  struct buf_lib *buf;
   struct queue_buf_bump *bump;
   
   bump = (struct queue_buf_bump *) &qe->data;
-  buf = (struct buff_lib *) bump->opaque;
+  buf = (struct buf_lib *) bump->opaque;
   
   head = buf->head + bump->head_bump;
   if (head > buf->len)

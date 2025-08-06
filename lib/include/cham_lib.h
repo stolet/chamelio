@@ -14,7 +14,7 @@
 #define MAX_FP_CORES 16
 
 /* Chamelio buffers that can be used for RX or TX */
-struct buff_lib {
+struct buf_lib {
   /* Base address of buffer */
   uint64_t base;
   /* Length of the buffer */
@@ -69,11 +69,11 @@ struct app_lib * cham_init_app();
 struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type);
 
 /* Creates new buffer */
-struct buff_lib * cham_new_buf(struct app_context_lib *ctx);
+struct buf_lib * cham_new_buf(struct app_context_lib *ctx);
 /* Writes to the buffer */
-int cham_write(struct buff_lib *dst, void *src, size_t len);
+int cham_write(struct buf_lib *dst, void *src, size_t len);
 /* Reads the buffer */
-int cham_read(struct buff_lib *src, void *dst, size_t len);
+int cham_read(struct buf_lib *src, void *dst, size_t len);
 
 /* Polls for messages from Chamelio slow-path */
 int cham_poll_slow(struct app_context_lib *actx);
