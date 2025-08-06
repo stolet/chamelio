@@ -340,6 +340,12 @@ static int uxsocket_accept(struct slow_context *ctx)
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
     qe_new_guest = queue_tail(ctx->slow_fast_qs[i]);
+    if (qe_new_guest == NULL)
+    {
+      LOG_ERROR("slow to fast queue is empty");
+      goto remove_from_epoll;
+    }
+
     new_guest_req = (struct queue_new_guest_req *) &qe_new_guest->data;
     new_guest_req->id = g->id;
     new_guest_req->shm_base = shm_base;

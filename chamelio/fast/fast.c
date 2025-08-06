@@ -117,24 +117,24 @@ int fast_loop(struct fast_context *ctx)
 
   while(1) 
   {
-    ret = poll_rx(ctx);
-    if (ret < 0)
-    {
-      LOG_ERROR("poll_rx failed");
-      return -1;
-    }
+    // ret = poll_rx(ctx);
+    // if (ret < 0)
+    // {
+    //   LOG_ERROR("poll_rx failed");
+    //   return -1;
+    // }
 
-    ret = poll_queues(ctx);
-    if (ret < 0)
-    {
-      LOG_ERROR("poll_queues failed");
-    }
+    // ret = poll_queues(ctx);
+    // if (ret < 0)
+    // {
+    //   LOG_ERROR("poll_queues failed");
+    // }
 
-    ret = poll_tx(ctx);
-    if (ret < 0)
-    {
-      LOG_ERROR("poll_tx failed");
-    }
+    // ret = poll_tx(ctx);
+    // if (ret < 0)
+    // {
+    //   LOG_ERROR("poll_tx failed");
+    // }
 
     ret = poll_slow(ctx);
     if (ret < 0)
@@ -158,9 +158,7 @@ int poll_rx(struct fast_context *ctx)
   n = nic_fast_rx(&ctx->nic_ctx, n, mbs);
 
   if (n <= 0)
-  {
     return 0;
-  }
 
   for (i = 0; i < n; i++)
   {

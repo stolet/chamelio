@@ -24,6 +24,7 @@ enum cfg_params {
   CP_MAX_GUESTS,
   CP_MAX_APPS,
   CP_MAX_APP_CTXS,
+  CP_MAX_BUFS,
   CP_FP_CORES_MAX,
   CP_FP_NO_XSUMOFFLOAD,
   CP_DPDK_EXTRA,
@@ -72,6 +73,9 @@ static struct option opts[] = {
   { .name = "max-app-ctxs",
     .has_arg = required_argument,
     .val = CP_MAX_APP_CTXS },
+  { .name = "max-bufs",
+    .has_arg = required_argument,
+    .val = CP_MAX_BUFS },
   { .name = "fp-cores-max",
     .has_arg = required_argument,
     .val = CP_FP_CORES_MAX },
@@ -192,6 +196,12 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
+      case CP_MAX_BUFS:
+        if (parse_int32(optarg, &c->max_bufs) != 0) {
+          LOG_ERROR("max bufs parsing failed");
+          goto failed;
+        }
+        break;
       case CP_FP_CORES_MAX:
         if (parse_int32(optarg, &c->fp_cores_max) != 0) {
           LOG_ERROR("fp cores max parsing failed");
@@ -238,6 +248,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->max_guests = 128;
   c->max_apps = 32;
   c->max_app_ctxs = 32;
+  c->max_bufs = 1024 * 128;
   c->fp_cores_max = 1;
   c->fp_xsumoffloads = 1;
 
@@ -283,7 +294,9 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: %"PRIu32"]\n"
       "  --max-apps=APPS                         Max number of apps per guest\n"
           "[default: %"PRIu32"]\n"
-      "  --max-app-ctxs=CTXS                     Max number of app ctxs per guest\n"
+      "  --max-app-ctxs=CTXS                     Max number of app ctxs per app\n"
+          "[default: %"PRIu32"]\n"
+      "  --max-BUFS=BUFS                         Max number of bufs per app\n"
           "[default: %"PRIu32"]\n"
       "Fast path:\n"
       "  --fp-cores-max=CORES                    Max cores used for fast path"
@@ -299,7 +312,7 @@ static void print_usage(struct configuration *c, char *progname)
       c->bump_rx_queue_len, c->bump_tx_queue_len,
       c->agt_queue_len,
       c->rxbuf_len, c->txbuf_len,
-      c->max_guests, c->max_apps, c->max_app_ctxs,
+      c->max_guests, c->max_apps, c->max_app_ctxs, c->max_bufs,
       c->fp_cores_max);
 }
 

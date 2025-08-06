@@ -9,6 +9,7 @@
 #include "config.h"
 #include "log.h"
 #include "queue.h"
+#include "bufs.h"
 
 static int poll_fast(struct slow_context *ctx);
 static int poll_app_contexts(struct slow_context *ctx);
@@ -160,21 +161,22 @@ static int poll_fast(struct slow_context *ctx)
     q = ctx->fast_slow_qs[i];
     qe = queue_head(q);
 
-    if (qe != NULL)
+    /* Queue is empty */
+    if (qe == NULL)
+      continue;
+
+    switch (qe->type)
     {
-      switch (qe->type)
-      {
-        case QUEUE_EMPTY:
-          break;
-        case QUEUE_ARP_TX:
-          break;
-        case QUEUE_ARP_RX:
-          break;
-        default:
-          LOG_ERROR("unknown queue entry type from "
-              "fast path to slow path type=%d", qe->type);
-          abort();
-      }
+      case QUEUE_EMPTY:
+        break;
+      case QUEUE_ARP_TX:
+        break;
+      case QUEUE_ARP_RX:
+        break;
+      default:
+        LOG_ERROR("unknown queue entry type from "
+            "fast path to slow path type=%d", qe->type);
+        abort();
     }
   }
 
@@ -202,6 +204,10 @@ static int poll_app_contexts(struct slow_context *ctx)
         q = actx->app_cham_q;
         qe = queue_head(q);
 
+        /* Queue is empty */
+        if (qe == NULL)
+          continue;
+
         switch (qe->type)
         {
           case QUEUE_NEW_BUF:
@@ -226,6 +232,8 @@ static int handle_new_buf(struct slow_context *ctx, struct queue_entry *qe,
   int ret;
   struct equeue *q;
   struct shm_handle *sh;
+  struct app_slow *a;
+  struct cham_buf *buf;
   struct shm_allocator *alloc;
   struct queue_new_buf_res *res;
   struct queue_new_buf_req *req_app;
@@ -242,9 +250,26 @@ static int handle_new_buf(struct slow_context *ctx, struct queue_entry *qe,
     return -1;
   }
 
+  /* Add buffer to hash table */
+  /* TODO: Take hash of buffer instead of just adding it to first bin */
+  a = actx->app;
+  buf = &a->buf_ht[0];
+  buf->id = 0;
+  buf->opaque = req_app->opaque;
+  buf->base = sh->off;
+  buf->len = ctx->config->rxbuf_len;
+  buf->head = 0;
+  buf->avail = 0;
+
   /* Send response to application */
   q = actx->cham_app_q;
   qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("chamelio to app queue is empty");
+    goto free_buffer;
+  }
+
   res = (struct queue_new_buf_res *) &qe->data;
   res->opaque = req_app->opaque;
   res->base = sh->off;
@@ -252,4 +277,8 @@ static int handle_new_buf(struct slow_context *ctx, struct queue_entry *qe,
   queue_enqueue(q, QUEUE_NEW_BUF);
 
   return 0;
+
+free_buffer:
+    shmalloc_free(alloc, sh);
+    return -1;
 }

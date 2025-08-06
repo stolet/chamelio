@@ -39,6 +39,8 @@ struct configuration {
   uint32_t max_apps;
   /* Max number of application contexts per app */
   uint32_t max_app_ctxs;
+  /* Max number of buffers per application */
+  uint32_t max_bufs;
 
   /*** Fast-path configurations ***/
   /* Enable checksum offload */

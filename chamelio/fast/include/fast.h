@@ -39,6 +39,7 @@ struct app_context_fast {
   uint8_t id;
   /* Pointer to the application for this context */
   struct app_fast *app;
+
   /* List of app bump queue offset */
   uint64_t app_bump_q_off;
   /* List of tx queue offset for each app context and fast-path core */
@@ -48,16 +49,21 @@ struct app_context_fast {
 struct app_fast {
   /* Application ID */
   uint8_t id;
-  /* Pointer to guest where this application is running */
-  struct guest_fast *guest;
   /* Protocol registered for this application */
   struct protocol proto;
+  /* Pointer to guest where this application is running */
+  struct guest_fast *guest;
+  
   /* Number of application contexts */
   uint8_t n_app_ctxs;
   /* List of application contexts */
   struct app_context_fast *app_ctxs;
-  /* Table with registered send or tx Chamelio buffers */
-  struct cham_buf_ht *buf_ht;
+  
+  /* Number of bins in the array */
+  int n_bins;
+  /* Array with registered send or tx Chamelio buffers.
+     This same hash table is shared by slow and fast paths. */
+  struct cham_buf *buf_ht;
 };
 
 struct guest_fast {

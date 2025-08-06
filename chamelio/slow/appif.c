@@ -16,6 +16,7 @@
 #include "shmalloc.h"
 #include "queue.h"
 #include "uxsocket.h"
+#include "bufs.h"
 
 #define EP_LISTEN_APP 1
 #define EP_APP 2
@@ -183,7 +184,7 @@ static int uxsocket_accept(struct slow_context *ctx)
   struct app_slow *a;
   struct guest_slow *g;
   struct shm_allocator *alloc;
-  struct shm_handle *agt_cham_handle, *cham_agt_handle;
+  struct shm_handle *agt_cham_handle, *cham_agt_handle, *ht_handle;
   struct dqueue *agt_cham_q;
   struct equeue *cham_agt_q;
   struct queue_entry *qe_new_guest, *qe_new_app;
@@ -281,10 +282,21 @@ static int uxsocket_accept(struct slow_context *ctx)
       (alloc->shm_base + ctx->config->agt_queue_len));
   g->cham_agt_q = cham_agt_q;
 
-  /* Allocate slow path struct for application */
+  /* Get application struct */
   a = &ctx->guests[g->id].apps[g->n_apps];
   a->id = g->n_apps;
   a->guest = g;
+
+  /* Create buffer hash table */
+  ret = shmalloc_alloc(g->alloc, 
+      ctx->config->max_bufs * sizeof(struct cham_buf), &ht_handle);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocate hash table");
+    goto free_cham_agt_q;
+  }
+  a->n_bins = ctx->config->max_bufs;
+  a->buf_ht = ht_handle->addr;
 
   /* Add connection to epoll */
   aev->type = EP_APP;
@@ -299,13 +311,19 @@ static int uxsocket_accept(struct slow_context *ctx)
   {
     LOG_ERROR("epoll_ctl failed");
     perror("");
-    goto free_cham_agt_q;
+    goto free_ht;
   }  
 
   /* Register new guest with the fast-path cores */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
     qe_new_guest = queue_tail(ctx->slow_fast_qs[i]);
+    if (qe_new_guest == NULL)
+    {
+      LOG_ERROR("slow to fast queue is empty");
+      goto free_ht;
+    }
+
     new_guest_req = (struct queue_new_guest_req *) &qe_new_guest->data;
     new_guest_req->id = g->id;
     new_guest_req->shm_base = shm_base;
@@ -314,7 +332,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new guest req to fast-path");
-      goto free_cham_agt_q;
+      goto free_ht;
     }
   }
 
@@ -322,13 +340,21 @@ static int uxsocket_accept(struct slow_context *ctx)
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
     qe_new_app = queue_tail(ctx->slow_fast_qs[i]);
+    if (qe_new_guest == NULL)
+    {
+      LOG_ERROR("slow to fast queue is empty");
+      goto free_ht;
+    }
+
     new_app_req = (struct queue_new_app_req *) &qe_new_app->data;
     new_app_req->id = a->id;
+    new_app_req->ht_addr = (uint64_t) ht_handle->addr;
+    new_app_req->n_bins = ctx->config->max_bufs;
     ret = queue_enqueue(ctx->slow_fast_qs[i], QUEUE_NEW_APP);
         if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new app req to fast-path");
-      goto free_cham_agt_q;
+      goto free_ht;
     }
   }
 
@@ -337,6 +363,8 @@ static int uxsocket_accept(struct slow_context *ctx)
 
   return 0;
 
+free_ht:
+  shmalloc_free(alloc, ht_handle);
 free_cham_agt_q:
   free(cham_agt_q);
 free_cham_agt_handle:
@@ -512,6 +540,7 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
 
   /* Initialise response */
   aev->ctx_res.n_fp_cores = ctx->config->fp_cores_max;
+  aev->ctx_res.shm_len = ctx->config->shm_len;
   aev->ctx_res.cham_app_q_off = cham_app_q->off;
   aev->ctx_res.cham_app_q_len = cham_app_q->size;
   aev->ctx_res.app_cham_q_off = app_cham_q->off;
@@ -521,6 +550,12 @@ static void uxsocket_receive(struct slow_context *ctx, struct app_event *aev)
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
     qe_new_ctx = queue_tail(ctx->slow_fast_qs[i]);
+    if (qe_new_ctx == NULL)
+    {
+      LOG_ERROR("slow to fast queue is empty");
+      goto free_cham_app_q;
+    }
+
     new_ctx_req = (struct queue_new_app_ctx_fast_req *) &qe_new_ctx->data;
     new_ctx_req->aid = aev->app->id;
     new_ctx_req->gid = aev->guest->id;

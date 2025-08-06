@@ -4,10 +4,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#define MAX_CORES 16
-#define MAX_APPS 8
-#define MAX_FLOWS (128 * 1024)
-
 #define CHAMELIO_SHM_NAME "chamelio_shm"
 #define CHAMELIO_SHM_NAME_INTERNAL "chamelio_internal"
 #define CHAMELIO_HUGE_PREFIX "/dev/hugepages"

@@ -2,9 +2,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <assert.h>
 #include <sys/un.h>
 #include <sys/socket.h>
-#include <assert.h>
+#include <sys/mman.h>
 
 #include "log.h"
 #include "queue.h"
@@ -92,14 +93,14 @@ struct app_lib * cham_init_app()
   if (ret < 0 || ret >= sizeof(s_un.sun_path)) 
   {
     LOG_ERROR("could not copy unix socket path");
-    goto err_close;
+    goto close_sockfd;
   }
 
   if (connect(sock_fd, (struct sockaddr *)&s_un, sizeof(s_un)) < 0) 
   {
     LOG_ERROR("cannot connect to chamelio, %s", APP_SOCKET_PATH);
     perror("");
-    goto err_close;
+    goto close_sockfd;
   }
 
   /* Get shared mem fd */
@@ -109,14 +110,14 @@ struct app_lib * cham_init_app()
       close(shm_fd);
     
     LOG_ERROR("cannot read shared memory fd from chamelio");
-    goto err_close;
+    goto close_sockfd;
   }
 
   a = malloc(sizeof(struct app_lib));
   if (a == NULL)
   {
     LOG_ERROR("failed to allocate app_lib struct");
-    goto err_close;
+    goto close_sockfd;
   }
 
   a->uxsocket_fd = sock_fd;
@@ -124,7 +125,7 @@ struct app_lib * cham_init_app()
 
   return a;
 
-err_close:
+close_sockfd:
   close(sock_fd);
   return NULL;
 }
@@ -134,6 +135,7 @@ struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type
 {
   int i;
   ssize_t sz, off;
+  void *shm_base;
   struct dqueue *app_bump_q, *cham_app_q;
   struct equeue *cham_bump_q, *app_cham_q;
   struct app_context_lib *actx;
@@ -184,6 +186,19 @@ struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type
       return NULL;
     }
     off += sz;
+  }
+
+  /* Map SHM if this is the first context for the app */
+  if (a->n_ctxs == 0)
+  {
+    shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE, 
+        MAP_SHARED | MAP_POPULATE, a->shm_fd, 0);
+    if (shm_base == (void *) -1) 
+    {
+      LOG_ERROR("failed to map shm region");
+      goto free_actx;
+    }
+    a->shm_base = shm_base;
   }
 
   actx = malloc(sizeof(struct app_context_lib));
@@ -240,6 +255,19 @@ struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type
     actx->bump_cham_q[i] = cham_bump_q;
   }
 
+  /* Map SHM if this is the first context for the app */
+  if (a->n_ctxs == 0)
+  {
+    shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE, 
+        MAP_SHARED | MAP_POPULATE, a->shm_fd, 0);
+    if (shm_base == (void *) -1) 
+    {
+      LOG_ERROR("failed to map shm region");
+      goto free_actx;
+    }
+    a->shm_base = shm_base;
+  }
+
   a->n_ctxs++;
   actx->next = a->ctxs;
   a->ctxs = actx;
@@ -249,29 +277,6 @@ struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type
 free_actx:
   free(actx);
   return NULL;
-}
-
-int cham_init_buf(struct app_context_lib *actx)
-{
-  struct buff_lib *buf;
-  struct queue_entry *qe;
-
-  buf = malloc(sizeof(struct buff_lib));
-  if (buf == NULL)
-  {
-    LOG_ERROR("failed to allocate buffer");
-    return -1;
-  }
-
-  qe = queue_tail(actx->app_cham_q);
-  if (qe == NULL)
-  {
-    LOG_ERROR("failed to get queue tail");
-    return -1;
-  }
-
-  queue_enqueue(actx->app_cham_q, QUEUE_NEW_BUF);
-  return 0;
 }
 
 static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd)

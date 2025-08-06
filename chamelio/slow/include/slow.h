@@ -28,14 +28,17 @@ struct app_slow {
   uint8_t proto_type;
   /* Guest where this application is running */
   struct guest_slow *guest;
-  /* Table with registered send or tx Chamelio buffers */
-  struct cham_buf_ht *buf_ht;
 
   /* Number of contexts for this app */
   uint8_t n_ctxs;
   /* Application contexts. One per app core. */
   struct app_context_slow *ctxs;
 
+  /* Number of bins in the array */
+  int n_bins;
+  /* Array with registered send or tx Chamelio buffers.
+     This same hash table is shared by slow and fast paths. */
+  struct cham_buf *buf_ht;
 };
 
 struct guest_slow {

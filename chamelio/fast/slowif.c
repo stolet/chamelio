@@ -19,37 +19,37 @@ int slowif_poll(struct fast_context *ctx)
   /* TODO: Poll up to batch size */
   q = ctx->slow_fast_q;
   qe = queue_head(q);
+
+  if (qe == NULL)
+    return 0;
   
-  if (qe != NULL)
+  type = qe->type;
+  switch (type)
   {
-    type = qe->type;
-    switch (type)
-    {
-      case QUEUE_EMPTY:
-        break;
-      case QUEUE_ARP_TX:
-        queue_dequeue(q);
-        break;
-      case QUEUE_NEW_GUEST:
-        handle_new_guest(ctx, qe);
-        queue_dequeue(q);
-        break;
-      case QUEUE_NEW_APP:
-        handle_new_app(ctx, qe);
-        queue_dequeue(q);
-        break;
-      case QUEUE_NEW_APP_CTX_FAST:
-        handle_new_app_ctx(ctx, qe);
-        queue_dequeue(q);
-        break;
-      case QUEUE_NEW_BUF:
-        handle_new_buf(ctx, qe);
-        queue_dequeue(q);
-      default:
-        LOG_WARN("unknown queue tryt type from slow path" 
-            "to fast path type=%d", type);
-        break;
-    }
+    case QUEUE_EMPTY:
+      break;
+    case QUEUE_ARP_TX:
+      queue_dequeue(q);
+      break;
+    case QUEUE_NEW_GUEST:
+      handle_new_guest(ctx, qe);
+      queue_dequeue(q);
+      break;
+    case QUEUE_NEW_APP:
+      handle_new_app(ctx, qe);
+      queue_dequeue(q);
+      break;
+    case QUEUE_NEW_APP_CTX_FAST:
+      handle_new_app_ctx(ctx, qe);
+      queue_dequeue(q);
+      break;
+    case QUEUE_NEW_BUF:
+      handle_new_buf(ctx, qe);
+      queue_dequeue(q);
+    default:
+      LOG_WARN("unknown queue tryt type from slow path" 
+          "to fast path type=%d", type);
+      break;
   }
 
   return 0;
@@ -84,6 +84,8 @@ static int handle_new_app(struct fast_context *ctx, struct queue_entry *qe)
   a->proto.process_rx = select_rx(req->proto_type);
   a->proto.process_tx = select_tx(req->proto_type);
   a->proto.process_queues = select_queues(req->proto_type);
+  a->n_bins = req->n_bins;
+  a->buf_ht = (struct cham_buf *) req->ht_addr;
   
   g = &ctx->guests[req->gid];
   a->guest = g;

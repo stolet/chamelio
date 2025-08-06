@@ -46,7 +46,7 @@ struct queue_buf_bump {
   uint64_t head_bump;
   /* How much to bump the avail of this buffer */
   uint64_t avail_bump;
-};
+} __attribute__((packed));
 
 /* Request for registering new buf */
 struct queue_new_buf_req {
@@ -62,7 +62,7 @@ struct queue_new_buf_req {
   uint64_t base;
   /* Length of the buffer */
   uint32_t len;
-};
+} __attribute__((packed));
 
 /* Response for registering new buf */
 struct queue_new_buf_res {
@@ -72,7 +72,7 @@ struct queue_new_buf_res {
   uint64_t base;
   /* Length of the buffer */
   uint32_t len;
-};
+} __attribute__((packed));
 
 /* Request for registering new guest */
 struct queue_new_guest_req {
@@ -92,6 +92,10 @@ struct queue_new_app_req {
   uint8_t gid;
   /* Protocol ID */
   uint8_t proto_type;
+  /* Number of bins for hash table */
+  uint32_t n_bins;
+  /* Address of hash table for buffers */
+  uint64_t ht_addr;
 } __attribute__((packed));
 
 /* Request for registering new application context */
@@ -104,6 +108,8 @@ struct queue_new_app_ctx_req {
 struct queue_new_app_ctx_res {
   /* Number of fast-path cores */
   uint32_t n_fp_cores;
+  /* Size of shm region. Used only by the first context to register */
+  uint32_t shm_len;
 
   /* Offset in shared memory for Chamelio->App queue */
   uint64_t cham_app_q_off;
