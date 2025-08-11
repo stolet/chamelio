@@ -4,7 +4,7 @@
 
 #include "slow.h"
 #include "shmalloc.h"
-#include "guestif.h"
+#include "ivshmemif.h"
 #include "appif.h"
 #include "config.h"
 #include "log.h"
@@ -30,8 +30,8 @@ int slow_context_init(struct slow_context *ctx, struct configuration *config,
 
   ctx->config = config;
   
-  ctx->guest_uxfd = -1;
-  ctx->guest_epfd = -1;
+  ctx->ivshmem_uxfd = -1;
+  ctx->ivshmem_epfd = -1;
   
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;
@@ -125,10 +125,10 @@ int slow_loop(struct slow_context *ctx)
 {
   int ret;
 
-  ret = guestif_init(ctx);
+  ret = ivshmemif_init(ctx);
   if (ret != 0)
   {
-    LOG_ERROR("failed to initialise guestif");
+    LOG_ERROR("failed to initialise ivshmemif");
     return -1;
   }
 
@@ -141,7 +141,7 @@ int slow_loop(struct slow_context *ctx)
 
   while (1) 
   {
-    guestif_poll(ctx);
+    ivshmemif_poll(ctx);
     appif_poll(ctx);
     poll_fast(ctx);
     poll_app_contexts(ctx);

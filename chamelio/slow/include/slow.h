@@ -76,10 +76,10 @@ struct slow_context {
   /* Base pointer for internal shared memory region */
   void *shm_base_internal;
 
-  /* Listening UX sockets for guests */
-  int guest_uxfd;
-  /* Epoll object used by UX guest socket */
-  int guest_epfd;
+  /* Listening UX sockets for VMs */
+  int ivshmem_uxfd;
+  /* Epoll object used by UX VM socket */
+  int ivshmem_epfd;
 
   /* Listening UX sockets for apps */
   int app_uxfd;

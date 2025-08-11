@@ -8,7 +8,7 @@
 #include <assert.h>
 
 #include "shm.h"
-#include "guestif.h"
+#include "ivshmemif.h"
 #include "slow.h"
 #include "log.h"
 #include "shmalloc.h"
@@ -18,15 +18,15 @@
 #define IVSHMEM_PROTOCOL_VERSION 0
 #define HOST_PEERID 255
 
-#define EP_LISTEN_GUEST 1
-#define EP_GUEST 2
+#define EP_LISTEN_VM 1
+#define EP_VM 2
 
 static int uxsocket_init(struct slow_context *ctx);
 static int uxsocket_init_fd(struct slow_context *ctx);
 static int uxsocket_accept(struct slow_context *ctx);
-static void uxsocket_error(struct slow_context *ctx, struct guest_event *gev);
+static void uxsocket_error(struct slow_context *ctx, struct ivshmem_event *gev);
 
-int guestif_init(struct slow_context *ctx)
+int ivshmemif_init(struct slow_context *ctx)
 {
   int ret;
 
@@ -40,30 +40,30 @@ int guestif_init(struct slow_context *ctx)
   return 0;
 }
 
-int guestif_poll(struct slow_context *ctx)
+int ivshmemif_poll(struct slow_context *ctx)
 {
   int n, i;
   struct epoll_event evs[32];
-  struct guest_event *gev;
+  struct ivshmem_event *gev;
 
-  n = epoll_wait(ctx->guest_epfd, evs, 32, 0);
+  n = epoll_wait(ctx->ivshmem_epfd, evs, 32, 0);
 
   for (i = 0; i < n; i++)
   {
     gev = evs[i].data.ptr;
     switch (gev->type)
     {
-      case EP_LISTEN_GUEST:
+      case EP_LISTEN_VM:
         uxsocket_accept(ctx);
         break;
-      case EP_GUEST:
+      case EP_VM:
         if ((evs[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) != 0)
         {
           uxsocket_error(ctx, gev);
         }
         break;
       default:
-        LOG_WARN("unknown guest event type");
+        LOG_WARN("unknown ivshmem event type");
     }
   }
 
@@ -81,12 +81,12 @@ static int uxsocket_init(struct slow_context *ctx)
     perror("");
     return -1;
   }
-  ctx->guest_epfd = epfd;
+  ctx->ivshmem_epfd = epfd;
 
   ret = uxsocket_init_fd(ctx);
   if (ret != 0)
   {
-    LOG_ERROR("failed to init unix socket for guests");
+    LOG_ERROR("failed to init unix socket for vms");
     goto error_close_ep;
   }
 
@@ -103,7 +103,7 @@ static int uxsocket_init_fd(struct slow_context *ctx)
   int fd, ret;
   struct epoll_event ev;
   struct sockaddr_un saun;
-  struct guest_event *gev;
+  struct ivshmem_event *vmev;
 
   fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (fd == -1) 
@@ -115,7 +115,7 @@ static int uxsocket_init_fd(struct slow_context *ctx)
 
   memset(&saun, 0, sizeof(saun));
   saun.sun_family = AF_UNIX;
-  memcpy(saun.sun_path, GUEST_SOCKET_PATH, sizeof(GUEST_SOCKET_PATH));
+  memcpy(saun.sun_path, IVSHMEM_SOCKET_PATH, sizeof(IVSHMEM_SOCKET_PATH));
   unlink(saun.sun_path);
 
   ret = bind(fd, (struct sockaddr *) &saun, sizeof(saun));
@@ -134,31 +134,31 @@ static int uxsocket_init_fd(struct slow_context *ctx)
     goto close_fd;
   }
 
-  gev = malloc(sizeof(struct guest_event));
-  if (gev == NULL)
+  vmev = malloc(sizeof(struct ivshmem_event));
+  if (vmev == NULL)
   {
-    LOG_ERROR("failed to malloc guest event");
+    LOG_ERROR("failed to malloc ivshmem event");
     perror("");
     goto close_fd;
   }
 
-  gev->type = EP_LISTEN_GUEST;
+  vmev->type = EP_LISTEN_VM;
 
   ev.events = EPOLLIN;
-  ev.data.ptr = gev;
-  ret = epoll_ctl(ctx->guest_epfd, EPOLL_CTL_ADD, fd, &ev);
+  ev.data.ptr = vmev;
+  ret = epoll_ctl(ctx->ivshmem_epfd, EPOLL_CTL_ADD, fd, &ev);
   if (ret != 0) {
     LOG_ERROR("epoll_ctl listen failed");
     perror("");
     goto free_gev;
   }
 
-  ctx->guest_uxfd = fd;
+  ctx->ivshmem_uxfd = fd;
 
   return 0;
 
 free_gev:
-  free(gev);
+  free(vmev);
 close_fd:
   close(fd);
 
@@ -171,13 +171,13 @@ static int uxsocket_accept(struct slow_context *ctx)
   void *shm_base;
   char shm_name[30];
   struct epoll_event ev;
-  struct guest_event *gev;
+  struct ivshmem_event *gev;
   struct guest_slow *g;
   struct shm_allocator *alloc;
   struct shm_handle *agt_cham_handle, *cham_agent_handle;
   struct dqueue *agt_cham_q; 
   struct equeue *cham_agt_q;
-  struct queue_entry *qe_new_guest;
+  struct queue_entry *qe_new_vm;
   struct queue_new_guest_req *new_guest_req;
 
   int64_t version = IVSHMEM_PROTOCOL_VERSION;
@@ -186,8 +186,8 @@ static int uxsocket_accept(struct slow_context *ctx)
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));
 
-  /* Accept connection from guest */
-  cfd = accept(ctx->guest_uxfd, NULL, NULL);
+  /* Accept connection from VM */
+  cfd = accept(ctx->ivshmem_uxfd, NULL, NULL);
   if (cfd < 0)
   {
     LOG_ERROR("accept failed");
@@ -262,7 +262,7 @@ static int uxsocket_accept(struct slow_context *ctx)
   }
 
   /* Allocate guest event */
-  gev = malloc(sizeof(struct guest_event));
+  gev = malloc(sizeof(struct ivshmem_event));
   if (gev == NULL)
   {
     LOG_ERROR("failed to allocate guest event struct");
@@ -322,13 +322,13 @@ static int uxsocket_accept(struct slow_context *ctx)
   g->cham_agt_q = cham_agt_q;
 
   /* Add connection to epoll */
-  gev->type = EP_GUEST;
+  gev->type = EP_VM;
   gev->fd = cfd;
-  gev->gid = ctx->n_guests;
+  gev->vmid = ctx->n_guests;
 
   ev.events = EPOLLIN | EPOLLRDHUP | EPOLLERR;
   ev.data.ptr = gev;
-  ret = epoll_ctl(ctx->guest_epfd, EPOLL_CTL_ADD, cfd, &ev);
+  ret = epoll_ctl(ctx->ivshmem_epfd, EPOLL_CTL_ADD, cfd, &ev);
   if (ret != 0)
   {
     LOG_ERROR("epoll_ctl failed");
@@ -339,14 +339,14 @@ static int uxsocket_accept(struct slow_context *ctx)
   /* Register new guest with the fast-path */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
-    qe_new_guest = queue_tail(ctx->slow_fast_qs[i]);
-    if (qe_new_guest == NULL)
+    qe_new_vm = queue_tail(ctx->slow_fast_qs[i]);
+    if (qe_new_vm == NULL)
     {
       LOG_ERROR("slow to fast queue is empty");
       goto remove_from_epoll;
     }
 
-    new_guest_req = (struct queue_new_guest_req *) &qe_new_guest->data;
+    new_guest_req = (struct queue_new_guest_req *) &qe_new_vm->data;
     new_guest_req->id = g->id;
     new_guest_req->shm_base = shm_base;
     new_guest_req->shm_len = ctx->config->shm_len;
@@ -362,7 +362,7 @@ static int uxsocket_accept(struct slow_context *ctx)
   return 0;
 
 remove_from_epoll:
-  epoll_ctl(ctx->guest_epfd, EPOLL_CTL_DEL, gev->fd, NULL);
+  epoll_ctl(ctx->ivshmem_epfd, EPOLL_CTL_DEL, gev->fd, NULL);
 free_cham_agt_q:
   free(cham_agt_q);
 free_cham_agt_handle:
@@ -387,10 +387,10 @@ close_cfd:
   return -1;
 } 
 
-static void uxsocket_error(struct slow_context *ctx, struct guest_event *gev)
+static void uxsocket_error(struct slow_context *ctx, struct ivshmem_event *gev)
 {
-  LOG_WARN("removing cfd=%d from guest epfd", ctx->guest_epfd);
-  epoll_ctl(ctx->guest_epfd, EPOLL_CTL_DEL, gev->fd, NULL);
+  LOG_WARN("removing cfd=%d from guest epfd", ctx->ivshmem_epfd);
+  epoll_ctl(ctx->ivshmem_epfd, EPOLL_CTL_DEL, gev->fd, NULL);
   close(gev->fd);
   free(gev);
 }

@@ -8,7 +8,7 @@
 #include <assert.h>
 #include <string.h>
 
-#include "guestif.h"
+#include "ivshmemif.h"
 #include "appif.h"
 #include "shm.h"
 #include "slow.h"
