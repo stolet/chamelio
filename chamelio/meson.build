@@ -23,7 +23,7 @@ deps = [
   dependency('shm_dep'),
   dependency('bufs_dep'),
   dependency('queue_dep'),
-  dependency('udp_dep'),
+  dependency('udp_old_dep'),
   dependency('ip_dep'),
   dependency('eth_dep'),
   dependency('nic_dep'),

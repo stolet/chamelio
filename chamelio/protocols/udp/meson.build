@@ -13,10 +13,10 @@ udp_lib = static_library(
   install : false,
 )
 
-udp_dep = declare_dependency(
+udp_old_dep = declare_dependency(
   link_with : udp_lib,
   include_directories : udp_inc,
   dependencies : deps,
 )
 
-meson.override_dependency('udp_dep', udp_dep)
+meson.override_dependency('udp_old_dep', udp_old_dep)

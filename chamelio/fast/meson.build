@@ -8,7 +8,7 @@ fast_srcs = files(
 
 deps = [
   dependency('config_dep'),
-  dependency('udp_dep'),
+  dependency('udp_old_dep'),
   dependency('ip_dep'),
   dependency('eth_dep'),
   dependency('utils_dep'),
