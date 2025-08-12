@@ -3,7 +3,8 @@ lib_inc = include_directories('include')
 lib_srcs = files(
   'init.c', 
   'poll.c', 
-  'transfer.c'
+  'transfer.c',
+  'guest.c',
 )
 
 deps = [

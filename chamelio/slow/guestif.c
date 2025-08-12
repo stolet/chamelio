@@ -6,27 +6,28 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <assert.h>
+#include <string.h>
 
-#include "shm.h"
 #include "ivshmemif.h"
+#include "guestif.h"
+#include "shm.h"
 #include "slow.h"
 #include "log.h"
 #include "shmalloc.h"
 #include "queue.h"
 #include "uxsocket.h"
+#include "bufs.h"
 
-#define IVSHMEM_PROTOCOL_VERSION 0
-#define HOST_PEERID 255
-
-#define EP_LISTEN_VM 1
-#define EP_VM 2
+#define EP_LISTEN_GUEST 1
+#define EP_GUEST 2
 
 static int uxsocket_init(struct slow_context *ctx);
 static int uxsocket_init_fd(struct slow_context *ctx);
 static int uxsocket_accept(struct slow_context *ctx);
-static void uxsocket_error(struct slow_context *ctx, struct ivshmem_event *gev);
+static void uxsocket_error(struct slow_context *ctx, struct guest_event *aev);
+static void uxsocket_receive(struct slow_context *ctx, struct guest_event *aev);
 
-int ivshmemif_init(struct slow_context *ctx)
+int guestif_init(struct slow_context *ctx)
 {
   int ret;
 
@@ -40,30 +41,34 @@ int ivshmemif_init(struct slow_context *ctx)
   return 0;
 }
 
-int ivshmemif_poll(struct slow_context *ctx)
+int guestif_poll(struct slow_context *ctx)
 {
   int n, i;
   struct epoll_event evs[32];
-  struct ivshmem_event *gev;
+  struct guest_event *gev;
 
-  n = epoll_wait(ctx->ivshmem_epfd, evs, 32, 0);
+  n = epoll_wait(ctx->guest_epfd, evs, 32, 0);
 
   for (i = 0; i < n; i++)
   {
     gev = evs[i].data.ptr;
     switch (gev->type)
     {
-      case EP_LISTEN_VM:
+      case EP_LISTEN_GUEST:
         uxsocket_accept(ctx);
         break;
-      case EP_VM:
+      case EP_GUEST:
         if ((evs[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) != 0)
         {
           uxsocket_error(ctx, gev);
         }
+        else if ((evs[i].events & EPOLLIN) != 0)
+        {
+          uxsocket_receive(ctx, gev);
+        }
         break;
       default:
-        LOG_WARN("unknown ivshmem event type");
+        LOG_WARN("unknown guest event type");
     }
   }
 
@@ -81,12 +86,12 @@ static int uxsocket_init(struct slow_context *ctx)
     perror("");
     return -1;
   }
-  ctx->ivshmem_epfd = epfd;
+  ctx->guest_epfd = epfd;
 
   ret = uxsocket_init_fd(ctx);
   if (ret != 0)
   {
-    LOG_ERROR("failed to init unix socket for vms");
+    LOG_ERROR("failed to init unix socket for apps");
     goto error_close_ep;
   }
 
@@ -103,7 +108,7 @@ static int uxsocket_init_fd(struct slow_context *ctx)
   int fd, ret;
   struct epoll_event ev;
   struct sockaddr_un saun;
-  struct ivshmem_event *vmev;
+  struct guest_event *gev;
 
   fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (fd == -1) 
@@ -115,7 +120,7 @@ static int uxsocket_init_fd(struct slow_context *ctx)
 
   memset(&saun, 0, sizeof(saun));
   saun.sun_family = AF_UNIX;
-  memcpy(saun.sun_path, IVSHMEM_SOCKET_PATH, sizeof(IVSHMEM_SOCKET_PATH));
+  memcpy(saun.sun_path, GUEST_SOCKET_PATH, sizeof(GUEST_SOCKET_PATH));
   unlink(saun.sun_path);
 
   ret = bind(fd, (struct sockaddr *) &saun, sizeof(saun));
@@ -123,7 +128,7 @@ static int uxsocket_init_fd(struct slow_context *ctx)
   {
     LOG_ERROR("bind failed");
     perror("");
-    goto close_fd;
+    goto error_close;
   }
 
   ret = listen(fd, 5);
@@ -131,35 +136,38 @@ static int uxsocket_init_fd(struct slow_context *ctx)
   {
     LOG_ERROR("listen failed");
     perror("");
-    goto close_fd;
+    goto error_close;
   }
 
-  vmev = malloc(sizeof(struct ivshmem_event));
-  if (vmev == NULL)
+  gev = malloc(sizeof(struct guest_event));
+  if (gev == NULL)
   {
-    LOG_ERROR("failed to malloc ivshmem event");
+    LOG_ERROR("failed to malloc app event");
     perror("");
-    goto close_fd;
+    goto error_close;
   }
-
-  vmev->type = EP_LISTEN_VM;
+  gev->type = EP_LISTEN_GUEST;
+  gev->guest = NULL;
+  gev->fd = -1;
+  gev->req_rx = 0;
+  gev->resp_sz = 0;
 
   ev.events = EPOLLIN;
-  ev.data.ptr = vmev;
-  ret = epoll_ctl(ctx->ivshmem_epfd, EPOLL_CTL_ADD, fd, &ev);
+  ev.data.ptr = gev;
+  ret = epoll_ctl(ctx->guest_epfd, EPOLL_CTL_ADD, fd, &ev);
   if (ret != 0) {
     LOG_ERROR("epoll_ctl listen failed");
     perror("");
-    goto free_gev;
+    goto error_free_aev;
   }
 
-  ctx->ivshmem_uxfd = fd;
+  ctx->guest_uxfd = fd;
 
   return 0;
 
-free_gev:
-  free(vmev);
-close_fd:
+error_free_aev:
+  free(gev);
+error_close:
   close(fd);
 
   return -1;
@@ -167,27 +175,24 @@ close_fd:
 
 static int uxsocket_accept(struct slow_context *ctx)
 {
-  int i, ret, cfd, ifd, nfd, sfd;
+  int i, ret, cfd, sfd;
   void *shm_base;
   char shm_name[30];
   struct epoll_event ev;
-  struct ivshmem_event *gev;
+  struct guest_event *gev;
   struct guest_slow *g;
   struct shm_allocator *alloc;
   struct shm_handle *guest_cham_handle, *cham_guest_handle;
-  struct dqueue *guest_cham_q; 
+  struct dqueue *guest_cham_q;
   struct equeue *cham_guest_q;
-  struct queue_entry *qe_new_vm;
+  struct queue_entry *qe_new_guest;
   struct queue_new_guest_req *new_guest_req;
-
-  int64_t version = IVSHMEM_PROTOCOL_VERSION;
-  uint64_t hostid = HOST_PEERID;
 
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));
 
-  /* Accept connection from VM */
-  cfd = accept(ctx->ivshmem_uxfd, NULL, NULL);
+  /* Accept connection from guest */
+  cfd = accept(ctx->guest_uxfd, NULL, NULL);
   if (cfd < 0)
   {
     LOG_ERROR("accept failed");
@@ -205,23 +210,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     goto close_cfd;
   }
 
-  /* Send protocol version as required by QEMU IVSHMEM */
-  ret = uxsocket_send_int(cfd, version);
-  if (ret < 0)
-  {
-    LOG_ERROR("failed to send protocol version");
-    goto shm_destroy;
-  }
-
-  /* Send guest ID to QEMU */
-  ret = uxsocket_send_int(cfd, ctx->n_guests);
-  if (ret < 0)
-  {
-    LOG_ERROR("failed to send vm id");
-    goto shm_destroy;
-  }
-
-  /* Send shared memory fd to qemu */
+  /* Send shared memory fd to application */
   ret = uxsocket_sendfd(cfd, sfd, -1);
   if (ret < 0)
   {
@@ -229,46 +218,15 @@ static int uxsocket_accept(struct slow_context *ctx)
     goto shm_destroy;
   }
 
-  /* Create fd so that vm can interrupt host. IVSHMEM protocol needs this
-     but we don't use this feature at the moment */
-  if ((nfd = eventfd(0, EFD_SEMAPHORE | EFD_NONBLOCK)) < 0)
+  /* Allocate guest event */
+  gev = malloc(sizeof(struct guest_event));
+  if (gev == NULL)
   {
-    LOG_ERROR("failed to create notify fd");
+    LOG_ERROR("failed to allocate app event struct");
     goto shm_destroy;
   }
 
-  /* Ivshmem protocol requires to send host id with the notify fd */
-  ret = uxsocket_sendfd(cfd, nfd, hostid);
-  if (ret < 0)
-  {
-    LOG_ERROR("failed to send notify fd");
-    goto close_nfd;
-  }
-
-  /* Create and send eventfd so that host can interrupt vm. 
-     IVSHMEM protocol needs this but we don't use this feature 
-     at the moment */
-  if ((ifd = eventfd(0, EFD_SEMAPHORE | EFD_NONBLOCK)) < 0)
-  {
-    LOG_ERROR("failed to create interrupt fd");
-    goto close_nfd;
-  }
-
-  ret = uxsocket_sendfd(cfd, ifd, ctx->n_guests);
-  if (ret < 0)
-  {
-    LOG_ERROR("failed to senf interrupt fd");
-    goto close_ifd;
-  }
-
-  /* Allocate guest event */
-  gev = malloc(sizeof(struct ivshmem_event));
-  if (gev == NULL)
-  {
-    LOG_ERROR("failed to allocate guest event struct");
-    goto close_ifd;
-  }
-
+  /* Allocate slow path struct for guest */
   g = &ctx->guests[ctx->n_guests];
   g->id = ctx->n_guests;
   g->shm_fd = sfd;
@@ -282,11 +240,11 @@ static int uxsocket_accept(struct slow_context *ctx)
   }
   g->alloc = alloc;
 
-  /* Create queue that holds messages from guest agent to Chamelio */
+  /* Create queue that holds messages from guest to Chamelio */
   ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len, &guest_cham_handle);
   if (ret != 0)
   {
-    LOG_ERROR("failed to allocated memory in shared memory");
+    LOG_ERROR("failed to allocate memory in shared memory");
     goto free_alloc;
   }
   memset(guest_cham_handle->addr, 0, ctx->config->agt_queue_len);
@@ -296,17 +254,17 @@ static int uxsocket_accept(struct slow_context *ctx)
   if (guest_cham_q == NULL)
   {
     LOG_ERROR("failed to create guest->chamelio queue");
-    goto free_agt_cham_handle;
+    goto free_guest_cham_handle;
   }
   assert(guest_cham_q->entries == alloc->shm_base);
   g->guest_cham_q = guest_cham_q;
 
-  /* Create queue that holds messages from Chamelio to guest agent */
+  /* Create queue that holds messages from Chamelio to guest */
   ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len, &cham_guest_handle);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocated memory in shared memory");
-    goto free_agt_cham_q;
+    goto free_guest_cham_q;
   }
   memset(cham_guest_handle->addr, 0, ctx->config->agt_queue_len);
 
@@ -315,38 +273,40 @@ static int uxsocket_accept(struct slow_context *ctx)
   if (cham_guest_q == NULL)
   {
     LOG_ERROR("failed to create chamelio->guest queue");
-    goto free_cham_agt_handle;
+    goto free_cham_guest_handle;
   }
   assert(cham_guest_q->entries == 
-      (alloc->shm_base + ctx->config->app_queue_len));
+      (alloc->shm_base + ctx->config->agt_queue_len));
   g->cham_guest_q = cham_guest_q;
 
   /* Add connection to epoll */
-  gev->type = EP_VM;
+  gev->type = EP_GUEST;
   gev->fd = cfd;
-  gev->vmid = ctx->n_guests;
+  gev->req_rx = 0;
+  gev->resp_sz = 0;
+  gev->guest = g;
 
   ev.events = EPOLLIN | EPOLLRDHUP | EPOLLERR;
   ev.data.ptr = gev;
-  ret = epoll_ctl(ctx->ivshmem_epfd, EPOLL_CTL_ADD, cfd, &ev);
+  ret = epoll_ctl(ctx->guest_epfd, EPOLL_CTL_ADD, cfd, &ev);
   if (ret != 0)
   {
     LOG_ERROR("epoll_ctl failed");
     perror("");
-    goto free_cham_agt_q;
-  }
+    goto free_cham_guest_q;
+  }  
 
-  /* Register new guest with the fast-path */
+  /* Register new guest with the fast-path cores */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
-    qe_new_vm = queue_tail(ctx->slow_fast_qs[i]);
-    if (qe_new_vm == NULL)
+    qe_new_guest = queue_tail(ctx->slow_fast_qs[i]);
+    if (qe_new_guest == NULL)
     {
       LOG_ERROR("slow to fast queue is empty");
-      goto remove_from_epoll;
+      goto free_cham_guest_q;
     }
 
-    new_guest_req = (struct queue_new_guest_req *) &qe_new_vm->data;
+    new_guest_req = (struct queue_new_guest_req *) &qe_new_guest->data;
     new_guest_req->id = g->id;
     new_guest_req->shm_base = shm_base;
     new_guest_req->shm_len = ctx->config->shm_len;
@@ -354,31 +314,26 @@ static int uxsocket_accept(struct slow_context *ctx)
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new guest req to fast-path");
-      goto remove_from_epoll;
+      goto free_cham_guest_q;
     }
   }
 
   ctx->n_guests++;
+
   return 0;
 
-remove_from_epoll:
-  epoll_ctl(ctx->ivshmem_epfd, EPOLL_CTL_DEL, gev->fd, NULL);
-free_cham_agt_q:
+free_cham_guest_q:
   free(cham_guest_q);
-free_cham_agt_handle:
-  free(cham_guest_handle);
-free_agt_cham_q:
+free_cham_guest_handle:
+  shmalloc_free(alloc, cham_guest_handle);
+free_guest_cham_q:
   free(guest_cham_q);
-free_agt_cham_handle:
+free_guest_cham_handle:
   shmalloc_free(alloc, guest_cham_handle);
 free_alloc:
   free(alloc);
 free_gev:
   free(gev);
-close_ifd:
-  close(ifd);
-close_nfd:
-  close(nfd);
 shm_destroy:
   shm_destroy_huge(shm_name, ctx->config->shm_len, shm_base, sfd);
 close_cfd:
@@ -387,10 +342,98 @@ close_cfd:
   return -1;
 } 
 
-static void uxsocket_error(struct slow_context *ctx, struct ivshmem_event *gev)
+static void uxsocket_error(struct slow_context *ctx, struct guest_event *aev)
 {
-  LOG_WARN("removing cfd=%d from guest epfd", ctx->ivshmem_epfd);
-  epoll_ctl(ctx->ivshmem_epfd, EPOLL_CTL_DEL, gev->fd, NULL);
-  close(gev->fd);
-  free(gev);
+  LOG_WARN("removing cfd=%d from app epfd", ctx->guest_epfd);
+  epoll_ctl(ctx->guest_epfd, EPOLL_CTL_DEL, aev->fd, NULL);
+  close(aev->fd);
+  free(aev);
+}
+
+static void uxsocket_receive(struct slow_context *ctx, struct guest_event *gev)
+{
+  int n;
+  size_t res_sz;
+  struct proto_slow *p;
+
+  struct iovec iov = {
+    .iov_base = &gev->proto_req,
+    .iov_len = sizeof(gev->proto_req) - gev->req_rx,
+  };
+
+  
+  union {
+    char buf[CMSG_SPACE(sizeof(int))];
+    struct cmsghdr align;
+  } u;
+  
+  struct msghdr msg = {
+    .msg_name = NULL,
+    .msg_namelen = 0,
+    .msg_iov = &iov,
+    .msg_iovlen = 1,
+    .msg_control = u.buf,
+    .msg_controllen = sizeof(u.buf),
+    .msg_flags = 0,
+  };
+
+  n = recvmsg(gev->fd, &msg, 0);
+  if (n < 0)
+  {
+    LOG_ERROR("failed to recvmsg");
+    goto error_uxsocket;
+  }
+
+
+  if(msg.msg_controllen > 0) 
+  {
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    assert(cmsg->cmsg_len == CMSG_LEN(sizeof(int)));
+  }
+
+  if (n < 0)
+  {
+    LOG_ERROR("recv failed");
+    perror("");
+    goto error_uxsocket;
+  }
+  else if (n + gev->req_rx < sizeof(gev->proto_req))
+  {
+    /* Request not complete yet */
+    gev->req_rx += n;
+    return;
+  }
+
+  /* Request complete */
+  gev->req_rx = 0;
+  p = &gev->guest->proto;
+  p->guest = gev->guest;
+  p->nqueues = 0;
+  p->nelems = 0;
+  p->elsize = 0;
+  p->nmaps = 0;
+
+  /* Initialise response */
+  gev->proto_res.n_fp_cores = ctx->config->fp_cores_max;
+  gev->proto_res.shm_len = ctx->config->shm_len;
+
+  /* Send out response */
+  res_sz = sizeof(struct queue_new_proto_res);
+  n = send(gev->fd, &gev->proto_res, res_sz, 0);
+  if (n < 0) 
+  {
+    LOG_ERROR("send failed");
+    perror("");
+    goto error_uxsocket;
+  } 
+  else if (n < res_sz) 
+  {
+    LOG_ERROR("short send for response");
+    goto error_uxsocket;
+  }
+
+  return;
+
+error_uxsocket:
+    uxsocket_error(ctx, gev);
 }

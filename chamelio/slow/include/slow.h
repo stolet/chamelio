@@ -41,6 +41,25 @@ struct app_slow {
   struct cham_buf *buf_ht;
 };
 
+struct proto_slow {
+  /* Guest that this protocol belongs to */
+  struct guest_slow *guest;
+
+  /* Number of queues in shared memory */
+  uint16_t nqueues;
+  /* Number of elements in each queue */
+  uint32_t nelems;
+  /* Size of each queue element */
+  uint32_t elsize;
+  /* List of offsets in shared memory for each queue */
+
+
+  /* Number of maps in shared memory */
+  uint16_t nmaps;
+  /* Maps in shared memory */
+
+};
+
 struct guest_slow {
   /* ID of registered guest */
   uint8_t id;
@@ -52,11 +71,13 @@ struct guest_slow {
   /* Allocator for shared memory region */
   struct shm_allocator *alloc;
   
-  /* Queue from the guest agent to the Chamelio slow-path */
-  struct dqueue *agt_cham_q;
-  /* Queue from the Chamelio slow-path to the guest agent */
-  struct equeue *cham_agt_q;
+  /* Queue from the guest to the Chamelio control-path */
+  struct dqueue *guest_cham_q;
+  /* Queue from the Chamelio control-path to the guest */
+  struct equeue *cham_guest_q;
   
+  /* Protocol registered for this guest */
+  struct proto_slow proto;
   /* Number of registered applications */
   uint8_t n_apps;
   /* Applications registered in this guest */
@@ -81,10 +102,10 @@ struct slow_context {
   /* Epoll object used by UX VM socket */
   int ivshmem_epfd;
 
-  /* Listening UX sockets for apps */
-  int app_uxfd;
-  /* Epoll object used by UX app socket */
-  int app_epfd;
+  /* Listening UX sockets for guests and protocols */
+  int guest_uxfd;
+  /* Epoll object used by UX guest socket */
+  int guest_epfd;
 
   /* Number of registered guests */
   uint8_t n_guests;

@@ -36,6 +36,9 @@ enum queue_type {
   QUEUE_NEW_BUF,
   /* Bump for buffer head */
   QUEUE_BUMP,
+
+  /* Entry for new protocol registered */
+  QUEUE_PROTO,
 };
 
 /* New queue bump */
@@ -96,6 +99,20 @@ struct queue_new_app_req {
   uint32_t n_bins;
   /* Address of hash table for buffers */
   uint64_t ht_addr;
+} __attribute__((packed));
+
+/* Request for registering new protocol */
+struct queue_new_proto_req {
+  /* Protocol type to register for this context */
+  uint8_t proto_type; 
+} __attribute__((packed));
+
+/* Response for registering new protocol */
+struct queue_new_proto_res {
+  /* Number of fast-path cores */
+  uint32_t n_fp_cores;
+  /* Size of shm region. Used only by the first context to register */
+  uint32_t shm_len;
 } __attribute__((packed));
 
 /* Request for registering new application context */

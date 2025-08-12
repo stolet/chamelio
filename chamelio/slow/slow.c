@@ -5,7 +5,7 @@
 #include "slow.h"
 #include "shmalloc.h"
 #include "ivshmemif.h"
-#include "appif.h"
+#include "guestif.h"
 #include "config.h"
 #include "log.h"
 #include "queue.h"
@@ -33,8 +33,8 @@ int slow_context_init(struct slow_context *ctx, struct configuration *config,
   ctx->ivshmem_uxfd = -1;
   ctx->ivshmem_epfd = -1;
   
-  ctx->app_uxfd = -1;
-  ctx->app_epfd = -1;
+  ctx->guest_uxfd = -1;
+  ctx->guest_epfd = -1;
 
   /* Allocate pointer list for queues */
   fast_slow_qs = malloc(sizeof(struct dqueue *) * config->fp_cores_max);
@@ -132,7 +132,7 @@ int slow_loop(struct slow_context *ctx)
     return -1;
   }
 
-  ret = appif_init(ctx);
+  ret = guestif_init(ctx);
   if (ret != 0)
   {
     LOG_ERROR("failed to initialise appif");
@@ -142,7 +142,7 @@ int slow_loop(struct slow_context *ctx)
   while (1) 
   {
     ivshmemif_poll(ctx);
-    appif_poll(ctx);
+    guestif_poll(ctx);
     poll_fast(ctx);
     poll_app_contexts(ctx);
   }
