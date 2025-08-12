@@ -2,82 +2,54 @@
 #define CHAM_LIB_H_
 
 #include <stdint.h>
-#include <stddef.h>
 
-#include "utils.h"
-
-// TODO: Don't duplicate this
 #define GUEST_SOCKET_PATH "guest_socket"
-#define APP_SOCKET_PATH "app_socket"
 #define IVSHMEM_PROTOCOL_VERSION 0
 #define HOST_PEERID 255
 #define MAX_FP_CORES 16
 
-/* Chamelio buffers that can be used for RX or TX */
-struct buf_lib {
-  /* Base address of buffer */
-  uint64_t base;
-  /* Length of the buffer */
-  uint32_t len;
-  /* Head of the buffer */
-  uint64_t head;
-  /* Number of bytes available */
-  uint32_t avail;
-};
-
-/* TODO: Get number of fp-cores for bump queues from 
-   queue_new_app_ctx_res instead of hardcoded macro. */
-/* Library representation of Chamelio application context */
-struct app_context_lib {
-  /* Application context id */
-  uint8_t id;
-  /* Number of fast-path cores */
-  uint32_t n_fp_cores;
-  /* Application */
-  struct app_lib *app;
-  /* Queue from the application context to the Chamelio slow-path */
-  struct equeue *app_cham_q;
-  /* Queue from the Chamelio slow-path to the application context */
-  struct dqueue *cham_app_q;
-  /* Queues for RX bumps. One per FP core. */
-  struct dqueue *bump_app_q[MAX_FP_CORES];
-  /* Queues for TX bumps. One per FP core. */
-  struct equeue *bump_cham_q[MAX_FP_CORES];
-  /* Next context in list */
-  struct app_context_lib *next;
-};
-
-/* Library representation of Chamelio application */
-struct app_lib {
+struct guest_lib {
   /* Unix socket used to register with Chamelio */
   int uxsocket_fd;
-  /* File descriptor for shared memory region used by this app */
+  /* File descriptor for shared memory region used by this guest */
   int shm_fd;
-  /* Base pointer for shared memory region used by this app */
-  void *shm_base;
-  /* Number of application contexts running */
-  int n_ctxs;
-  /* List of application contexts */
-  struct app_context_lib *ctxs;
 };
 
-/* Initialises a guest with Chamelio */
-int cham_init_guest();
-/* Initialises a new application with Chamelio */
-struct app_lib * cham_init_app();
-/* Initialises a new application context with Chamelio*/
-struct app_context_lib * cham_init_app_ctx(struct app_lib *a, uint8_t proto_type);
+struct proto_lib {
+  /* Size of shared memory region */
+  uint32_t shm_size;
+  /* Base pointer for shared memory region used by this guest */
+  void *shm_base;
+  /* Number of queues */
+  uint16_t nqueues;
+  /* Number of elements per queue */  
+  uint32_t nelems;
+  /* Size of element in each queue */
+  uint32_t elsize;
+};
 
-/* Creates new buffer */
-struct buf_lib * cham_new_buf(struct app_context_lib *ctx);
-/* Writes to the buffer */
-int cham_write(struct buf_lib *dst, void *src, size_t len);
-/* Reads the buffer */
-int cham_read(struct buf_lib *src, void *dst, size_t len);
+/* Mocks a QEMU init ivshmem call */
+int cham_init_ivshmem();
 
-/* Polls for messages from Chamelio slow-path */
-int cham_poll_slow(struct app_context_lib *actx);
-/* Polls for bump messages from rx */
-int cham_poll_bump(struct app_context_lib *actx);
+/* Connects a guest with Chamelio */
+struct guest_lib * cham_connect_guest();
+/* Creates a new protocol and maps shared memory region */
+struct proto_lib* cham_new_proto(struct guest_lib *g, uint32_t shmsize);
+
+/* Creates queues in the shared memory region of the protocol */
+int cham_new_queues(struct proto_lib *p, 
+    uint16_t nqueues, uint32_t nelems, uint32_t elsize);
+/* Creates a new map in the shared memory region of the protocol */
+int cham_new_map(struct proto_lib *p, uint32_t nelems, uint32_t elsize);
+
+/* Enables the queue with the given ID on the specified core */
+int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
+/* Disables the queue with Chamelio */
+int cham_disable_queue(struct proto_lib *p, uint16_t qid);
+/* Moves the queue to a new core in Chamelio */
+int cham_move_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
+
+/* Uploads an eBPF program to Chamelio and register it with the fast-path */
+int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
 
 #endif

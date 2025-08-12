@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 #include <sys/mman.h>
 
-#include "cham_guest_lib.h"
+#include "cham_lib.h"
 #include "queue.h"
 #include "log.h"
 

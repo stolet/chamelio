@@ -34,45 +34,15 @@ struct protocol {
   uint8_t (*process_queues)();
 };
 
-struct app_context_fast {
-  /* Application context ID */
-  uint8_t id;
-  /* Pointer to the application for this context */
-  struct app_fast *app;
+struct proto_fast {
 
-  /* List of app bump queue offset */
-  uint64_t app_bump_q_off;
-  /* List of tx queue offset for each app context and fast-path core */
-  uint64_t cham_bump_q_off;
-};
-
-struct app_fast {
-  /* Application ID */
-  uint8_t id;
-  /* Protocol registered for this application */
-  struct protocol proto;
-  /* Pointer to guest where this application is running */
-  struct guest_fast *guest;
-  
-  /* Number of application contexts */
-  uint8_t n_app_ctxs;
-  /* List of application contexts */
-  struct app_context_fast *app_ctxs;
-  
-  /* Number of bins in the array */
-  int n_bins;
-  /* Array with registered send or tx Chamelio buffers.
-     This same hash table is shared by slow and fast paths. */
-  struct cham_buf *buf_ht;
 };
 
 struct guest_fast {
   /* Guest ID */
   uint8_t id;
-  /* Number of apps registered in this guest */
-  uint8_t n_apps;
-  /* List of apps registered in this guest */
-  struct app_fast *apps;
+  /* Protocol to use with this guest */
+  struct proto_fast proto;
   /* Base pointer to shared memory region for this guest */
   void *shm_base;
   /* Length of shared memory region for this guest */
@@ -95,10 +65,10 @@ struct fast_context {
   /* List of mbuf pointers that are processed and ready to be transmitted */
   struct rte_mbuf *tx_mbs[TXBUF_SIZE];
 
-  /* Queue from fast-path core to slow-path */
-  struct equeue *fast_slow_q;
-  /* Queue from the slow-path to the fast-path */
-  struct dqueue *slow_fast_q;
+  /* Queue from fast-path core to control-path */
+  struct equeue *fast_ctl_q;
+  /* Queue from the control-path to the fast-path */
+  struct dqueue *ctl_fast_q;
 
   /* TODO: Pass internnal fd and base to fast-path */
   /* File descriptor for internal shared memory */
@@ -110,7 +80,7 @@ struct fast_context {
 /* Initialises the fast-path context when a core is launched */
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, uint16_t thread_id,
-    struct shm_handle *fs_handle, struct shm_handle *sf_handle,
+    struct shm_handle *fc_handle, struct shm_handle *cf_handle,
     struct configuration *config, int shm_fd_internal, void *shm_base_internal);
 /* Dataplane loop in a fast-path core */
 int fast_loop(struct fast_context *ctx);

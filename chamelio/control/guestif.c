@@ -11,7 +11,7 @@
 #include "ivshmemif.h"
 #include "guestif.h"
 #include "shm.h"
-#include "slow.h"
+#include "control.h"
 #include "log.h"
 #include "shmalloc.h"
 #include "queue.h"
@@ -21,13 +21,13 @@
 #define EP_LISTEN_GUEST 1
 #define EP_GUEST 2
 
-static int uxsocket_init(struct slow_context *ctx);
-static int uxsocket_init_fd(struct slow_context *ctx);
-static int uxsocket_accept(struct slow_context *ctx);
-static void uxsocket_error(struct slow_context *ctx, struct guest_event *aev);
-static void uxsocket_receive(struct slow_context *ctx, struct guest_event *aev);
+static int uxsocket_init(struct control_context *ctx);
+static int uxsocket_init_fd(struct control_context *ctx);
+static int uxsocket_accept(struct control_context *ctx);
+static void uxsocket_error(struct control_context *ctx, struct guest_event *aev);
+static void uxsocket_receive(struct control_context *ctx, struct guest_event *aev);
 
-int guestif_init(struct slow_context *ctx)
+int guestif_init(struct control_context *ctx)
 {
   int ret;
 
@@ -41,7 +41,7 @@ int guestif_init(struct slow_context *ctx)
   return 0;
 }
 
-int guestif_poll(struct slow_context *ctx)
+int guestif_poll(struct control_context *ctx)
 {
   int n, i;
   struct epoll_event evs[32];
@@ -75,7 +75,7 @@ int guestif_poll(struct slow_context *ctx)
   return n;
 }
 
-static int uxsocket_init(struct slow_context *ctx)
+static int uxsocket_init(struct control_context *ctx)
 {
   int epfd, ret;
 
@@ -103,7 +103,7 @@ error_close_ep:
   return -1;
 }
 
-static int uxsocket_init_fd(struct slow_context *ctx)
+static int uxsocket_init_fd(struct control_context *ctx)
 {
   int fd, ret;
   struct epoll_event ev;
@@ -173,14 +173,14 @@ error_close:
   return -1;
 }
 
-static int uxsocket_accept(struct slow_context *ctx)
+static int uxsocket_accept(struct control_context *ctx)
 {
   int i, ret, cfd, sfd;
   void *shm_base;
   char shm_name[30];
   struct epoll_event ev;
   struct guest_event *gev;
-  struct guest_slow *g;
+  struct guest_control *g;
   struct shm_allocator *alloc;
   struct shm_handle *guest_cham_handle, *cham_guest_handle;
   struct dqueue *guest_cham_q;
@@ -226,7 +226,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     goto shm_destroy;
   }
 
-  /* Allocate slow path struct for guest */
+  /* Allocate control path struct for guest */
   g = &ctx->guests[ctx->n_guests];
   g->id = ctx->n_guests;
   g->shm_fd = sfd;
@@ -299,10 +299,10 @@ static int uxsocket_accept(struct slow_context *ctx)
   /* Register new guest with the fast-path cores */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
-    qe_new_guest = queue_tail(ctx->slow_fast_qs[i]);
+    qe_new_guest = queue_tail(ctx->ctl_fast_qs[i]);
     if (qe_new_guest == NULL)
     {
-      LOG_ERROR("slow to fast queue is empty");
+      LOG_ERROR("control to fast queue is empty");
       goto free_cham_guest_q;
     }
 
@@ -310,7 +310,7 @@ static int uxsocket_accept(struct slow_context *ctx)
     new_guest_req->id = g->id;
     new_guest_req->shm_base = shm_base;
     new_guest_req->shm_len = ctx->config->shm_len;
-    ret = queue_enqueue(ctx->slow_fast_qs[i], QUEUE_NEW_GUEST);
+    ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_NEW_GUEST);
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new guest req to fast-path");
@@ -342,7 +342,7 @@ close_cfd:
   return -1;
 } 
 
-static void uxsocket_error(struct slow_context *ctx, struct guest_event *aev)
+static void uxsocket_error(struct control_context *ctx, struct guest_event *aev)
 {
   LOG_WARN("removing cfd=%d from app epfd", ctx->guest_epfd);
   epoll_ctl(ctx->guest_epfd, EPOLL_CTL_DEL, aev->fd, NULL);
@@ -350,11 +350,11 @@ static void uxsocket_error(struct slow_context *ctx, struct guest_event *aev)
   free(aev);
 }
 
-static void uxsocket_receive(struct slow_context *ctx, struct guest_event *gev)
+static void uxsocket_receive(struct control_context *ctx, struct guest_event *gev)
 {
   int n;
   size_t res_sz;
-  struct proto_slow *p;
+  struct proto_control *p;
 
   struct iovec iov = {
     .iov_base = &gev->proto_req,

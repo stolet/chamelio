@@ -12,49 +12,45 @@
 #include "udp.h"
 #include "log.h"
 #include "config.h"
-#include "slowif.h"
+#include "controlif.h"
 
 
 struct guest_fast * init_guest(uint8_t id, uint64_t shm_len);
-struct app_fast * init_app(uint8_t id);
 
 int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
 int poll_tx(struct fast_context *ctx);
-int poll_slow(struct fast_context *ctx);
+int poll_control(struct fast_context *ctx);
 
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, uint16_t thread_id,
-    struct shm_handle *fs_handle, struct shm_handle *sf_handle,
+    struct shm_handle *fc_handle, struct shm_handle *cf_handle,
     struct configuration *config, int shm_fd_internal, void *shm_base_internal)
 {
-  int i, j, n_apps, n_app_ctxs;
-  struct dqueue *sfq;
-  struct equeue *fsq;
+  struct dqueue *cfq;
+  struct equeue *fcq;
   struct guest_fast *guests;
-  struct app_fast *apps;
-  struct app_context_fast *app_ctxs;
 
   f_ctx->id = thread_id;
   f_ctx->shm_fd_internal = shm_fd_internal;
   f_ctx->shm_base_internal= shm_base_internal;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
 
-  sfq = dqueue_new(config->cham_queue_len, sf_handle->addr, sf_handle->off);
-  if (sfq == NULL)
+  cfq = dqueue_new(config->cham_queue_len, cf_handle->addr, cf_handle->off);
+  if (cfq == NULL)
   {
-    LOG_ERROR("failed to create fast to slow path queue");
+    LOG_ERROR("failed to create fast to control path queue");
     return -1;
   }
-  f_ctx->slow_fast_q = sfq;
+  f_ctx->ctl_fast_q = cfq;
 
-  fsq = equeue_new(config->cham_queue_len, fs_handle->addr, fs_handle->off);
-  if (fsq == NULL)
+  fcq = equeue_new(config->cham_queue_len, fc_handle->addr, fc_handle->off);
+  if (fcq == NULL)
   {
-    LOG_ERROR("failed to create slow to fast path queue");
+    LOG_ERROR("failed to create control to fast path queue");
     return -1;
   }
-  f_ctx->fast_slow_q = fsq;
+  f_ctx->fast_ctl_q = fcq;
 
   guests = rte_calloc("fast path guests", config->max_guests, 
       sizeof(struct guest_fast), 0);
@@ -65,44 +61,8 @@ int fast_context_init(struct fast_context *f_ctx,
   }
   f_ctx->guests = guests;
 
-  for (i = 0; i < config->max_guests; i++)
-  {
-    apps = rte_calloc("fast path apps", config->max_apps, 
-        sizeof(struct app_fast), 0);
-    if (apps == NULL)
-    {
-      LOG_ERROR("failed to allocate app list");
-      goto free_apps;
-    }
-    f_ctx->guests[i].apps = apps;
-    n_apps++;
-
-    for (j = 0; j < config->max_apps; j++)
-    {
-      app_ctxs = rte_calloc("fast path app ctxs", config->max_app_ctxs, 
-          sizeof(struct app_context_fast), 0);
-
-      if (app_ctxs == NULL)
-      {
-        LOG_ERROR("failed to allocate app context list");
-        goto free_app_ctxs;
-      }
-      f_ctx->guests[i].apps[j].app_ctxs = app_ctxs;
-      n_app_ctxs++;
-    }
-  }
-
   return 0;
 
-free_app_ctxs:
-  for (i = 0; i < n_apps; i++)
-    for (j = 0; j < n_app_ctxs; j++)
-      free(f_ctx->guests[i].apps[j].app_ctxs);
-free_apps:
-  for (i = 0; i < n_apps; i++)
-    free(f_ctx->guests[i].apps);
-
-  free(guests);
   return -1;
 }
 
@@ -136,10 +96,10 @@ int fast_loop(struct fast_context *ctx)
     //   LOG_ERROR("poll_tx failed");
     // }
 
-    ret = poll_slow(ctx);
+    ret = poll_control(ctx);
     if (ret < 0)
     {
-      LOG_ERROR("poll_slow failed");
+      LOG_ERROR("poll_control failed");
     }
   }
 }
@@ -164,10 +124,7 @@ int poll_rx(struct fast_context *ctx)
   {
     rx_err = fast_process_packet_rx(ctx, mbs[i]);
     if (rx_err != 0)
-    {
       LOG_ERROR("fast_process_packet_rx failed");
-      fast_process_packet_error(ctx, mbs[i], rx_err);
-    }
   }
 
   rte_pktmbuf_free_bulk(mbs, n);
@@ -213,8 +170,7 @@ int poll_tx(struct fast_context *ctx)
     tx_err = fast_process_packet_tx(ctx, mbs[i]);
     if (tx_err < 0)
     {
-      LOG_WARN("fast_process_packet_tx failed sending to slow path");
-      fast_process_packet_error(ctx, mbs[i], tx_err);
+      LOG_WARN("fast_process_packet_tx failed");
     }
     else
     {
@@ -245,7 +201,7 @@ int poll_tx(struct fast_context *ctx)
   return 0;
 }
 
-int poll_slow(struct fast_context *ctx)
+int poll_control(struct fast_context *ctx)
 {
-  return slowif_poll(ctx);
+  return controlif_poll(ctx);
 }

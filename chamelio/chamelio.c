@@ -7,7 +7,7 @@
 #include "chamelio.h"
 #include "config.h"
 #include "fast.h"
-#include "slow.h"
+#include "control.h"
 #include "nic.h"
 #include "queue.h"
 #include "log.h"
@@ -25,7 +25,7 @@ int main (int argc, char **argv)
   int i, j, ret, sfd;
   void *shm_base;
   struct configuration *config;
-  struct slow_context *s_ctx;
+  struct control_context *c_ctx;
   struct shm_handle *sh, **fs_handles, **sf_handles;
   struct fast_context **f_ctxs;
   struct shm_allocator *alloc;
@@ -85,40 +85,41 @@ int main (int argc, char **argv)
     goto destroy_huge;
   }
 
-  /* Create slow-path context */
-  s_ctx = malloc(sizeof(struct slow_context));
-  if (s_ctx == NULL)
+  /* Create control-path context */
+  c_ctx = malloc(sizeof(struct control_context));
+  if (c_ctx == NULL)
   {
-    LOG_ERROR("failed to allocate slow path context");
+    LOG_ERROR("failed to allocate control path context");
     goto free_alloc;
   }
 
-  /* Allocate fast->slow queues */
+  /* Allocate fast->control queues */
   fs_handles = malloc(sizeof(struct shm_handle *) * config->fp_cores_max);
   if (fs_handles == NULL)
   {
-    LOG_ERROR("failed to allocate list for fast to slow queue handles");
+    LOG_ERROR("failed to allocate list for fast to control queue handles");
     goto free_sctx;
   }
-  cham_ctx.fast_slow_handles = fs_handles;
+  cham_ctx.fast_ctl_handles = fs_handles;
   
-  /* Allocate slow->fast queues */
+  /* Allocate control->fast queues */
   sf_handles = malloc(sizeof(struct queue *) * config->fp_cores_max);
   if (sf_handles == NULL)
   {
-    LOG_ERROR("failed to allocate list for slow-path to fast-path queues");
-    goto free_sh_fast_slow_list;
+    LOG_ERROR("failed to allocate list for control-path to fast-path queues");
+    goto free_sh_fast_control_list;
   }
-  cham_ctx.slow_fast_handles = sf_handles;
+  cham_ctx.ctl_fast_handles = sf_handles;
 
-  /* Allocate memory for queues between the slow path and the fast path */
+  /* Allocate memory for queues between the control path and the fast path */
   for (i = 0; i < config->fp_cores_max; i++)
   {
     ret = shmalloc_alloc(alloc, config->cham_queue_len, &sh);
     if (ret != 0)
     {
-      LOG_ERROR("failed to allocated memory in shared memory for fast to slow queue");
-      goto free_sh_slow_fast_list;
+      LOG_ERROR("failed to allocated memory in"
+          "shared memory for fast to control queue");
+      goto free_sh_control_fast_list;
     }
     memset(sh->addr, 0, config->cham_queue_len);
     fs_handles[i] = sh;
@@ -126,15 +127,16 @@ int main (int argc, char **argv)
     ret = shmalloc_alloc(alloc, config->cham_queue_len, &sh);
     if (ret != 0)
     {
-      LOG_ERROR("failed to allocated memory in shared memory for slow to fast queue");
-      goto free_sh_slow_fast_list;
+      LOG_ERROR("failed to allocated memory in" 
+          "shared memory for control to fast queue");
+      goto free_sh_control_fast_list;
     }
     memset(sh->addr, 0, config->cham_queue_len);
     sf_handles[i] = sh;
   }
 
-  /* Initialize slow-path */
-  slow_context_init(s_ctx, config, fs_handles, sf_handles);
+  /* Initialize control-path */
+  control_context_init(c_ctx, config, fs_handles, sf_handles);
   
   /* Start fast-path threads */
   threads_launched = fast_start(&cham_ctx.config);
@@ -145,8 +147,8 @@ int main (int argc, char **argv)
     goto free_shs;
   }
 
-  /* Loop in slow-path */
-  slow_loop(s_ctx);
+  /* Loop in control-path */
+  control_loop(c_ctx);
 
 free_shs:
   for (j = 0; j < i; j++)
@@ -154,12 +156,12 @@ free_shs:
     shmalloc_free(alloc, fs_handles[i]);
     shmalloc_free(alloc, sf_handles[i]);
   }
-free_sh_slow_fast_list:
+free_sh_control_fast_list:
   free(fs_handles);
-free_sh_fast_slow_list:
+free_sh_fast_control_list:
   free(sf_handles);
 free_sctx:
-  free(s_ctx);
+  free(c_ctx);
 free_alloc:
   free(alloc);
 destroy_huge:
@@ -180,7 +182,7 @@ int fast_start(struct configuration *config)
 
   uint32_t fp_cores_max = config->fp_cores_max;
 
-  /* fast path cores + one slow path core */
+  /* fast path cores + one control path core */
   cores_needed = fp_cores_max + 1;
   cores_avail = rte_lcore_count();
 
@@ -236,7 +238,7 @@ static int fast_thread(void *arg)
 
   /* initialize data plane context */
   ret = fast_context_init(f_ctx, &cham_ctx.nic_ctx, id,
-      cham_ctx.fast_slow_handles[id], cham_ctx.slow_fast_handles[id],
+      cham_ctx.fast_ctl_handles[id], cham_ctx.ctl_fast_handles[id],
       &cham_ctx.config, cham_ctx.shm_fd_internal, cham_ctx.shm_base_internal);
   if (ret != 0) 
   {

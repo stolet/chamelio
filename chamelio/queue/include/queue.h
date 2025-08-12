@@ -15,67 +15,11 @@
 enum queue_type {
   /* Signals that the queue is empty */
   QUEUE_EMPTY = 0,
-  /* Entry for fast path error */
-  QUEUE_ERROR,
-
-  /* Entry for ARP in TX */
-  QUEUE_ARP_TX,
-  /* Entry for ARP in RX */
-  QUEUE_ARP_RX,
-
   /* Entry for new guest registration */
   QUEUE_NEW_GUEST,
-  /* Entry for new app registration */
-  QUEUE_NEW_APP,
-  /* Entry for new app context registration */
-  QUEUE_NEW_APP_CTX,
-  /* Entry for new app context registration with fast-path */
-  QUEUE_NEW_APP_CTX_FAST,
-
-  /* Entry for new Chamelio buffer used for RX or TX */
-  QUEUE_NEW_BUF,
-  /* Bump for buffer head */
-  QUEUE_BUMP,
-
   /* Entry for new protocol registered */
   QUEUE_PROTO,
 };
-
-/* New queue bump */
-struct queue_buf_bump {
-  /* Opaque pointer to buffer in application library */
-  uint64_t opaque;
-  /* How much to bump the head of this buffer */
-  uint64_t head_bump;
-  /* How much to bump the avail of this buffer */
-  uint64_t avail_bump;
-} __attribute__((packed));
-
-/* Request for registering new buf */
-struct queue_new_buf_req {
-  /* Opaque pointer to buffer in application library */
-  uint64_t opaque;
-  /* Guest ID */
-  uint8_t gid;
-  /* Application ID */
-  uint8_t aid;
-  /* Application context ID */
-  uint8_t cid;
-  /* Buffer base */
-  uint64_t base;
-  /* Length of the buffer */
-  uint32_t len;
-} __attribute__((packed));
-
-/* Response for registering new buf */
-struct queue_new_buf_res {
-  /* Opaque pointer to buffer in application library */
-  uint64_t opaque;
-  /* Buffer base */
-  uint64_t base;
-  /* Length of the buffer */
-  uint32_t len;
-} __attribute__((packed));
 
 /* Request for registering new guest */
 struct queue_new_guest_req {
@@ -85,20 +29,6 @@ struct queue_new_guest_req {
   void *shm_base;
   /* Length of shared memory region for this guest */
   uint64_t shm_len;
-} __attribute__((packed));
-
-/* Request for registering new application */
-struct queue_new_app_req {
-  /* Application ID */
-  uint8_t id;
-  /* Guest ID */
-  uint8_t gid;
-  /* Protocol ID */
-  uint8_t proto_type;
-  /* Number of bins for hash table */
-  uint32_t n_bins;
-  /* Address of hash table for buffers */
-  uint64_t ht_addr;
 } __attribute__((packed));
 
 /* Request for registering new protocol */
@@ -115,76 +45,21 @@ struct queue_new_proto_res {
   uint32_t shm_len;
 } __attribute__((packed));
 
-/* Request for registering new application context */
-struct queue_new_app_ctx_req {
-  /* Protocol type to register for this context */
-  uint8_t proto_type; 
-} __attribute__((packed));
-
-/* Response for registering new application context */
-struct queue_new_app_ctx_res {
-  /* Number of fast-path cores */
-  uint32_t n_fp_cores;
-  /* Size of shm region. Used only by the first context to register */
-  uint32_t shm_len;
-
-  /* Offset in shared memory for Chamelio->App queue */
-  uint64_t cham_app_q_off;
-  /* Length in shared memory for Chamelio->App queue */
-  uint32_t cham_app_q_len;
-
-  /* Offset in shared memory for App->Chamelio queue */
-  uint64_t app_cham_q_off;
-  /* Length in shared memory for App->Chamelio queue */
-  uint32_t app_cham_q_len;
-
-  /* TODO: Can we not hardcode a macro here? */
-  /* Length of each RX bump queue */
-  uint32_t app_bump_q_len;
-  /* Offset in shared memory for rx queues for each fast-path core */
-  uint64_t app_bump_q_offs[MAX_FP_CORES];
-  /* Lengyh of each TX bump queue */
-  uint32_t cham_bump_q_len;
-  /* Offset in shared memory for tx queues for each fast-path core */
-  uint64_t cham_bump_q_offs[MAX_FP_CORES];
-} __attribute__((packed));
-
-/* Request for registering new application context with fast-path */
-struct queue_new_app_ctx_fast_req {
-  /* Guest ID */
-  uint8_t gid;
-  /* Application ID */
-  uint8_t aid;
-  /* Application context ID */
-  uint8_t cid;
-  /* Protocol type to register for this context */
-  uint8_t proto_type; 
-  /* Offset in shared memory for rx bump queue for this app context */
-  uint64_t app_bump_q_off;
-  /* Offset in shared memory for tx bump queue for this app context */
-  uint64_t cham_bump_q_off;
-} __attribute__((packed));
-
 struct queue_entry {
   /* Type of queue entry. Don't update outside of enqueue or dequeue */
   volatile uint8_t type;
   /* Data section of queue entry */
   union {
-    struct queue_new_buf_req new_buf_req;
-    struct queue_new_buf_res new_buf_res;
-    struct queue_new_app_req new_app_req;
-    struct queue_new_app_ctx_req new_app_ctx_req;
-    struct queue_new_app_ctx_res new_app_ctx_res;
-    struct queue_new_app_ctx_fast_req new_app_ctx_fast_req;
+    struct queue_new_guest_req new_guest_req;
+    struct queue_new_proto_req new_proto_req;
+    struct queue_new_proto_res new_proto_res;
     /* Keeps queue entry the size of a cache line */
-    /* TODO: Move this back to a cache line size */
-    uint8_t raw[256];
+    uint8_t raw[63];
   } __attribute__((packed)) data;
 } __attribute__((packed));
 
 /* We want queue entries to be cache line sized for faster retrieval */
-/* TODO: Uncomment this */
-// STATIC_ASSERT(sizeof(struct queue_entry) == 64, queue_entry_size);
+STATIC_ASSERT(sizeof(struct queue_entry) == 64, queue_entry_size);
 
 
 /* This queue is only used for enqueuing */

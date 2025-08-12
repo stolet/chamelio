@@ -272,7 +272,7 @@ static void print_usage(struct configuration *c, char *progname)
            "[default: %"PRIu64"]\n"
       "  --shm-internal-len=LEN                  Internal shared memory len"
            "[default: %"PRIu64"]\n"
-      "  --cham-queue-len=LEN                    Chamelio Fast <-> Slow queue len"
+      "  --cham-queue-len=LEN                    Chamelio Fast <-> Control queue len"
            "[default: %"PRIu64"]\n"
       "  --app-queue-len=LEN                     Application <-> Chamelio queue len"
            "[default: %"PRIu64"]\n"

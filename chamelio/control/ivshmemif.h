@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "slow.h"
+#include "control.h"
 
 #define IVSHMEM_SOCKET_PATH "ivshmem_socket"
 
@@ -13,7 +13,7 @@ struct ivshmem_event {
   uint8_t vmid;
 };
 
-int ivshmemif_init(struct slow_context *ctx);
-int ivshmemif_poll(struct slow_context *ctx);
+int ivshmemif_init(struct control_context *ctx);
+int ivshmemif_poll(struct control_context *ctx);
 
 #endif

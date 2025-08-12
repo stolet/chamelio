@@ -15,7 +15,7 @@ subdir('queue')
 subdir('protocols')
 subdir('nic')
 subdir('fast')
-subdir('slow')
+subdir('control')
 
 deps = [
   dependency('utils_dep'),
@@ -28,7 +28,7 @@ deps = [
   dependency('eth_dep'),
   dependency('nic_dep'),
   dependency('fast_dep'),
-  dependency('slow_dep'),
+  dependency('control_dep'),
   dpdk_dep,
   threads_dep,
   rt_dep,

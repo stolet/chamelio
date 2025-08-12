@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "slow.h"
+#include "control.h"
 #include "queue.h"
 #include "shmalloc.h"
 
@@ -19,7 +19,7 @@ struct guest_event {
   /* File descriptor for the connection to the uxsocket */
   int fd;
   /* Guest for protocol */
-  struct guest_slow *guest;
+  struct guest_control *guest;
   /* Request for new protocol */
   struct queue_new_proto_req proto_req;
   /* Bytes received in uxsocket for proto request */
@@ -30,7 +30,7 @@ struct guest_event {
   size_t resp_sz;
 };
 
-int guestif_init(struct slow_context *ctx);
-int guestif_poll(struct slow_context *ctx);
+int guestif_init(struct control_context *ctx);
+int guestif_poll(struct control_context *ctx);
 
 #endif

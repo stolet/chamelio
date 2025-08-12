@@ -8,7 +8,7 @@ udp_lib = static_library(
 
 deps = [
   dependency('fast_dep'),
-  dependency('slow_dep'),
+  dependency('control_dep'),
 ]
 
 udp_dep = declare_dependency(

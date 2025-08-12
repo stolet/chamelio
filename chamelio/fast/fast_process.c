@@ -63,25 +63,3 @@ uint8_t fast_process_packet_tx(struct fast_context *ctx, struct rte_mbuf *mb)
   mb->pkt_len = mb->data_len = 1500;
   return 0;
 }
-
-int fast_process_packet_error(struct fast_context *ctx, 
-    struct rte_mbuf *mb, uint8_t type)
-{
-  struct equeue *q;
-  q = ctx->fast_slow_q;
-
-  switch(type)
-  {
-    case QUEUE_ARP_RX:
-      queue_enqueue(q, QUEUE_ARP_RX);
-      break;
-    case QUEUE_ARP_TX:
-      queue_enqueue(q, QUEUE_ARP_TX);
-      break;
-    default:
-      LOG_ERROR("got unknown error");
-      abort();
-  }
-
-  return 0;
-}
