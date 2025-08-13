@@ -71,10 +71,15 @@ close_sockfd:
 
 struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
 {
+  int ret;
   ssize_t sz, off;
   void *shm_base;
   struct proto_lib *p;
+  struct equeue *eq;
+  struct dqueue *dq;
   struct queue_new_proto_res *res;
+  struct shm_allocator *alloc;
+  struct shm_handle *sh;
   uint8_t resp_buf[sizeof(*res)];
   uint8_t ptype = 1;
   struct queue_new_proto_req req = {
@@ -145,7 +150,61 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   p->shm_base = shm_base;
   p->shm_size = res->shm_len;
 
+  /* Create allocator that manages shared memory */
+  alloc = shmalloc_init(g->shm_fd, shm_base, res->shm_len);
+  if (alloc == NULL)
+  {
+    LOG_ERROR("failed to create allocator");
+    return NULL;
+  }
+
+  /* Create queue for messages from guest to the control-path */
+  ret = shmalloc_alloc(alloc, CTL_PATH_Q_SZ, &sh);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocate memory for queue");
+    return NULL;
+  }
+
+  eq = equeue_new(sh->len, sh->addr, sh->off);
+  if (eq == NULL)
+  {
+    LOG_ERROR("failed to create queue");
+    return NULL;
+  }
+  p->guest_ctl_q = eq;
+
+  /* Queue from the guest to the control path should always
+     be the first thing allocated in the shared memory region. */
+  assert(eq->off == 0);
+
+  /* Create queue for messages from control-path to the guest */
+  ret = shmalloc_alloc(alloc, CTL_PATH_Q_SZ, &sh);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocate memory for queue");
+    return NULL;
+  }
+
+  dq = dqueue_new(sh->len, sh->addr, sh->off);
+  if (dq == NULL)
+  {
+    LOG_ERROR("failed to allocate memory for queue");
+    return NULL;
+  }
+  p->ctl_guest_q = dq;
+
+  /* Queue from the control path to the guest should always be the
+     second thing allocated in the shared memory region */
+  assert(dq->off == CTL_PATH_Q_SZ);
+
   return p;
+}
+
+int cham_new_queues(struct proto_lib *p, 
+    uint16_t nqueues, uint32_t nelems, uint32_t elsize)
+{
+  return 0;
 }
 
 static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd)

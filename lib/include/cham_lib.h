@@ -8,6 +8,9 @@
 #define HOST_PEERID 255
 #define MAX_FP_CORES 16
 
+/* TODO: Don't hardcode this and get it from config */
+#define CTL_PATH_Q_SZ 16 * 1024
+
 struct guest_lib {
   /* Unix socket used to register with Chamelio */
   int uxsocket_fd;
@@ -20,6 +23,12 @@ struct proto_lib {
   uint32_t shm_size;
   /* Base pointer for shared memory region used by this guest */
   void *shm_base;
+  /* Allocator for shared memory */
+  struct shmalloc *alloc;
+  /* Guest->control queue */
+  struct equeue *guest_ctl_q;
+  /* Control->guest queue */
+  struct dqueue *ctl_guest_q;
   /* Number of queues */
   uint16_t nqueues;
   /* Number of elements per queue */  
@@ -28,7 +37,7 @@ struct proto_lib {
   uint32_t elsize;
 };
 
-/* Mocks a QEMU init ivshmem call */
+/* Mocks a QEMU ivshmem client */
 int cham_init_ivshmem();
 
 /* Connects a guest with Chamelio */

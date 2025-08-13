@@ -256,7 +256,7 @@ static int uxsocket_accept(struct control_context *ctx)
     LOG_ERROR("failed to create guest->chamelio queue");
     goto free_guest_cham_handle;
   }
-  assert(guest_cham_q->entries == alloc->shm_base);
+  assert(guest_cham_q->off == 0);
   g->guest_cham_q = guest_cham_q;
 
   /* Create queue that holds messages from Chamelio to guest */
@@ -275,8 +275,7 @@ static int uxsocket_accept(struct control_context *ctx)
     LOG_ERROR("failed to create chamelio->guest queue");
     goto free_cham_guest_handle;
   }
-  assert(cham_guest_q->entries == 
-      (alloc->shm_base + ctx->config->agt_queue_len));
+  assert(cham_guest_q->off == ctx->config->agt_queue_len);
   g->cham_guest_q = cham_guest_q;
 
   /* Add connection to epoll */
