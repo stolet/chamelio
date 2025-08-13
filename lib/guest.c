@@ -10,6 +10,7 @@
 #include "queue.h"
 #include "log.h"
 
+static int handle_new_queues_res(struct proto_lib *p, struct queue_entry *qe);
 static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd);
 
 struct guest_lib * cham_connect_guest()
@@ -204,7 +205,77 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
 int cham_new_queues(struct proto_lib *p, 
     uint16_t nqueues, uint32_t nelems, uint32_t elsize)
 {
+  int ret;
+  struct equeue *q;
+  struct queue_entry *qe;
+  struct queue_new_queues_req *req;
+
+  q = p->guest_ctl_q;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+
+  req = (struct queue_new_queues_req *) &qe->data;
+  req->elsize = elsize;
+  req->nelems = nelems;
+  req->nqueues = nqueues;
+
+  ret = queue_enqueue(q, QUEUE_NEW_QUEUES_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue request for new queues");
+    return -1;
+  }
+
+  /* Poll waiting for response */
+  while (cham_poll_control(p) != QUEUE_NEW_QUEUES_RES) {}
+
   return 0;
+}
+
+int cham_poll_control(struct proto_lib *p)
+{
+  struct dqueue *q;
+  struct queue_entry *qe;
+
+  q = p->ctl_guest_q;
+  qe = queue_head(q);
+
+  /* Queue is empty */
+  if (qe == NULL)
+    return -1;
+
+  switch (qe->type)
+  {
+    case QUEUE_NEW_QUEUES_RES:
+      handle_new_queues_res(p, qe);
+      queue_dequeue(q);
+      return QUEUE_NEW_QUEUES_RES;
+    default:
+      LOG_ERROR("unknown queue entry type from "
+          "guest to control path type=%d", qe->type);
+      abort();
+  }
+
+  return 0;  
+}
+
+int handle_new_queues_res(struct proto_lib *p, struct queue_entry *qe)
+{
+  int i;
+  struct queue_new_queues_res *res;
+
+  res = (struct queue_new_queues_res *) &qe->data;
+  for (i = 0; i < res->nqueues; i++)
+  {
+    p->queue_offs[i] = res->offs[i];
+  }
+
+  return 0;
+  
 }
 
 static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd)

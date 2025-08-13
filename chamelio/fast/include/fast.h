@@ -23,19 +23,37 @@ enum protocol_type {
    fit packets from the TX phase and ACKs sent in the receive phase */
 #define TXBUF_SIZE 2 * BATCH_SIZE
 
-struct protocol {
-  /* Protocol ID */
-  enum protocol_type type;
+struct proto_queue {
+  /* ID of this protocol queue */
+  uint16_t id;
+  /* Core this queue is running */
+  uint16_t core;
+  /* Wether this queue is active or not */
+  uint8_t active;
+  /* Size of this queue in bytes */
+  uint32_t size;
+  /* Offset in shared memory to start of the queue */
+  uint64_t off;
+  /* Protocol this queue belongs to */
+  struct proto_fast *proto;
+};
+
+struct proto_fast {
+  /* Number of queues */
+  uint16_t nqueues;
+  /* Number of elements in queue */
+  uint32_t nelems;
+  /* Size of element in each queue */
+  uint32_t elsize;
+  /* Offset in shared memory for each queue */
+  struct proto_queue queues[MAX_PROTO_QUEUES];
+
   /* Processes one received packet */
   uint8_t (*process_rx)(void *, struct rte_mbuf *);
   /* Processes one packet to transmit */
   uint8_t (*process_tx)(void *, struct rte_mbuf *);
   /* Polls application queues to check how much data to transmit */
   uint8_t (*process_queues)();
-};
-
-struct proto_fast {
-
 };
 
 struct guest_fast {

@@ -350,7 +350,7 @@ static int uxsocket_accept(struct control_context *ctx)
     new_guest_req->id = g->id;
     new_guest_req->shm_base = shm_base;
     new_guest_req->shm_len = ctx->config->shm_len;
-    ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_NEW_GUEST);
+    ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_NEW_GUEST_REQ);
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new guest req to fast-path");

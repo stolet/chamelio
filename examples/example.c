@@ -3,6 +3,7 @@
 
 int main (int argc, char **argv)
 {
+  int ret;
   struct guest_lib *g;
   struct proto_lib *p;
 
@@ -17,4 +18,10 @@ struct proto_lib* cham_new_proto(struct guest_lib *g, uint32_t shmsize);
   p = cham_new_proto(g, 0);
   if (p == NULL)
     abort();
+
+  ret = cham_new_queues(p, 4, 10, 64);
+  if (ret != 0)
+    abort();
+
+  while(1) {}
 }

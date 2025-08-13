@@ -3,10 +3,11 @@
 
 #include <stdint.h>
 
+#include "queue.h"
+
 #define GUEST_SOCKET_PATH "guest_socket"
 #define IVSHMEM_PROTOCOL_VERSION 0
 #define HOST_PEERID 255
-#define MAX_FP_CORES 16
 
 struct guest_lib {
   /* Unix socket used to register with Chamelio */
@@ -32,6 +33,8 @@ struct proto_lib {
   uint32_t nelems;
   /* Size of element in each queue */
   uint32_t elsize;
+  /* Qeueue offsets in shared memory */
+  uint64_t queue_offs[MAX_PROTO_QUEUES];
 };
 
 /* Mocks a QEMU ivshmem client */
@@ -57,5 +60,8 @@ int cham_move_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
 
 /* Uploads an eBPF program to Chamelio and register it with the fast-path */
 int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
+
+/* Lets user poll the queue with the control plane */
+int cham_poll_control(struct proto_lib *p);
 
 #endif

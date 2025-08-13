@@ -2,6 +2,7 @@
 #define CONTROL_H_
 
 #include "config.h"
+#include "queue.h"
 #include "shmalloc.h"
 
 struct proto_control {
@@ -15,7 +16,7 @@ struct proto_control {
   /* Size of each queue element */
   uint32_t elsize;
   /* List of offsets in shared memory for each queue */
-
+  uint64_t queue_offs[MAX_PROTO_QUEUES];
 
   /* Number of maps in shared memory */
   uint16_t nmaps;
