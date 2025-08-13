@@ -8,9 +8,6 @@
 #define HOST_PEERID 255
 #define MAX_FP_CORES 16
 
-/* TODO: Don't hardcode this and get it from config */
-#define CTL_PATH_Q_SZ 16 * 1024
-
 struct guest_lib {
   /* Unix socket used to register with Chamelio */
   int uxsocket_fd;

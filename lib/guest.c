@@ -159,7 +159,7 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   }
 
   /* Create queue for messages from guest to the control-path */
-  ret = shmalloc_alloc(alloc, CTL_PATH_Q_SZ, &sh);
+  ret = shmalloc_alloc(alloc, res->guestq_len, &sh);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocate memory for queue");
@@ -179,7 +179,7 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   assert(eq->off == 0);
 
   /* Create queue for messages from control-path to the guest */
-  ret = shmalloc_alloc(alloc, CTL_PATH_Q_SZ, &sh);
+  ret = shmalloc_alloc(alloc, res->guestq_len, &sh);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocate memory for queue");
@@ -196,7 +196,7 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
 
   /* Queue from the control path to the guest should always be the
      second thing allocated in the shared memory region */
-  assert(dq->off == CTL_PATH_Q_SZ);
+  assert(dq->off == res->guestq_len);
 
   return p;
 }

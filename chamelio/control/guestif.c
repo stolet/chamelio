@@ -415,6 +415,7 @@ static void uxsocket_receive(struct control_context *ctx, struct guest_event *ge
   /* Initialise response */
   gev->proto_res.n_fp_cores = ctx->config->fp_cores_max;
   gev->proto_res.shm_len = ctx->config->shm_len;
+  gev->proto_res.guestq_len = ctx->config->agt_queue_len;
 
   /* Send out response */
   res_sz = sizeof(struct queue_new_proto_res);

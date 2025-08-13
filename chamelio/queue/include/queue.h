@@ -41,8 +41,10 @@ struct queue_new_proto_req {
 struct queue_new_proto_res {
   /* Number of fast-path cores */
   uint32_t n_fp_cores;
-  /* Size of shm region. Used only by the first context to register */
+  /* Size of shm region */
   uint32_t shm_len;
+  /* Size of Guest <-> Control queues */
+  uint32_t guestq_len;
 } __attribute__((packed));
 
 struct queue_entry {
