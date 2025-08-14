@@ -12,6 +12,9 @@
 
 #define BATCH_SIZE 16
 
+#define PROTOQ_INACTIVE 0
+#define PROTOQ_ACTIVE 1
+
 /* Types of protocols supported by Chamelio */
 enum protocol_type {
   PROTO_UDP = 0,
@@ -23,7 +26,20 @@ enum protocol_type {
    fit packets from the TX phase and ACKs sent in the receive phase */
 #define TXBUF_SIZE 2 * BATCH_SIZE
 
-struct proto_queue {
+struct proto_map_fast {
+  /* ID of this map in protocol */
+  uint16_t id;
+  /* Number of elements in the map */
+  uint32_t nelems;
+  /* Size of each element in the map */
+  uint32_t elsize;
+  /* Offset in shared memory where this map starts */
+  uint64_t off;
+  /* Protocol this map belongs to */
+  struct proto_fast *proto;
+};
+
+struct proto_queue_fast {
   /* ID of this protocol queue */
   uint16_t id;
   /* Core this queue is running */
@@ -46,7 +62,12 @@ struct proto_fast {
   /* Size of element in each queue */
   uint32_t elsize;
   /* Offset in shared memory for each queue */
-  struct proto_queue queues[MAX_PROTO_QUEUES];
+  struct proto_queue_fast queues[MAX_PROTO_QUEUES];
+
+  /* Number of maps in shared memory */
+  uint16_t nmaps;
+  /* List of maps in shared memory */
+  struct proto_map_fast maps[MAX_PROTO_MAPS];
 
   /* Processes one received packet */
   uint8_t (*process_rx)(void *, struct rte_mbuf *);

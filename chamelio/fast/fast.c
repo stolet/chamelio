@@ -192,9 +192,8 @@ int poll_tx(struct fast_context *ctx)
   {
     /* Move unsent packets to front */
     for (i = ret; i < ctx->tx_n; i++)
-    {
       ctx->tx_mbs[i - ret] = ctx->tx_mbs[i];
-    }
+
     ctx->tx_n -= ret;
   }
 

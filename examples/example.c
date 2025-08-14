@@ -22,6 +22,10 @@ struct proto_lib* cham_new_proto(struct guest_lib *g, uint32_t shmsize);
   ret = cham_new_queues(p, 4, 10, 64);
   if (ret != 0)
     abort();
+    
+  ret = cham_new_map(p, 256, 64);
+  if (ret != 0)
+    abort();
 
   while(1) {}
 }

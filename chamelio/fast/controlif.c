@@ -4,6 +4,7 @@
 
 static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_new_queues(struct fast_context *ctx, struct queue_entry *qe);
+static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe);
 
 int controlif_poll(struct fast_context *ctx)
 {
@@ -29,6 +30,10 @@ int controlif_poll(struct fast_context *ctx)
       break;
     case QUEUE_NEW_QUEUES_REQ:
       handle_new_queues(ctx, qe);
+      queue_dequeue(q);
+      break;
+    case QUEUE_NEW_MAP_REQ:
+      handle_new_map(ctx, qe);
       queue_dequeue(q);
       break;
     default:
@@ -59,7 +64,7 @@ static void handle_new_queues(struct fast_context *ctx, struct queue_entry *qe)
   int i;
   struct guest_fast *g;
   struct proto_fast *p;
-  struct proto_queue *q;
+  struct proto_queue_fast *q;
 
   struct queue_new_queues_req *req = (struct queue_new_queues_req *) &qe->data;
 
@@ -74,11 +79,33 @@ static void handle_new_queues(struct fast_context *ctx, struct queue_entry *qe)
     q = &p->queues[i];
     q->id = i;
     q->core = 0;
-    q->active = 0;
+    q->active = PROTOQ_INACTIVE;
     q->off = req->offs[i];
     q->proto = p;
     q->size = req->elsize * req->nelems;
   }
 
   LOG_DEBUG("created queues in fast-path");
+}
+
+static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)
+{
+  struct guest_fast *g;
+  struct proto_fast *p;
+  struct proto_map_fast *m;
+  
+  struct queue_new_map_req *req = (struct queue_new_map_req *) &qe->data;
+
+  g = &ctx->guests[req->gid];
+  p = &g->proto;
+  m = &p->maps[p->nmaps];
+
+  m->id = p->nmaps;
+  m->elsize = req->elsize;
+  m->nelems = req->nelems;
+  m->off = req->off;
+  m->proto = p;
+
+  p->nmaps++;
+  LOG_DEBUG("created map in fast-path");
 }

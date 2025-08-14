@@ -18,10 +18,8 @@ struct proto_control {
   /* List of offsets in shared memory for each queue */
   uint64_t queue_offs[MAX_PROTO_QUEUES];
 
-  /* Number of maps in shared memory */
+  /* Number of maps created */
   uint16_t nmaps;
-  /* Maps in shared memory */
-
 };
 
 struct guest_control {

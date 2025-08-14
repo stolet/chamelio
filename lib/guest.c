@@ -11,6 +11,7 @@
 #include "log.h"
 
 static int handle_new_queues_res(struct proto_lib *p, struct queue_entry *qe);
+int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
 static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd);
 
 struct guest_lib * cham_connect_guest()
@@ -150,6 +151,7 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   p->elsize = 0;
   p->shm_base = shm_base;
   p->shm_size = res->shm_len;
+  p->nmaps = 0;
 
   /* Create allocator that manages shared memory */
   alloc = shmalloc_init(g->shm_fd, shm_base, res->shm_len);
@@ -236,6 +238,39 @@ int cham_new_queues(struct proto_lib *p,
   return 0;
 }
 
+int cham_new_map(struct proto_lib *p, 
+    uint32_t nelems, uint32_t elsize)
+{
+  int ret;
+  struct equeue *q;
+  struct queue_entry *qe;
+  struct queue_new_map_req *req;
+
+  q = p->guest_ctl_q;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+
+  req = (struct queue_new_map_req *) &qe->data;
+  req->nelems = nelems;
+  req->elsize = elsize;
+
+  ret = queue_enqueue(q, QUEUE_NEW_MAP_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue request for new map");
+    return -1;
+  }
+
+  /* Poll waiting for response */
+  while (cham_poll_control(p) != QUEUE_NEW_MAP_RES) {}
+
+  return 0;
+}
+
 int cham_poll_control(struct proto_lib *p)
 {
   struct dqueue *q;
@@ -254,6 +289,10 @@ int cham_poll_control(struct proto_lib *p)
       handle_new_queues_res(p, qe);
       queue_dequeue(q);
       return QUEUE_NEW_QUEUES_RES;
+    case QUEUE_NEW_MAP_RES:
+      handle_new_map_res(p, qe);
+      queue_dequeue(q);
+      return QUEUE_NEW_MAP_RES;
     default:
       LOG_ERROR("unknown queue entry type from "
           "guest to control path type=%d", qe->type);
@@ -269,10 +308,27 @@ int handle_new_queues_res(struct proto_lib *p, struct queue_entry *qe)
   struct queue_new_queues_res *res;
 
   res = (struct queue_new_queues_res *) &qe->data;
+  p->nqueues = res->nqueues;
+  p->elsize = res->elsize;
+  p->nelems = res->nelems;
+  
   for (i = 0; i < res->nqueues; i++)
-  {
     p->queue_offs[i] = res->offs[i];
-  }
+
+  return 0;
+  
+}
+
+int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe)
+{
+  struct queue_new_map_res *res;
+
+  res = (struct queue_new_map_res *) &qe->data;
+  p->nmaps++;
+  p->maps[res->id].id = res->id;
+  p->maps[res->id].off = res->off;
+  p->maps[res->id].nelems = res->nelems;
+  p->maps[res->id].elsize = res->elsize;
 
   return 0;
   
