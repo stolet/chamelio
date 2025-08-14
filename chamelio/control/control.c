@@ -17,6 +17,10 @@ static int handle_new_queues_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
 static int handle_new_map_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
+static int handle_enableq_req(struct control_context *ctx,
+    struct guest_control *g, struct queue_entry *qe);
+static int handle_disableq_req(struct control_context *ctx,
+    struct guest_control *g, struct queue_entry *qe);
 
 int control_context_init(struct control_context *ctx, struct configuration *config,
     struct shm_handle **fc_handles, struct shm_handle **cf_handles)
@@ -183,6 +187,14 @@ static int poll_guests(struct control_context *ctx)
         handle_new_map_req(ctx, g, qe);
         queue_dequeue(q);
         break;
+      case QUEUE_ENABLEQ_REQ:
+        handle_enableq_req(ctx, g, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_DISABLEQ_REQ:
+        handle_disableq_req(ctx, g, qe);
+        queue_dequeue(q);
+        break;
       default:
         LOG_ERROR("unknown queue entry type from "
             "guest to control path type=%d", qe->type);
@@ -230,7 +242,9 @@ static int handle_new_queues_req(struct control_context *ctx,
       return -1;
     }
 
-    g->proto.queue_offs[i] = sh->off;
+    g->proto.queues[i].off = sh->off;
+    g->proto.queues[i].id = i;
+    g->proto.queues[i].core = CORE_INVALID;
     res->offs[i] = sh->off;
   }
 
@@ -327,5 +341,83 @@ static int handle_new_map_req(struct control_context *ctx,
   /* Send response back to guest */
   ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_MAP_RES);
   assert(ret == 0);
+  return 0;
+}
+
+static int handle_enableq_req(struct control_context *ctx,
+    struct guest_control *g, struct queue_entry *qe)
+{
+  int ret;
+  struct equeue *q;
+  struct queue_enableq_req *req, *req_fast;
+  
+  req = (struct queue_enableq_req *) &qe->data;
+  
+  if (req->core >= ctx->config->fp_cores_max)
+  {
+    LOG_WARN("tried to enable queue in nonexistent core");
+    return -1;
+  }
+  
+  if (req->qid >= g->proto.nqueues)
+  {
+    LOG_WARN("tried to access nonexistent queue");
+    return -1;
+  }
+  
+  q = ctx->ctl_fast_qs[req->core];
+  qe = queue_tail(q);
+  assert(qe != NULL);
+  
+  req_fast = (struct queue_enableq_req *) &qe->data;
+  req_fast->gid = g->id;
+  req_fast->qid = req->qid;
+  req_fast->core = req->core;
+  
+  g->proto.queues[req->qid].core = req->core;
+  
+  /* Enable queue in fast-path */
+  ret = queue_enqueue(q, QUEUE_ENABLEQ_REQ);
+  assert(ret == 0);
+  
+  return 0;
+}
+
+static int handle_disableq_req(struct control_context *ctx,
+    struct guest_control *g, struct queue_entry *qe)
+{
+    int ret;
+  struct equeue *q;
+  struct queue_disableq_req *req, *req_fast;
+  
+  req = (struct queue_disableq_req *) &qe->data;
+  
+  if (req->core >= ctx->config->fp_cores_max)
+  {
+    LOG_WARN("tried to disable queue in nonexistent core");
+    return -1;
+  }
+  
+  if (req->qid >= g->proto.nqueues)
+  {
+    LOG_WARN("tried to access nonexistent queue");
+    return -1;
+  }
+  
+  q = ctx->ctl_fast_qs[req->core];
+  qe = queue_tail(q);
+  assert(qe != NULL);
+  
+  req_fast = (struct queue_disableq_req *) &qe->data;
+  req_fast->gid = g->id;
+  req_fast->qid = req->qid;
+  req_fast->core = req->core;
+  
+  g->proto.queues[req->qid].core = req->core;
+  
+  /* Enable queue in fast-path */
+  ret = queue_enqueue(q, QUEUE_DISABLEQ_REQ);
+  assert(ret == 0);
+  
   return 0;
 }

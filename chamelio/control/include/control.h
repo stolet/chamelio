@@ -5,6 +5,17 @@
 #include "queue.h"
 #include "shmalloc.h"
 
+#define CORE_INVALID UINT16_MAX
+
+struct proto_queue_control {
+  /* Queue ID */
+  uint16_t id;
+  /* Offset in shared memory for start of this queue */
+  uint64_t off;
+  /* Core where this queue is currently running */
+  uint16_t core;
+};
+
 struct proto_control {
   /* Guest that this protocol belongs to */
   struct guest_control *guest;
@@ -15,8 +26,8 @@ struct proto_control {
   uint32_t nelems;
   /* Size of each queue element */
   uint32_t elsize;
-  /* List of offsets in shared memory for each queue */
-  uint64_t queue_offs[MAX_PROTO_QUEUES];
+  /* List of queues for this protocol */
+  struct proto_queue_control queues[MAX_PROTO_QUEUES];
 
   /* Number of maps created */
   uint16_t nmaps;

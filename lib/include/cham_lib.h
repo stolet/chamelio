@@ -74,9 +74,7 @@ int cham_new_map(struct proto_lib *p, uint32_t nelems, uint32_t elsize);
 /* Enables the queue with the given ID on the specified fast-path core */
 int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
 /* Disables the queue in the fast-path */
-int cham_disable_queue(struct proto_lib *p, uint16_t qid);
-/* Moves the queue to a new core in Chamelio */
-int cham_move_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
+int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
 
 /* Uploads an eBPF program to Chamelio and register it with the fast-path */
 int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);

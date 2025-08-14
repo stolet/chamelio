@@ -19,18 +19,26 @@ enum queue_type {
   QUEUE_EMPTY = 0,
   /* Reqiest for new guest registration */
   QUEUE_NEW_GUEST_REQ,
+  
   /* Request for new protocol registration */
   QUEUE_PROTO_REQ,
   /* Response for new protocol registration */
   QUEUE_PROTO_RES,
+  
   /* Request for creating protocol queues */
   QUEUE_NEW_QUEUES_REQ,
   /* Response from protocol queue creation */
   QUEUE_NEW_QUEUES_RES,
+  
   /* Request for creating a protocol map */
   QUEUE_NEW_MAP_REQ,
   /* Response from protocol map creation */
   QUEUE_NEW_MAP_RES,
+  
+  /* Request to enable queue in fast-path */
+  QUEUE_ENABLEQ_REQ,
+  /* Request to disable queue in fast-path */
+  QUEUE_DISABLEQ_REQ,
 };
 
 /* Request for registering new guest */
@@ -71,7 +79,7 @@ struct queue_new_queues_req {
   uint32_t elsize;
   /* Offset for each queue in shm */
   uint64_t offs[MAX_PROTO_QUEUES];
-};
+} __attribute__((packed));
 
 /* Response to protocol queue creation */
 struct queue_new_queues_res {
@@ -83,7 +91,7 @@ struct queue_new_queues_res {
   uint32_t elsize;
   /* Offset for each queue in shm */
   uint64_t offs[MAX_PROTO_QUEUES];
-};
+} __attribute__((packed));
 
 /* Request to create a new protocol map */
 struct queue_new_map_req {
@@ -95,7 +103,7 @@ struct queue_new_map_req {
   uint32_t elsize;
   /* Offset to start of map */
   uint64_t off;
-};
+} __attribute__((packed));
 
 /* Response to protocol map creation */
 struct queue_new_map_res {
@@ -107,7 +115,27 @@ struct queue_new_map_res {
   uint32_t nelems;
   /* Size of element in each map */
   uint32_t elsize;
-};
+} __attribute__((packed));
+
+/* Request to enable queue in fast-path */
+struct queue_enableq_req {
+  /* Queue ID */
+  uint16_t qid;
+  /* Guest ID */
+  uint16_t gid;
+  /* Fast-path core to enable queue */
+  uint16_t core;
+} __attribute__((packed));
+
+/* Request to disable queue in fast-path */
+struct queue_disableq_req {
+  /* Queue ID */
+  uint16_t qid;
+  /* Guest ID */
+  uint16_t gid;
+  /* Fast-path core to disable queue */
+  uint16_t core;
+} __attribute__((packed));
 
 struct queue_entry {
   /* Type of queue entry. Don't update outside of enqueue or dequeue */
@@ -121,6 +149,8 @@ struct queue_entry {
     struct queue_new_queues_res new_queues_res;
     struct queue_new_map_req new_map_req;
     struct queue_new_map_res new_map_res;
+    struct queue_enableq_req enableq_req;
+    struct queue_disableq_req disableq_req;
     /* Keeps queue entry the size of a cache line */
     uint8_t raw[511];
   } __attribute__((packed)) data;

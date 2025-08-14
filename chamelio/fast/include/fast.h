@@ -12,8 +12,8 @@
 
 #define BATCH_SIZE 16
 
-#define PROTOQ_INACTIVE 0
-#define PROTOQ_ACTIVE 1
+#define PROTOQ_DISABLED 0
+#define PROTOQ_ENABLED 1
 
 /* Types of protocols supported by Chamelio */
 enum protocol_type {

@@ -271,6 +271,64 @@ int cham_new_map(struct proto_lib *p,
   return 0;
 }
 
+int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
+{
+  int ret;
+  struct equeue *q;
+  struct queue_entry *qe;
+  struct queue_enableq_req *req;
+
+  q = p->guest_ctl_q;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+
+  req = (struct queue_enableq_req *) &qe->data;
+  req->qid = qid;
+  req->core = core;
+
+  ret = queue_enqueue(q, QUEUE_ENABLEQ_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue request to enable queue");
+    return -1;
+  }
+
+  return 0;
+}
+
+int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
+{
+  int ret;
+  struct equeue *q;
+  struct queue_entry *qe;
+  struct queue_disableq_req *req;
+
+  q = p->guest_ctl_q;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+
+  req = (struct queue_disableq_req *) &qe->data;
+  req->qid = qid;
+  req->core = core;
+
+  ret = queue_enqueue(q, QUEUE_DISABLEQ_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue request to disable queue");
+    return -1;
+  }
+
+  return 0;
+}
+
 int cham_poll_control(struct proto_lib *p)
 {
   struct dqueue *q;

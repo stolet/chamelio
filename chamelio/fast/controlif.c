@@ -5,6 +5,8 @@
 static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_new_queues(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe);
+static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe);
+static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe);
 
 int controlif_poll(struct fast_context *ctx)
 {
@@ -34,6 +36,14 @@ int controlif_poll(struct fast_context *ctx)
       break;
     case QUEUE_NEW_MAP_REQ:
       handle_new_map(ctx, qe);
+      queue_dequeue(q);
+      break;
+    case QUEUE_ENABLEQ_REQ:
+      handle_enableq(ctx, qe);
+      queue_dequeue(q);
+      break;
+    case QUEUE_DISABLEQ_REQ:
+      handle_disableq(ctx, qe);
       queue_dequeue(q);
       break;
     default:
@@ -79,7 +89,7 @@ static void handle_new_queues(struct fast_context *ctx, struct queue_entry *qe)
     q = &p->queues[i];
     q->id = i;
     q->core = 0;
-    q->active = PROTOQ_INACTIVE;
+    q->active = PROTOQ_DISABLED;
     q->off = req->offs[i];
     q->proto = p;
     q->size = req->elsize * req->nelems;
@@ -108,4 +118,32 @@ static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)
 
   p->nmaps++;
   LOG_DEBUG("created map in fast-path");
+}
+
+static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe)
+{
+  struct guest_fast *g;
+  struct proto_fast *p;
+  struct queue_enableq_req *req;
+  
+  req = (struct queue_enableq_req *) &qe->data;
+  g = &ctx->guests[req->gid];
+  p = &g->proto;
+  
+  p->queues[req->qid].active = PROTOQ_ENABLED;
+  LOG_DEBUG("enabled queue qid=%d in core=%d", req->qid, req->core);
+}
+
+static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe)
+{
+  struct guest_fast *g;
+  struct proto_fast *p;
+  struct queue_disableq_req *req;
+  
+  req = (struct queue_disableq_req *) &qe->data;
+  g = &ctx->guests[req->gid];
+  p = &g->proto;
+  
+  p->queues[req->qid].active = PROTOQ_DISABLED;
+  LOG_DEBUG("disabled queue qid=%d in core=%d", req->qid, req->core);
 }
