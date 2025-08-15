@@ -13,7 +13,7 @@
 
 static int poll_fast(struct control_context *ctx);
 static int poll_guests(struct control_context *ctx);
-static int handle_new_queues_req(struct control_context *ctx,
+static int handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
 static int handle_new_map_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
@@ -179,8 +179,8 @@ static int poll_guests(struct control_context *ctx)
 
     switch (qe->type)
     {
-      case QUEUE_NEW_QUEUES_REQ:
-        handle_new_queues_req(ctx, g, qe);
+      case QUEUE_NEW_QUEUE_REQ:
+        handle_new_queue_req(ctx, g, qe);
         queue_dequeue(q);
         break;
       case QUEUE_NEW_MAP_REQ:
@@ -205,77 +205,70 @@ static int poll_guests(struct control_context *ctx)
   return 0;  
 }
 
-static int handle_new_queues_req(struct control_context *ctx,
+static int handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
-  int i, j, ret;
+  int i, ret;
+  uint16_t nqueues;
   struct queue_entry *qe_res;
-  struct queue_new_queues_req *g_req, *c_req;
-  struct queue_new_queues_res *res;
+  struct queue_new_queue_req *g_req, *c_req;
+  struct queue_new_queue_res *res;
   struct shm_handle *sh;
 
-  g_req = (struct queue_new_queues_req *) &qe_req->data;
+  nqueues = g->proto.nqueues;
+  g->proto.nqueues++;
+  g_req = (struct queue_new_queue_req *) &qe_req->data;
   
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
-  res = (struct queue_new_queues_res *) &qe_res->data;
+  res = (struct queue_new_queue_res *) &qe_res->data;
  
-  if (g_req->nqueues > MAX_PROTO_QUEUES)
+  if (nqueues >= MAX_PROTO_QUEUES)
   {
     LOG_WARN("requested more queues than the maximum supported");
-    res->nqueues = 0;
-    ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUES_RES);
+    res->size = 0;
+    ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
     assert(ret == 0);
     return -1;
   }
 
   /* Allocate each requested queue */
-  for (i = 0; i < g_req->nqueues; i++)
+  ret = shmalloc_alloc(g->alloc, g_req->size, &sh);
+  if (ret != 0)
   {
-    ret = shmalloc_alloc(g->alloc, g_req->elsize * g_req->nelems, &sh);
-    if (ret != 0)
-    {
-      LOG_ERROR("failed to allocate memory for queue=%d", i);
-      res->nqueues = 0;
-      ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUES_RES);
-      assert(ret == 0);
-      return -1;
-    }
-
-    g->proto.queues[i].off = sh->off;
-    g->proto.queues[i].id = i;
-    g->proto.queues[i].core = CORE_INVALID;
-    res->offs[i] = sh->off;
+    LOG_ERROR("failed to allocate memory for queue=%d", nqueues);
+    res->size = 0;
+    ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
+    assert(ret == 0);
+    return -1;
   }
 
-  /* Send request for new queues to the fast-path */
+  g->proto.queues[nqueues].id = nqueues;
+  g->proto.queues[nqueues].size = g_req->size;
+  g->proto.queues[nqueues].off = sh->off;
+  g->proto.queues[nqueues].core = CORE_INVALID;
+  res->off = sh->off;
+
+  /* Send request for new queue to the fast-path */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
     qe_req = queue_tail(ctx->ctl_fast_qs[i]);
     assert(qe_req != NULL);
-    c_req = (struct queue_new_queues_req *) &qe_req->data;
+   
+    c_req = (struct queue_new_queue_req *) &qe_req->data;
     c_req->gid = g->id;
-    c_req->elsize = g_req->elsize;
-    c_req->nelems = g_req->nelems;
-    c_req->nqueues = g_req->nqueues;
+    c_req->size = g_req->size;
+    c_req->off = sh->off;
 
-    for (j = 0; j < g_req->nqueues; j++)
-      c_req->offs[j] = res->offs[i];
-
-    ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_NEW_QUEUES_REQ);
+    ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_NEW_QUEUE_REQ);
     assert(ret == 0);
   }
 
-  /* Fill proto struct in control-path */
-  g->proto.nqueues = g_req->nqueues;
-  g->proto.elsize = g_req->elsize;
-  g->proto.nelems = g_req->nelems;
-
   /* Send response back to guest */
-  res->nqueues = g_req->nqueues;
-  res->elsize = g_req->elsize;
-  res->nelems = g_req->nelems;
-  ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUES_RES);
+  res->qid = nqueues;
+  res->size = g_req->size;
+  res->off = sh->off;
+  ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
   assert(ret == 0);
   return 0;
 }

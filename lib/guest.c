@@ -10,7 +10,7 @@
 #include "queue.h"
 #include "log.h"
 
-static int handle_new_queues_res(struct proto_lib *p, struct queue_entry *qe);
+static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe);
 int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
 static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd);
 
@@ -147,8 +147,6 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
     return NULL;
   }
   p->nqueues = 0;
-  p->nelems = 0;
-  p->elsize = 0;
   p->shm_base = shm_base;
   p->shm_size = res->shm_len;
   p->nmaps = 0;
@@ -204,13 +202,12 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   return p;
 }
 
-int cham_new_queues(struct proto_lib *p, 
-    uint16_t nqueues, uint32_t nelems, uint32_t elsize)
+int cham_new_queue(struct proto_lib *p, uint32_t size)
 {
   int ret;
   struct equeue *q;
   struct queue_entry *qe;
-  struct queue_new_queues_req *req;
+  struct queue_new_queue_req *req;
 
   q = p->guest_ctl_q;
   qe = queue_tail(q);
@@ -220,12 +217,10 @@ int cham_new_queues(struct proto_lib *p,
     return -1;
   }
 
-  req = (struct queue_new_queues_req *) &qe->data;
-  req->elsize = elsize;
-  req->nelems = nelems;
-  req->nqueues = nqueues;
+  req = (struct queue_new_queue_req *) &qe->data;
+  req->size = size;
 
-  ret = queue_enqueue(q, QUEUE_NEW_QUEUES_REQ);
+  ret = queue_enqueue(q, QUEUE_NEW_QUEUE_REQ);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue request for new queues");
@@ -233,7 +228,7 @@ int cham_new_queues(struct proto_lib *p,
   }
 
   /* Poll waiting for response */
-  while (cham_poll_control(p) != QUEUE_NEW_QUEUES_RES) {}
+  while (cham_poll_control(p) != QUEUE_NEW_QUEUE_RES) {}
 
   return 0;
 }
@@ -343,10 +338,10 @@ int cham_poll_control(struct proto_lib *p)
 
   switch (qe->type)
   {
-    case QUEUE_NEW_QUEUES_RES:
-      handle_new_queues_res(p, qe);
+    case QUEUE_NEW_QUEUE_RES:
+      handle_new_queue_res(p, qe);
       queue_dequeue(q);
-      return QUEUE_NEW_QUEUES_RES;
+      return QUEUE_NEW_QUEUE_RES;
     case QUEUE_NEW_MAP_RES:
       handle_new_map_res(p, qe);
       queue_dequeue(q);
@@ -360,21 +355,20 @@ int cham_poll_control(struct proto_lib *p)
   return 0;  
 }
 
-int handle_new_queues_res(struct proto_lib *p, struct queue_entry *qe)
+int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
 {
-  int i;
-  struct queue_new_queues_res *res;
+  struct queue_new_queue_res *res;
+  struct proto_queue_lib *q;
 
-  res = (struct queue_new_queues_res *) &qe->data;
-  p->nqueues = res->nqueues;
-  p->elsize = res->elsize;
-  p->nelems = res->nelems;
-  
-  for (i = 0; i < res->nqueues; i++)
-    p->queue_offs[i] = res->offs[i];
+  res = (struct queue_new_queue_res *) &qe->data;
+  q = &p->queues[res->qid];
+  q->id = res->qid;
+  q->size = res->size;
+  q->off = res->off;
+  q->proto = p;
+  p->nqueues++;
 
-  return 0;
-  
+  return 0;  
 }
 
 int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe)

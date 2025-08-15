@@ -16,6 +16,6 @@ rt_dep = cc.find_library('rt', required : true)
 
 subdir('utils')
 subdir('chamelio')
-subdir('protos')
 subdir('lib')
+subdir('protos')
 subdir('examples')

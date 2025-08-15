@@ -3,7 +3,7 @@
 #include "udp.h"
 
 static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
-static void handle_new_queues(struct fast_context *ctx, struct queue_entry *qe);
+static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe);
@@ -30,8 +30,8 @@ int controlif_poll(struct fast_context *ctx)
       handle_new_guest(ctx, qe);
       queue_dequeue(q);
       break;
-    case QUEUE_NEW_QUEUES_REQ:
-      handle_new_queues(ctx, qe);
+    case QUEUE_NEW_QUEUE_REQ:
+      handle_new_queue(ctx, qe);
       queue_dequeue(q);
       break;
     case QUEUE_NEW_MAP_REQ:
@@ -62,40 +62,39 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
 
   g = &ctx->guests[req->id];
   g->id = req->id;
-  
   g->shm_base = req->shm_base;
   g->shm_len = req->shm_len;
+  
+  /* TODO: Have a separate message to initialise protocol */
+  g->proto.nqueues = 0;
+  g->proto.nmaps = 0;
   
   ctx->n_guests++;
 }
 
-static void handle_new_queues(struct fast_context *ctx, struct queue_entry *qe)
+static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe)
 {
   int i;
+  uint16_t nqueues;
   struct guest_fast *g;
   struct proto_fast *p;
   struct proto_queue_fast *q;
 
-  struct queue_new_queues_req *req = (struct queue_new_queues_req *) &qe->data;
+  struct queue_new_queue_req *req = (struct queue_new_queue_req *) &qe->data;
 
   g = &ctx->guests[req->gid];
   p = &g->proto;
-  p->nqueues = req->nqueues;
-  p->nelems = req->nelems;
-  p->elsize = req->elsize;
+  nqueues = p->nqueues;
 
-  for (i = 0; i < req->nqueues; i++)
-  {
-    q = &p->queues[i];
-    q->id = i;
-    q->core = 0;
-    q->active = PROTOQ_DISABLED;
-    q->off = req->offs[i];
-    q->proto = p;
-    q->size = req->elsize * req->nelems;
-  }
+  q = &p->queues[nqueues];
+  q->id = nqueues;
+  q->core = 0;
+  q->active = PROTOQ_DISABLED;
+  q->off = req->off;
+  q->proto = p;
+  q->size = req->size;
 
-  LOG_DEBUG("created queues in fast-path");
+  LOG_DEBUG("created queue in fast-path with size=%d", req->size);
 }
 
 static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)

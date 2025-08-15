@@ -57,11 +57,7 @@ struct proto_queue_fast {
 struct proto_fast {
   /* Number of queues */
   uint16_t nqueues;
-  /* Number of elements in queue */
-  uint32_t nelems;
-  /* Size of element in each queue */
-  uint32_t elsize;
-  /* Offset in shared memory for each queue */
+  /* List of queues in shared memory */
   struct proto_queue_fast queues[MAX_PROTO_QUEUES];
 
   /* Number of maps in shared memory */

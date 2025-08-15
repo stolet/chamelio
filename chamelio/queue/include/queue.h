@@ -26,9 +26,9 @@ enum queue_type {
   QUEUE_PROTO_RES,
   
   /* Request for creating protocol queues */
-  QUEUE_NEW_QUEUES_REQ,
+  QUEUE_NEW_QUEUE_REQ,
   /* Response from protocol queue creation */
-  QUEUE_NEW_QUEUES_RES,
+  QUEUE_NEW_QUEUE_RES,
   
   /* Request for creating a protocol map */
   QUEUE_NEW_MAP_REQ,
@@ -68,29 +68,23 @@ struct queue_new_proto_res {
 } __attribute__((packed));
 
 /* Request to create queues for the protocol */
-struct queue_new_queues_req {
+struct queue_new_queue_req {
   /* Gueste ID for this protocol */
   uint8_t gid;
-  /* Number of queues to allocate */
-  uint16_t nqueues;
-  /* Number of elements in each queue */
-  uint32_t nelems;
-  /* Size of element in each queue */
-  uint32_t elsize;
-  /* Offset for each queue in shm */
-  uint64_t offs[MAX_PROTO_QUEUES];
+  /* Size of the queue in bytes */
+  uint32_t size;
+  /* Offset for queue in shm */
+  uint64_t off;
 } __attribute__((packed));
 
 /* Response to protocol queue creation */
-struct queue_new_queues_res {
-  /* Number of queues created */
-  uint16_t nqueues;
-  /* Number of elements in each queue */
-  uint32_t nelems;
-  /* Size of element in each queue */
-  uint32_t elsize;
+struct queue_new_queue_res {
+  /* ID of the queue */
+  uint32_t qid;
+  /* Size of queue created */
+  uint32_t size;
   /* Offset for each queue in shm */
-  uint64_t offs[MAX_PROTO_QUEUES];
+  uint64_t off;
 } __attribute__((packed));
 
 /* Request to create a new protocol map */
@@ -145,8 +139,8 @@ struct queue_entry {
     struct queue_new_guest_req new_guest_req;
     struct queue_new_proto_req new_proto_req;
     struct queue_new_proto_res new_proto_res;
-    struct queue_new_queues_req new_queues_req;
-    struct queue_new_queues_res new_queues_res;
+    struct queue_new_queue_req new_queue_req;
+    struct queue_new_queue_res new_queue_res;
     struct queue_new_map_req new_map_req;
     struct queue_new_map_res new_map_res;
     struct queue_enableq_req enableq_req;

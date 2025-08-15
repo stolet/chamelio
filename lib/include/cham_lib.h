@@ -9,14 +9,25 @@
 #define IVSHMEM_PROTOCOL_VERSION 0
 #define HOST_PEERID 255
 
+struct proto_queue_lib {
+  /* ID of this queue */
+  uint16_t id;
+  /* Size of the queue */
+  uint32_t size;
+  /* Offset in shared memory to start of queue */
+  uint64_t off;
+  /* Protocol this queue belongs to */
+  struct proto_lib *proto;
+};
+
 struct proto_map_lib {
-  /* ID of this map in protocol */
+  /* ID of this map */
   uint16_t id;
   /* Number of elements in the map */
   uint32_t nelems;
   /* Size of each element in the map */
   uint32_t elsize;
-  /* Offset in shared memory where this map starts */
+  /* Offset in shared memory to start of map */
   uint64_t off;
   /* Protocol this map belongs to */
   struct proto_lib *proto;
@@ -41,14 +52,10 @@ struct proto_lib {
   /* Control->guest queue */
   struct dqueue *ctl_guest_q;
 
-  /* Number of queues */
+  /* Number of created queues */
   uint16_t nqueues;
-  /* Number of elements per queue */  
-  uint32_t nelems;
-  /* Size of element in each queue */
-  uint32_t elsize;
-  /* Qeueue offsets in shared memory */
-  uint64_t queue_offs[MAX_PROTO_QUEUES];
+  /* Queues created with Chamelio */
+  struct proto_queue_lib queues[MAX_PROTO_QUEUES];
 
   /* Number of maps */
   uint16_t nmaps;
@@ -65,10 +72,9 @@ struct guest_lib * cham_connect_guest();
 /* Creates a new protocol and maps shared memory region */
 struct proto_lib* cham_new_proto(struct guest_lib *g, uint32_t shmsize);
 
-/* Creates queues in the shared memory region of the protocol */
-int cham_new_queues(struct proto_lib *p, 
-    uint16_t nqueues, uint32_t nelems, uint32_t elsize);
-/* Creates a new map in the shared memory region of the protocol */
+/* Creates a queue of the specified size in the shared memory of the protocol */
+int cham_new_queue(struct proto_lib *p, uint32_t size);
+/* Creates a new map in the shared memory */
 int cham_new_map(struct proto_lib *p, uint32_t nelems, uint32_t elsize);
 
 /* Enables the queue with the given ID on the specified fast-path core */

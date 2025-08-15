@@ -408,8 +408,6 @@ static void uxsocket_receive(struct control_context *ctx, struct guest_event *ge
   p = &gev->guest->proto;
   p->guest = gev->guest;
   p->nqueues = 0;
-  p->nelems = 0;
-  p->elsize = 0;
   p->nmaps = 0;
 
   /* Initialise response */

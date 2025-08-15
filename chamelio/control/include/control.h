@@ -10,6 +10,8 @@
 struct proto_queue_control {
   /* Queue ID */
   uint16_t id;
+  /* Size of the queue in bytes */
+  uint32_t size;
   /* Offset in shared memory for start of this queue */
   uint64_t off;
   /* Core where this queue is currently running */
@@ -22,10 +24,6 @@ struct proto_control {
 
   /* Number of queues in shared memory */
   uint16_t nqueues;
-  /* Number of elements in each queue */
-  uint32_t nelems;
-  /* Size of each queue element */
-  uint32_t elsize;
   /* List of queues for this protocol */
   struct proto_queue_control queues[MAX_PROTO_QUEUES];
 
