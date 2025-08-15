@@ -202,68 +202,76 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   return p;
 }
 
-int cham_new_queue(struct proto_lib *p, uint32_t size)
+struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size)
 {
   int ret;
+  uint16_t nqueues;
   struct equeue *q;
   struct queue_entry *qe;
   struct queue_new_queue_req *req;
 
+  nqueues = p->nqueues;
   q = p->guest_ctl_q;
   qe = queue_tail(q);
   if (qe == NULL)
   {
     LOG_ERROR("failed to get queue tail");
-    return -1;
+    return NULL;
   }
 
   req = (struct queue_new_queue_req *) &qe->data;
   req->size = size;
+  req->opaque = (uint64_t) &p->queues[nqueues];
 
   ret = queue_enqueue(q, QUEUE_NEW_QUEUE_REQ);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue request for new queues");
-    return -1;
+    return NULL;
   }
+  p->nqueues++;
 
   /* Poll waiting for response */
   while (cham_poll_control(p) != QUEUE_NEW_QUEUE_RES) {}
 
-  return 0;
+  return &p->queues[nqueues];
 }
 
-int cham_new_map(struct proto_lib *p, 
+struct proto_map_lib * cham_new_map(struct proto_lib *p, 
     uint32_t nelems, uint32_t elsize)
 {
   int ret;
+  uint16_t nmaps;
   struct equeue *q;
   struct queue_entry *qe;
   struct queue_new_map_req *req;
 
+  nmaps = p->nmaps;
   q = p->guest_ctl_q;
   qe = queue_tail(q);
   if (qe == NULL)
   {
     LOG_ERROR("failed to get queue tail");
-    return -1;
+    return NULL;
   }
 
   req = (struct queue_new_map_req *) &qe->data;
   req->nelems = nelems;
   req->elsize = elsize;
+  req->opaque = (uint64_t) &p->maps[nmaps];
 
   ret = queue_enqueue(q, QUEUE_NEW_MAP_REQ);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue request for new map");
-    return -1;
+    return NULL;
   }
-
+  p->nmaps++;
+  
   /* Poll waiting for response */
   while (cham_poll_control(p) != QUEUE_NEW_MAP_RES) {}
 
-  return 0;
+  return &p->maps[nmaps];;
 }
 
 int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)

@@ -73,9 +73,10 @@ struct guest_lib * cham_connect_guest();
 struct proto_lib* cham_new_proto(struct guest_lib *g, uint32_t shmsize);
 
 /* Creates a queue of the specified size in the shared memory of the protocol */
-int cham_new_queue(struct proto_lib *p, uint32_t size);
+struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size);
 /* Creates a new map in the shared memory */
-int cham_new_map(struct proto_lib *p, uint32_t nelems, uint32_t elsize);
+struct proto_map_lib * cham_new_map(struct proto_lib *p, 
+    uint32_t nelems, uint32_t elsize);
 
 /* Enables the queue with the given ID on the specified fast-path core */
 int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core);

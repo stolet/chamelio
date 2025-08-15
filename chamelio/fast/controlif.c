@@ -74,7 +74,6 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
 
 static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe)
 {
-  int i;
   uint16_t nqueues;
   struct guest_fast *g;
   struct proto_fast *p;

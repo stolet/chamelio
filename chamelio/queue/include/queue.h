@@ -75,6 +75,8 @@ struct queue_new_queue_req {
   uint32_t size;
   /* Offset for queue in shm */
   uint64_t off;
+  /* Pointer to queue struct in library */
+  uint64_t opaque;
 } __attribute__((packed));
 
 /* Response to protocol queue creation */
@@ -85,6 +87,8 @@ struct queue_new_queue_res {
   uint32_t size;
   /* Offset for each queue in shm */
   uint64_t off;
+  /* Pointer to queue struct in library */
+  uint64_t opaque;
 } __attribute__((packed));
 
 /* Request to create a new protocol map */
@@ -97,6 +101,8 @@ struct queue_new_map_req {
   uint32_t elsize;
   /* Offset to start of map */
   uint64_t off;
+  /* Pointer to map struct in library */
+  uint64_t opaque;
 } __attribute__((packed));
 
 /* Response to protocol map creation */
@@ -109,6 +115,8 @@ struct queue_new_map_res {
   uint32_t nelems;
   /* Size of element in each map */
   uint32_t elsize;
+  /* Pointer to map struct in library */
+  uint64_t opaque;
 } __attribute__((packed));
 
 /* Request to enable queue in fast-path */
