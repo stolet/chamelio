@@ -9,7 +9,6 @@
 #include "config.h"
 #include "log.h"
 #include "queue.h"
-#include "bufs.h"
 
 static int poll_fast(struct control_context *ctx);
 static int poll_guests(struct control_context *ctx);

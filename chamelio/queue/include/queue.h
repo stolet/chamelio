@@ -154,14 +154,12 @@ struct queue_entry {
     struct queue_enableq_req enableq_req;
     struct queue_disableq_req disableq_req;
     /* Keeps queue entry the size of a cache line */
-    uint8_t raw[511];
+    uint8_t raw[63];
   } __attribute__((packed)) data;
 } __attribute__((packed));
 
 /* We want queue entries to be cache line sized for faster retrieval */
-/* TODO: queue_new_queue_res is too big for a cache line size so find
-   a workaround */
-STATIC_ASSERT(sizeof(struct queue_entry) == 512, queue_entry_size);
+STATIC_ASSERT(sizeof(struct queue_entry) == 64, queue_entry_size);
 
 /* This queue is only used for enqueuing */
 struct equeue {

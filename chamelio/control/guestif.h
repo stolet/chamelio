@@ -1,5 +1,5 @@
-#ifndef APPIF_H_
-#define APPIF_H_
+#ifndef GUESTIF_H_
+#define GUESTIF_H_
 
 #include <stdint.h>
 

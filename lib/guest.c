@@ -83,9 +83,8 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   struct shm_allocator *alloc;
   struct shm_handle *sh;
   uint8_t resp_buf[sizeof(*res)];
-  uint8_t ptype = 1;
   struct queue_new_proto_req req = {
-    .proto_type = ptype,
+    .proto_type = 1,
   };
 
   /* Send request on kernel socket */
@@ -150,6 +149,8 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   p->shm_base = shm_base;
   p->shm_size = res->shm_len;
   p->nmaps = 0;
+  p->guest = g;
+  p->n_fp_cores = res->n_fp_cores;
 
   /* Create allocator that manages shared memory */
   alloc = shmalloc_init(g->shm_fd, shm_base, res->shm_len);
@@ -232,6 +233,7 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size)
   p->nqueues++;
 
   /* Poll waiting for response */
+  /* TODO: Make this async instead of blocking here */
   while (cham_poll_control(p) != QUEUE_NEW_QUEUE_RES) {}
 
   return &p->queues[nqueues];
@@ -269,6 +271,7 @@ struct proto_map_lib * cham_new_map(struct proto_lib *p,
   p->nmaps++;
   
   /* Poll waiting for response */
+  /* TODO: Make this async instead of blocking here */
   while (cham_poll_control(p) != QUEUE_NEW_MAP_RES) {}
 
   return &p->maps[nmaps];;

@@ -1,5 +1,7 @@
+subdir('queue')
 subdir('fast')
 subdir('slow')
+subdir('lib')
 
 udp_lib = static_library(
   'udp',

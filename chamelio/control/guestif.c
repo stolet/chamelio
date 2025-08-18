@@ -16,7 +16,6 @@
 #include "shmalloc.h"
 #include "queue.h"
 #include "uxsocket.h"
-#include "bufs.h"
 
 #define EP_LISTEN_GUEST 1
 #define EP_GUEST 2
@@ -24,8 +23,8 @@
 static int uxsocket_init(struct control_context *ctx);
 static int uxsocket_init_fd(struct control_context *ctx);
 static int uxsocket_accept(struct control_context *ctx);
-static void uxsocket_error(struct control_context *ctx, struct guest_event *aev);
-static void uxsocket_receive(struct control_context *ctx, struct guest_event *aev);
+static void uxsocket_error(struct control_context *ctx, struct guest_event *gev);
+static void uxsocket_receive(struct control_context *ctx, struct guest_event *gev);
 
 int guestif_init(struct control_context *ctx)
 {
@@ -158,14 +157,14 @@ static int uxsocket_init_fd(struct control_context *ctx)
   if (ret != 0) {
     LOG_ERROR("epoll_ctl listen failed");
     perror("");
-    goto error_free_aev;
+    goto error_free_gev;
   }
 
   ctx->guest_uxfd = fd;
 
   return 0;
 
-error_free_aev:
+error_free_gev:
   free(gev);
 error_close:
   close(fd);
@@ -341,12 +340,12 @@ close_cfd:
   return -1;
 } 
 
-static void uxsocket_error(struct control_context *ctx, struct guest_event *aev)
+static void uxsocket_error(struct control_context *ctx, struct guest_event *gev)
 {
-  LOG_WARN("removing cfd=%d from app epfd", ctx->guest_epfd);
-  epoll_ctl(ctx->guest_epfd, EPOLL_CTL_DEL, aev->fd, NULL);
-  close(aev->fd);
-  free(aev);
+  LOG_WARN("removing cfd=%d from guest epfd", ctx->guest_epfd);
+  epoll_ctl(ctx->guest_epfd, EPOLL_CTL_DEL, gev->fd, NULL);
+  close(gev->fd);
+  free(gev);
 }
 
 static void uxsocket_receive(struct control_context *ctx, struct guest_event *gev)

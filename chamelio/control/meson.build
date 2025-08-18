@@ -7,8 +7,6 @@ deps = [
   dependency('log_dep'),
   dependency('shm_dep'),
   dependency('queue_dep'),
-  dependency('bufs_dep'),
-  dependency('bufs_dep'),
 ]
 
 control_lib = static_library(

@@ -5,7 +5,10 @@
 
 #include "queue.h"
 
+/* TODO: Don't duplicate this */
+#define APP_SOCKET_PATH "app_socket"
 #define GUEST_SOCKET_PATH "guest_socket"
+
 #define IVSHMEM_PROTOCOL_VERSION 0
 #define HOST_PEERID 255
 
@@ -47,21 +50,25 @@ struct proto_lib {
   void *shm_base;
   /* Allocator for shared memory */
   struct shmalloc *alloc;
+  /* Guest this protocol belongs to */
+  struct guest_lib *guest;
+  /* Number of Chamelio fast-path cores */
+  uint32_t n_fp_cores;
+  
   /* Guest->control queue */
   struct equeue *guest_ctl_q;
   /* Control->guest queue */
   struct dqueue *ctl_guest_q;
 
-  /* Number of created queues */
+  /* Number of created protocol queues */
   uint16_t nqueues;
-  /* Queues created with Chamelio */
+  /* Protocol queues created with Chamelio */
   struct proto_queue_lib queues[MAX_PROTO_QUEUES];
 
   /* Number of maps */
   uint16_t nmaps;
   /* Maps created with Chamelio */
   struct proto_map_lib maps[MAX_PROTO_MAPS];
-
 };
 
 /* Mocks a QEMU ivshmem client */
