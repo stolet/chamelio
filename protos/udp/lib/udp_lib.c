@@ -11,6 +11,7 @@
 #include "udp_lib.h"
 #include "udp_queue.h"
 #include "log.h"
+#include "uxsocket.h"
 
 
 static int nctxs = 0;
@@ -20,8 +21,6 @@ static struct udp_lib *udp = NULL;
 
 /* One context per thread */
 static __thread struct udp_context_lib *udp_ctx = NULL;
-
-static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd);
 
 int udp_connect_slow()
 {
@@ -191,7 +190,6 @@ int udp_ctx_new()
     return -1;
   }
   ctx->slow_app_q = dq;
-  
 
   return 0;
 }
@@ -199,57 +197,4 @@ int udp_ctx_new()
 int udp_socket()
 {
   return 0;
-}
-
-static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd)
-{
-    int ret;
-    struct msghdr msg;
-    struct iovec iov[1];
-    union {
-        struct cmsghdr cmsg;
-        char control[CMSG_SPACE(sizeof(int))];
-    } msg_control;
-    struct cmsghdr *cmsg;
-
-    iov[0].iov_base = index;
-    iov[0].iov_len = sizeof(*index);
-
-    memset(&msg, 0, sizeof(msg));
-    msg.msg_iov = iov;
-    msg.msg_iovlen = 1;
-    msg.msg_control = &msg_control;
-    msg.msg_controllen = sizeof(msg_control);
-
-    ret = recvmsg(sock_fd, &msg, 0);
-    if (ret < sizeof(*index)) 
-    {
-      LOG_ERROR("cannot read message");
-      perror("");
-      return -1;
-    }
-
-    if (ret == 0) 
-    {
-      LOG_ERROR("lost connection to server");
-      return -1;
-    }
-
-    // *index = GINT64_FROM_LE(*index);
-    *fd = -1;
-
-    for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) 
-    {
-
-      if (cmsg->cmsg_len != CMSG_LEN(sizeof(int)) ||
-          cmsg->cmsg_level != SOL_SOCKET ||
-          cmsg->cmsg_type != SCM_RIGHTS) 
-      {
-        continue;
-      }
-
-      memcpy(fd, CMSG_DATA(cmsg), sizeof(*fd));
-    }
-
-    return 0;
 }

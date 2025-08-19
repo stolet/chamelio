@@ -9,10 +9,10 @@
 #include "cham_lib.h"
 #include "queue.h"
 #include "log.h"
+#include "uxsocket.h"
 
 static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe);
 int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
-static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd);
 
 struct guest_lib * cham_connect_guest()
 {
@@ -390,57 +390,4 @@ int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe)
 
   return 0;
   
-}
-
-static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd)
-{
-    int ret;
-    struct msghdr msg;
-    struct iovec iov[1];
-    union {
-        struct cmsghdr cmsg;
-        char control[CMSG_SPACE(sizeof(int))];
-    } msg_control;
-    struct cmsghdr *cmsg;
-
-    iov[0].iov_base = index;
-    iov[0].iov_len = sizeof(*index);
-
-    memset(&msg, 0, sizeof(msg));
-    msg.msg_iov = iov;
-    msg.msg_iovlen = 1;
-    msg.msg_control = &msg_control;
-    msg.msg_controllen = sizeof(msg_control);
-
-    ret = recvmsg(sock_fd, &msg, 0);
-    if (ret < sizeof(*index)) 
-    {
-      LOG_ERROR("cannot read message");
-      perror("");
-      return -1;
-    }
-
-    if (ret == 0) 
-    {
-      LOG_ERROR("lost connection to server");
-      return -1;
-    }
-
-    // *index = GINT64_FROM_LE(*index);
-    *fd = -1;
-
-    for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) 
-    {
-
-      if (cmsg->cmsg_len != CMSG_LEN(sizeof(int)) ||
-          cmsg->cmsg_level != SOL_SOCKET ||
-          cmsg->cmsg_type != SCM_RIGHTS) 
-      {
-        continue;
-      }
-
-      memcpy(fd, CMSG_DATA(cmsg), sizeof(*fd));
-    }
-
-    return 0;
 }
