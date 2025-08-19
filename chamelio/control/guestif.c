@@ -382,7 +382,6 @@ static void uxsocket_receive(struct control_context *ctx, struct guest_event *ge
     goto error_uxsocket;
   }
 
-
   if(msg.msg_controllen > 0) 
   {
     struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);

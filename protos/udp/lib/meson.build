@@ -17,6 +17,7 @@ udp_lib_lib = static_library(
 udp_lib_dep = declare_dependency(
   link_with : udp_lib_lib,
   include_directories : udp_lib_inc,
+  dependencies: deps,
 )
 
 meson.override_dependency('udp_lib_dep', udp_lib_dep)

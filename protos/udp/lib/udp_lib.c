@@ -25,6 +25,7 @@ static int uxsocket_read_one_msg(int sock_fd, int64_t *index, int *fd);
 
 int udp_connect_slow()
 {
+  struct udp_lib *u;
   struct sockaddr_un s_un;
   int shm_fd, ret, sock_fd;
   int64_t tmp;
@@ -57,7 +58,7 @@ int udp_connect_slow()
     perror("");
     goto close_sockfd;
   }
-
+  
   /* Get shared mem fd */
   if (uxsocket_read_one_msg(sock_fd, &tmp, &shm_fd) < 0 || tmp != -1 || shm_fd < 0) 
   {
@@ -68,17 +69,18 @@ int udp_connect_slow()
     goto close_sockfd;
   }
 
-  udp = malloc(sizeof(struct udp_lib));
-  if (udp == NULL)
+  u = malloc(sizeof(struct udp_lib));
+  if (u == NULL)
   {
     LOG_ERROR("failed to allocate udp_lib struct");
     goto close_sockfd;
   }
 
-  udp->uxsocket_fd = sock_fd;
-  udp->shm_fd = shm_fd;
-  udp->shm_base = NULL;
-
+  u->uxsocket_fd = sock_fd;
+  u->shm_fd = shm_fd;
+  u->shm_base = NULL;
+  udp = u;
+  
   return 0;
 
 close_sockfd:
@@ -95,7 +97,6 @@ int udp_ctx_new()
   uint8_t resp_buf[sizeof(*res)];
   struct equeue *eq;
   struct dqueue *dq;
-  
   struct udp_queue_new_actx_req req = {
     .req = 1,
   };
@@ -113,28 +114,23 @@ int udp_ctx_new()
     .iov_len = sizeof(req),
   };
 
-  union {
-    char buf[CMSG_SPACE(sizeof(int))];
-    struct cmsghdr align;
-  } u;
-
   struct msghdr msg = {
     .msg_name = NULL,
     .msg_namelen = 0,
     .msg_iov = &iov,
     .msg_iovlen = 1,
-    .msg_control = u.buf,
-    .msg_controllen = sizeof(u.buf),
+    .msg_control = NULL,
+    .msg_controllen = 0,
     .msg_flags = 0,
   };
 
-  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
-  cmsg->cmsg_level = SOL_SOCKET;
-  cmsg->cmsg_type = SCM_RIGHTS;
-  cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-
   sz = sendmsg(udp->uxsocket_fd, &msg, 0);
-  assert(sz == sizeof(req));
+  if (sz != sizeof(req))
+  {
+    LOG_ERROR("failed to send msg to register udp app ctx");
+    perror("");
+    return -1;
+  }
 
   /* Receive response on kernel socket */
   res = (struct udp_queue_new_actx_res *) resp_buf;
@@ -176,8 +172,8 @@ int udp_ctx_new()
   }
   
   /* Wait until shm_base is mapped */
-  while (udp->shm_base != NULL) {}
-  
+  while (udp->shm_base == NULL) {}
+
   /* Set queue from app to slow-path */
   eq = equeue_new(res->as_len, udp->shm_base + res->as_off, res->as_off);
   if (eq == NULL)

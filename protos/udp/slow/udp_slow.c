@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <cham_lib.h>
 
+#include "appif.h"
 #include "udp_slow.h"
 #include "log.h"
 
@@ -16,6 +17,18 @@ int main(int argc, char **argv)
   {
     LOG_ERROR("failed to initialise udp slow context");
     abort();
+  }
+  
+  ret = appif_init(&ctx);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to initialise appiff");
+    abort();
+  }
+  
+  while (1)
+  {
+    appif_poll(&ctx);
   }
 }
 

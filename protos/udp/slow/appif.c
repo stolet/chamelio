@@ -205,7 +205,7 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
     goto close_cfd;
   }
 
-  /* Allocate control path struct for app */
+  /* Allocate struct for app */
   a = &ctx->apps[ctx->n_apps];
   a->id = ctx->n_apps;
   a->n_ctxs = 0;
@@ -274,14 +274,13 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
     .msg_controllen = sizeof(u.buf),
     .msg_flags = 0,
   };
-
+  
   n = recvmsg(aev->fd, &msg, 0);
   if (n < 0)
   {
     LOG_ERROR("failed to recvmsg");
     goto error_uxsocket;
   }
-
 
   if(msg.msg_controllen > 0) 
   {

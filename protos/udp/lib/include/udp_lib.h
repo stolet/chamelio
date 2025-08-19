@@ -52,6 +52,8 @@ struct udp_socket {
     void *tx_buf;
 };
 
+int udp_connect_slow();
+int udp_ctx_new();
 int udp_socket();
 int udp_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 int udp_close(int sockfd);
