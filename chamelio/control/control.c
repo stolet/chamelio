@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <assert.h>
+#include <string.h>
 
 #include "control.h"
 #include "shmalloc.h"
@@ -216,7 +217,7 @@ static int handle_new_queue_req(struct control_context *ctx,
 
   nqueues = g->proto.nqueues;
   g->proto.nqueues++;
-  g_req = (struct queue_new_queue_req *) &qe_req->data;
+  g_req = &qe_req->data.new_queue_req;
   
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
@@ -231,7 +232,7 @@ static int handle_new_queue_req(struct control_context *ctx,
     return -1;
   }
 
-  /* Allocate each requested queue */
+  /* Allocate requested queue */
   ret = shmalloc_alloc(g->alloc, g_req->size, &sh);
   if (ret != 0)
   {
@@ -241,6 +242,7 @@ static int handle_new_queue_req(struct control_context *ctx,
     assert(ret == 0);
     return -1;
   }
+  memset(sh->addr, 0, sh->len);
 
   g->proto.queues[nqueues].id = nqueues;
   g->proto.queues[nqueues].size = g_req->size;
@@ -254,7 +256,7 @@ static int handle_new_queue_req(struct control_context *ctx,
     qe_req = queue_tail(ctx->ctl_fast_qs[i]);
     assert(qe_req != NULL);
    
-    c_req = (struct queue_new_queue_req *) &qe_req->data;
+    c_req = &qe_req->data.new_queue_req;
     c_req->gid = g->id;
     c_req->size = g_req->size;
     c_req->off = sh->off;
@@ -281,7 +283,7 @@ static int handle_new_map_req(struct control_context *ctx,
   struct queue_new_map_res *res;
   struct shm_handle *sh;
 
-  g_req = (struct queue_new_map_req *) &qe_req->data;
+  g_req = &qe_req->data.new_map_req;
   
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
@@ -320,7 +322,7 @@ static int handle_new_map_req(struct control_context *ctx,
   {
     qe_req = queue_tail(ctx->ctl_fast_qs[i]);
     assert(qe_req != NULL);
-    c_req = (struct queue_new_map_req *) &qe_req->data;
+    c_req = &qe_req->data.new_map_req;
     c_req->gid = g->id;
     c_req->elsize = g_req->elsize;
     c_req->nelems = g_req->nelems;
@@ -343,7 +345,7 @@ static int handle_enableq_req(struct control_context *ctx,
   struct equeue *q;
   struct queue_enableq_req *req, *req_fast;
   
-  req = (struct queue_enableq_req *) &qe->data;
+  req = &qe->data.enableq_req;
   
   if (req->core >= ctx->config->fp_cores_max)
   {
@@ -382,7 +384,7 @@ static int handle_disableq_req(struct control_context *ctx,
   struct equeue *q;
   struct queue_disableq_req *req, *req_fast;
   
-  req = (struct queue_disableq_req *) &qe->data;
+  req = &qe->data.disableq_req;
   
   if (req->core >= ctx->config->fp_cores_max)
   {

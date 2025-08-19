@@ -346,7 +346,7 @@ static int uxsocket_accept(struct control_context *ctx)
       goto remove_from_epoll;
     }
 
-    new_guest_req = (struct queue_new_guest_req *) &qe_new_vm->data;
+    new_guest_req = &qe_new_vm->data.new_guest_req;
     new_guest_req->id = g->id;
     new_guest_req->shm_base = shm_base;
     new_guest_req->shm_len = ctx->config->shm_len;

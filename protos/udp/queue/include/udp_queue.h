@@ -15,6 +15,36 @@ enum udp_queue_type {
   UDP_QUEUE_NEW_ACTX_REQ,
   /* Response from slow-path after registering app */
   UDP_QUEUE_NEW_ACTX_RES,
+  /* Request to slow-path to create new socket */
+  UDP_QUEUE_NEW_SOCK_REQ,
+  /* Response from slow-path for created socket */
+  UDP_QUEUE_NEW_SOCK_RES,
+};
+
+/* Request to create new socket in slow-path */
+struct udp_queue_new_sock_req {
+  /* Pointer to socket in the library */
+  uint64_t opaque;
+};
+
+/* Response for new socket created */
+struct udp_queue_new_sock_res {
+  /* Pointer to socket in the library */
+  uint64_t opaque;
+  /* ID of the socket in slow-path */
+  uint32_t id_slow;
+  /* Queue ID of RX buffer */
+  uint16_t rx_qid;
+  /* Length of RX buffer */
+  uint32_t rx_len;
+  /* Offset of RX buffer */
+  uint64_t rx_off;
+  /* Queue ID of TX buffer */
+  uint16_t tx_qid;
+  /* Length of TX buffer */
+  uint32_t tx_len;
+  /* Offset of TX buffer */
+  uint64_t tx_off;
 };
 
 /* Request for app context to register with slow-path */
@@ -46,6 +76,8 @@ struct udp_queue_entry {
   union {
     struct udp_queue_new_actx_req new_actx_req;
     struct udp_queue_new_actx_res new_actx_res;
+    struct udp_queue_new_sock_req new_sock_req;
+    struct udp_queue_new_sock_res new_sock_res;
     /* Keeps queue entry the size of a cache line */
     uint8_t raw[63];
   } __attribute__((packed)) data;

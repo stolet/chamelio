@@ -81,7 +81,7 @@ struct proto_lib* cham_new_proto(struct guest_lib *g, uint32_t shmsize);
 
 /* Creates a queue of the specified size in the shared memory of the protocol */
 struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size);
-/* Creates a new map in the shared memory */
+/* Creates a new map in shared memory */
 struct proto_map_lib * cham_new_map(struct proto_lib *p, 
     uint32_t nelems, uint32_t elsize);
 

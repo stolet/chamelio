@@ -58,7 +58,7 @@ int controlif_poll(struct fast_context *ctx)
 static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
 {
   struct guest_fast *g;
-  struct queue_new_guest_req *req = (struct queue_new_guest_req *) &qe->data;
+  struct queue_new_guest_req *req = &qe->data.new_guest_req;
 
   g = &ctx->guests[req->id];
   g->id = req->id;
@@ -79,7 +79,7 @@ static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe)
   struct proto_fast *p;
   struct proto_queue_fast *q;
 
-  struct queue_new_queue_req *req = (struct queue_new_queue_req *) &qe->data;
+  struct queue_new_queue_req *req = &qe->data.new_queue_req;
 
   g = &ctx->guests[req->gid];
   p = &g->proto;
@@ -102,7 +102,7 @@ static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)
   struct proto_fast *p;
   struct proto_map_fast *m;
   
-  struct queue_new_map_req *req = (struct queue_new_map_req *) &qe->data;
+  struct queue_new_map_req *req = &qe->data.new_map_req;
 
   g = &ctx->guests[req->gid];
   p = &g->proto;
@@ -124,7 +124,7 @@ static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe)
   struct proto_fast *p;
   struct queue_enableq_req *req;
   
-  req = (struct queue_enableq_req *) &qe->data;
+  req = &qe->data.enableq_req;
   g = &ctx->guests[req->gid];
   p = &g->proto;
   
@@ -138,7 +138,7 @@ static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe)
   struct proto_fast *p;
   struct queue_disableq_req *req;
   
-  req = (struct queue_disableq_req *) &qe->data;
+  req = &qe->data.disableq_req;
   g = &ctx->guests[req->gid];
   p = &g->proto;
   

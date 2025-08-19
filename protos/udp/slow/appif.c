@@ -176,6 +176,7 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   struct epoll_event ev;
   struct udp_app_slow *a;
   struct app_event *aev;
+  struct proto_map_lib *map;
 
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));
@@ -209,6 +210,16 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   a = &ctx->apps[ctx->n_apps];
   a->id = ctx->n_apps;
   a->n_ctxs = 0;
+  a->n_socks = 0;
+
+  /* Create map used to hold sockets */
+  map = cham_new_map(ctx->proto, MAX_SOCKETS, sizeof(struct udp_socket_slow));
+  if (map == NULL)
+  {
+    LOG_ERROR("failed to create map to hold sockets");
+    goto free_aev;
+  }
+  a->socks = map;
 
   /* Add connection to epoll */
   aev->type = EP_APP;
@@ -342,6 +353,7 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
   actx->app = aev->app;
   actx->app_slow_q = dq;
   actx->slow_app_q = eq;
+  aev->app->n_ctxs++;
   
   /* Initialise response */
   aev->app_res.n_fp_cores = ctx->proto->n_fp_cores;

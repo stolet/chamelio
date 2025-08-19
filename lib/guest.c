@@ -215,7 +215,7 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size)
     return NULL;
   }
 
-  req = (struct queue_new_queue_req *) &qe->data;
+  req = &qe->data.new_queue_req;
   req->size = size;
   req->opaque = (uint64_t) &p->queues[nqueues];
 
@@ -252,7 +252,7 @@ struct proto_map_lib * cham_new_map(struct proto_lib *p,
     return NULL;
   }
 
-  req = (struct queue_new_map_req *) &qe->data;
+  req = &qe->data.new_map_req;
   req->nelems = nelems;
   req->elsize = elsize;
   req->opaque = (uint64_t) &p->maps[nmaps];
@@ -287,7 +287,7 @@ int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
     return -1;
   }
 
-  req = (struct queue_enableq_req *) &qe->data;
+  req = &qe->data.enableq_req;
   req->qid = qid;
   req->core = core;
 
@@ -316,7 +316,7 @@ int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
     return -1;
   }
 
-  req = (struct queue_disableq_req *) &qe->data;
+  req = &qe->data.disableq_req;
   req->qid = qid;
   req->core = core;
 
@@ -354,7 +354,7 @@ int cham_poll_control(struct proto_lib *p)
       return QUEUE_NEW_MAP_RES;
     default:
       LOG_ERROR("unknown queue entry type from "
-          "guest to control path type=%d", qe->type);
+          "guest to control-path type=%d", qe->type);
       abort();
   }
 
@@ -366,7 +366,7 @@ int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
   struct queue_new_queue_res *res;
   struct proto_queue_lib *q;
 
-  res = (struct queue_new_queue_res *) &qe->data;
+  res = &qe->data.new_queue_res;
   q = &p->queues[res->qid];
   q->id = res->qid;
   q->size = res->size;
@@ -381,7 +381,7 @@ int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe)
 {
   struct queue_new_map_res *res;
 
-  res = (struct queue_new_map_res *) &qe->data;
+  res = &qe->data.new_map_res;
   p->nmaps++;
   p->maps[res->id].id = res->id;
   p->maps[res->id].off = res->off;

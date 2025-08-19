@@ -13,14 +13,11 @@
 #include "log.h"
 #include "uxsocket.h"
 
-
-static int nctxs = 0;
-
-/* Adter udp_connect_slow this becomes read only*/
 static struct udp_lib *udp = NULL;
-
 /* One context per thread */
 static __thread struct udp_context_lib *udp_ctx = NULL;
+
+int handle_new_sock_res(struct udp_queue_entry *qe);
 
 int udp_connect_slow()
 {
@@ -75,9 +72,13 @@ int udp_connect_slow()
     goto close_sockfd;
   }
 
+  /* Set table to 0 so default fd is SOCK_INACTIVE */
+  memset(u->socks, 0, sizeof(struct udp_socket) * MAX_SOCKETS);
+
   u->uxsocket_fd = sock_fd;
   u->shm_fd = shm_fd;
   u->shm_base = NULL;
+  u->next_ctxid = 0;
   udp = u;
   
   return 0;
@@ -153,7 +154,7 @@ int udp_ctx_new()
     return -1;
   }
   
-  ctx->id = __sync_fetch_and_add(&nctxs, 1);
+  ctx->id = __sync_fetch_and_add(&udp->next_ctxid, 1);
   ctx->ncores = res->n_fp_cores;
   udp_ctx = ctx;
   
@@ -196,5 +197,91 @@ int udp_ctx_new()
 
 int udp_socket()
 {
+  int fd, ret;
+  struct udp_socket *sock;
+  struct equeue *q;
+  struct udp_queue_entry *qe;
+  struct udp_queue_new_sock_req *req;
+
+  /* Find next free fd and get socket */
+  fd = __sync_fetch_and_add(&udp->next_sockfd, 1);
+  if (fd >= MAX_SOCKETS)
+  {
+    LOG_ERROR("exceeded max nuber of sockets");
+    return -1;
+  }
+  sock = &udp->socks[fd];
+  sock->fd = fd;
+  sock->rx_avail = 0;
+  sock->rx_head = 0;
+  sock->tx_avail = 0;
+  sock->tx_head = 0;
+
+  /* Create socket in slow-path */
+  assert(udp_ctx != NULL);
+  q = udp_ctx->app_slow_q;
+  qe = udp_queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+
+  req = &qe->data.new_sock_req;
+  req->opaque = (uint64_t) sock;
+  ret = udp_queue_enqueue(q, UDP_QUEUE_NEW_SOCK_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue new sock req");
+    return -1;
+  }
+
+  /* Wait poll for response */
+  while (udp_poll_slow() != UDP_QUEUE_NEW_SOCK_RES) {}
+
   return 0;
+}
+
+int udp_poll_slow()
+{
+  struct dqueue *q;
+  struct udp_queue_entry *qe;
+
+  q = udp_ctx->slow_app_q;
+  qe = udp_queue_head(q);
+
+  /* Queue is empty */
+  if (qe == NULL)
+    return -1;
+
+  switch (qe->type)
+  {
+    case UDP_QUEUE_NEW_SOCK_RES:
+      handle_new_sock_res(qe);
+      queue_dequeue(q);
+      return UDP_QUEUE_NEW_SOCK_RES;
+    default:
+      LOG_ERROR("unknown queue entry type from "
+          "slow-path to app type=%d", qe->type);
+      abort();
+  }
+
+  return 0;  
+}
+
+int handle_new_sock_res(struct udp_queue_entry *qe)
+{
+  struct udp_queue_new_sock_res *res;
+  struct udp_socket *sock;
+
+  res = &qe->data.new_sock_res;
+  sock = (struct udp_socket *) res->opaque;
+  sock->rx_qid = res->rx_qid;
+  sock->rx_len = res->rx_len;
+  sock->rx_buf = udp->shm_base + res->rx_off;
+  sock->tx_qid = res->tx_qid;
+  sock->tx_len = res->tx_len;
+  sock->tx_buf = udp->shm_base + res->tx_off;
+
+  return 0;  
 }

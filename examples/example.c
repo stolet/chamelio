@@ -6,8 +6,8 @@
 
 int main (int argc, char **argv)
 {
-  struct guest_lib *g;
-  struct proto_lib *p;
+  // struct guest_lib *g;
+  // struct proto_lib *p;
 
   int ret;
 
@@ -16,6 +16,10 @@ int main (int argc, char **argv)
     abort();
     
   ret = udp_ctx_new();
+  if (ret != 0)
+    abort();
+
+  ret = udp_socket();
   if (ret != 0)
     abort();
 
