@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/un.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <sys/mman.h>
 
 #include <cham_lib.h>
@@ -90,13 +91,14 @@ close_sockfd:
 
 int udp_ctx_new()
 {
+  int i;
   ssize_t sz, off;
   void *shm_base;
   struct udp_context_lib *ctx;
   struct udp_queue_new_actx_res *res;
   uint8_t resp_buf[sizeof(*res)];
-  struct equeue *eq;
-  struct dqueue *dq;
+  struct equeue *eq, **eq_list;
+  struct dqueue *dq, **dq_list;
   struct udp_queue_new_actx_req req = {
     .req = 1,
   };
@@ -192,6 +194,45 @@ int udp_ctx_new()
   }
   ctx->slow_app_q = dq;
 
+  /* Allocate list for bump queues between app and fast-path */
+  eq_list = malloc(sizeof(struct equeue *) * res->n_fp_cores);
+  if (eq_list == NULL)
+  {
+    LOG_ERROR("failed to allocate list for queues app->fast");
+    return -1;
+  }
+  udp_ctx->app_fast_qs = eq_list;
+
+  dq_list = malloc(sizeof(struct dqueue *) * res->n_fp_cores);
+  if (dq == NULL)
+  {
+    LOG_ERROR("failed to allcoate list for queues fast->app");
+    return -1;
+  }
+  udp_ctx->fast_app_qs = dq_list;
+
+  /* Create each queue between app and fast-path */
+  for (i = 0; i < res->n_fp_cores; i++)
+  {
+    eq = equeue_new(res->af_len, 
+        udp->shm_base + res->af_offs[i], res->af_offs[i]);
+    if (eq == NULL)
+    {
+      LOG_ERROR("failed to create app->fast bump queue");
+      return -1;
+    }
+    eq_list[i] = eq;
+
+    dq = dqueue_new(res->fa_len,
+        udp->shm_base + res->fa_offs[i], res->fa_offs[i]);
+    if (dq == NULL)
+    {
+      LOG_ERROR("failed to create fast->app bump queue");
+      return -1;
+    }
+    dq_list[i] = dq;
+  }
+
   return 0;
 }
 
@@ -240,6 +281,146 @@ int udp_socket()
   while (udp_poll_slow() != UDP_QUEUE_NEW_SOCK_RES) {}
 
   return 0;
+}
+
+int udp_sendto(int sockfd, const void *buf, size_t len, 
+    const struct sockaddr *addr, socklen_t addrlen)
+{
+  int n, ret;
+  uint32_t ip, tail, n1, n2;
+  uint16_t port;
+  struct udp_socket *sock;
+  struct equeue *q;
+  struct udp_queue_entry *qe;
+  struct udp_queue_bump *bump;
+  struct sockaddr_in *sin = (struct sockaddr_in *) addr;
+
+  sock = &udp->socks[sockfd];
+  if (sock->fd == SOCK_INACTIVE)
+  {
+    LOG_ERROR("bad socket file descriptor");
+    return -1;
+  }
+
+  ip = ntohl(sin->sin_addr.s_addr);
+  port = ntohs(sin->sin_port);
+
+  n = len;
+  if (len > sock->tx_len - sock->tx_avail)
+    n = sock->tx_len - sock->tx_avail;
+
+  /* No space available in tx buffer */
+  if (n == 0)
+    return 0;
+
+  tail = sock->tx_head + sock->tx_avail;
+  if (sock->tx_head + sock->tx_avail > sock->tx_len)
+    tail = sock->tx_head + sock->tx_avail - sock->tx_len;
+
+  if (tail + n > sock->tx_len)
+  {
+    /* Split copy */
+    n1 = sock->tx_len - tail;
+    n2 = n - n1;
+    memcpy(sock->tx_buf + tail, buf, n1);
+    memcpy(sock->tx_buf, buf + n1, n2);
+  }
+  else
+  {
+    /* Simple copy */
+    memcpy(sock->tx_buf + tail, buf, n);
+  }
+
+  sock->tx_avail = sock->tx_avail + n;
+    
+  /* Send bump message to update TX available */
+  /* TODO: Don't send default just to core 0 */
+  q = udp_ctx->app_fast_qs[0];
+  qe = udp_queue_tail(udp_ctx->app_fast_qs[0]);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+
+  bump = &qe->data.bump;
+  bump->tx_head = 0;
+  bump->tx_avail = n;
+  bump->rx_head = 0;
+  bump->rx_avail = 0;
+
+  ret = queue_enqueue(q, UDP_QUEUE_BUMP);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue bump");
+    return -1;
+  }
+
+  return n;
+}
+
+int udp_recvfrom(int sockfd, void *buf, size_t len, 
+    struct sockaddr *addr, socklen_t addr_len)
+{
+  int n;
+  uint32_t ip, n1, n2;
+  uint16_t port;
+  struct equeue *q;
+  struct udp_queue_entry *qe;
+  struct udp_queue_bump *bump; 
+  struct udp_socket *sock;
+  struct sockaddr_in *sin = (struct sockaddr_in *) addr;
+
+  sock = &udp->socks[sockfd];
+  if (sock->fd == SOCK_INACTIVE)
+  {
+    LOG_ERROR("bad socket file descriptor");
+    return -1;
+  }
+
+  ip = ntohl(sin->sin_addr.s_addr);
+  port = ntohs(sin->sin_port);
+
+  /* Copy to buffer */
+  n = len;
+  if (len > sock->rx_avail)
+    n = sock->rx_avail;
+
+  if (sock->rx_head + sock->rx_avail > sock->rx_len)
+  {
+    /* Split copy */
+    n1 = sock->rx_len - sock->rx_head;
+    n2 = n - n1;
+    memcpy(buf, sock->rx_buf + sock->rx_head, n1);
+    memcpy(buf + n1, sock->rx_buf, n2);
+  }
+  else
+  {
+    /* Simple copy */
+    memcpy(buf, sock->rx_buf + sock->rx_head, n);
+  }
+  
+  sock->rx_avail -= n;
+  sock->rx_head = sock->rx_head + n;
+  if (sock->rx_head > sock->rx_len)
+    sock->rx_head = sock->rx_head - sock->rx_len;
+
+  /* Send bump message to update RX head */
+  q = udp_ctx->app_fast_qs[0];
+  qe = udp_queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+
+  bump = &qe->data.bump;
+  bump->rx_head = n;
+  bump->rx_avail = 0;
+  bump->tx_avail = 0;
+  bump->tx_head = 0;
+
+  return n;
 }
 
 int udp_poll_slow()

@@ -7,7 +7,7 @@
 #include "queue.h"
 
 #define MAX_SOCKETS 8192
-#define SOCK_INACTIVE 
+#define SOCK_INACTIVE 0
 
 struct udp_socket {
     /* File descriptor identifier for this socket */
@@ -77,10 +77,10 @@ int udp_connect_slow();
 int udp_ctx_new();
 int udp_poll_slow();
 int udp_socket();
-int udp_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 int udp_close(int sockfd);
-int udp_listen(int sockfs, int backlog);
-int udp_write(int sockfd, const void *buf, size_t count);
-int udp_read(int sockfd, void *buf, size_t count);
+int udp_sendto(int sockfd, const void *buf, size_t len, 
+    const struct sockaddr *addr, socklen_t addr_len);
+int udp_recvfrom(int sockfd, void *buf, size_t len, 
+    struct sockaddr *addr, socklen_t addr_len);
 
 #endif
