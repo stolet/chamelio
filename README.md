@@ -6,8 +6,8 @@ can run and upload custom protocols to run on Cbamelio in the host.
 ## Building
 
 Requirements
-  * DPDK v25
-  * Meson v1.0.0 <
+  * [DPDK](https://www.dpdk.org/) v25
+  * [Meson](https://mesonbuild.com/) v1.0.0 <
 
 To build Chamelio run the following commands
 ```
@@ -30,7 +30,7 @@ sudo ~/dpdk-inst/usertools/dpdk-devbind  -b vfio-pci 0000:08:00.0
 ```
 
 You can start Chamelio on the host with the following command
-````
+```
 sudo code/build/chamelio/chamelio --ip-addr=192.168.10.1/24 --fp-cores-max=1 --dpdk-extra="-ad8:00.0"
 ```
 
