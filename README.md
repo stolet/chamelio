@@ -7,7 +7,7 @@ can upload and run custom network protocols on the host with Chamelio.
 
 Requirements
   * [DPDK](https://www.dpdk.org/) v25
-  * [Meson](https://mesonbuild.com/) v1.0.0 <
+  * [Meson](https://mesonbuild.com/) > v1.0.0
 
 To build Chamelio run the following commands
 ```
