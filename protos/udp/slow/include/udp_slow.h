@@ -3,36 +3,7 @@
 
 #include <cham_lib.h>
 
-#define MAX_APPS 8
-#define MAX_CTXS 8
-#define MAX_SOCKETS 8192
-
-struct udp_socket_slow {
-  /* Socket ID */
-  int id;
-
-  /* Queue ID used for RX buffer */
-  uint16_t rx_qid;
-  /* Length of RX buffer */
-  uint32_t rx_len;
-  /* Number of available bytes to be read */
-  uint32_t rx_avail;
-  /* Head of RX buffer */
-  uint32_t rx_head;
-  /* Pointer to start of RX buffer in shared memory */
-  void *rx_buf;
-  
-  /* Queue ID used for TX buffer */
-  uint16_t tx_qid;
-  /* Length of the TX buffer */
-  uint32_t tx_len;
-  /* Number of bytes written to buffer */
-  uint32_t tx_avail;
-  /* Head of the TX buffer */
-  uint32_t tx_head;
-  /* Pointer to the start of the TX buffer in shared memory */
-  void *tx_buf;
-};
+#include "udp.h"
 
 struct udp_app_context_slow {
   /* ID for application context */
@@ -52,10 +23,8 @@ struct udp_app_slow {
   uint8_t n_ctxs;
   /* List of application contexts */
   struct udp_app_context_slow ctxs[MAX_CTXS];
-  /* Registered sockets */
-  int n_socks;
-  /* Map of sockets */
-  struct proto_map_lib *socks;
+  /* Map of offsets to different Chamelio maps */
+  struct proto_map_lib *offs_map;
 };
 
 struct udp_slow_context {

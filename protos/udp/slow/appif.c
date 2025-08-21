@@ -176,7 +176,8 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   struct epoll_event ev;
   struct udp_app_slow *a;
   struct app_event *aev;
-  struct proto_map_lib *map;
+  struct proto_map_lib *socks_map, *offs_map, *ready_map, *sched_map;
+  struct udp_off_mape *offs_table;
 
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));
@@ -210,16 +211,66 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   a = &ctx->apps[ctx->n_apps];
   a->id = ctx->n_apps;
   a->n_ctxs = 0;
-  a->n_socks = 0;
+
+  /* Create map used to hold offsets to other maps */
+  offs_map = cham_new_map(ctx->proto, MAX_OFFS, sizeof(struct udp_off_mape));
+  if (offs_map == NULL)
+  {
+    LOG_ERROR("faield to create map to hold offsets");
+    goto free_aev;
+  }
+  a->offs_map = offs_map;
 
   /* Create map used to hold sockets */
-  map = cham_new_map(ctx->proto, MAX_SOCKETS, sizeof(struct udp_socket_slow));
-  if (map == NULL)
+  socks_map = cham_new_map(ctx->proto, MAX_SOCKETS, sizeof(struct udp_sock_mape));
+  if (socks_map == NULL)
   {
     LOG_ERROR("failed to create map to hold sockets");
     goto free_aev;
   }
-  a->socks = map;
+
+  /* Create map used to hold scheduler data */
+  sched_map = cham_new_map(ctx->proto, MAX_SCHED, sizeof(struct udp_txsched_mape));
+  if (sched_map == NULL)
+  {
+    LOG_ERROR("failed to create map to hold tx sched");
+    goto free_aev;
+  }
+
+  /* Create map used to hold data ready to transmit */
+  ready_map = cham_new_map(ctx->proto, MAX_READY, sizeof(struct udp_txready_mape));
+  if (ready_map == NULL)
+  {
+    LOG_ERROR("failed to create map to hold tx ready");
+    goto free_aev;
+  }
+
+  /* Add sockets map to offset table */
+  offs_table = ctx->proto->shm_base + socks_map->off;
+  offs_table[MTYPE_SOCKS].head = ID_INVALID;
+  offs_table[MTYPE_SOCKS].tail = ID_INVALID;
+  offs_table[MTYPE_SOCKS].id = MTYPE_SOCKS;
+  offs_table[MTYPE_SOCKS].off = socks_map->off;
+  offs_table[MTYPE_SOCKS].n = 0;
+  offs_table[MTYPE_SOCKS].max_n = socks_map->nelems;
+
+  /* Add scheduler map to offset table */
+  offs_table = ctx->proto->shm_base + sched_map->off;
+  offs_table[MTYPE_SOCKS].head = ID_INVALID;
+  offs_table[MTYPE_SOCKS].tail = ID_INVALID;
+  offs_table[MTYPE_SOCKS].id = MTYPE_SOCKS;
+  offs_table[MTYPE_SOCKS].off = sched_map->off;
+  offs_table[MTYPE_SOCKS].n = 0;
+  offs_table[MTYPE_SOCKS].max_n = sched_map->nelems;
+  
+  /* Add tx ready map to offset table */
+  offs_table = ctx->proto->shm_base + ready_map->off;
+  offs_table[MTYPE_TXREADY].head = ID_INVALID;
+  offs_table[MTYPE_TXREADY].tail = ID_INVALID;
+  offs_table[MTYPE_TXREADY].id = MTYPE_TXREADY;
+  offs_table[MTYPE_TXREADY].off = ready_map->off;
+  offs_table[MTYPE_TXREADY].n = 0;
+  offs_table[MTYPE_TXREADY].max_n = ready_map->nelems;
 
   /* Add connection to epoll */
   aev->type = EP_APP;

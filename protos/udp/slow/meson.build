@@ -1,4 +1,4 @@
-udp_slow_inc = include_directories('include')
+udp_slow_inc = include_directories('include', '../include')
 
 udp_slow_srcs = files('udp_slow.c', 'appif.c')
 

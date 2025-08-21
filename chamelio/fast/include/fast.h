@@ -105,7 +105,7 @@ struct fast_context {
   /* Queue from the control-path to the fast-path */
   struct dqueue *ctl_fast_q;
 
-  /* TODO: Pass internnal fd and base to fast-path */
+  /* TODO: Pass internal fd and base to fast-path */
   /* File descriptor for internal shared memory */
   int shm_fd_internal;
   /* Base pointer for internal shared memory region */

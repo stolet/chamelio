@@ -1,9 +1,15 @@
-udp_fast_inc = include_directories('include')
+udp_fast_inc = include_directories('include', '../include')
+
+deps = [
+  dependency('log_dep'),
+  dependency('utils_dep'),
+]
 
 udp_fast_lib = static_library(
   'udp_fast',
   'udp_fast.c',
   include_directories : udp_fast_inc,
+  dependencies: deps,
   install : false,
 )
 

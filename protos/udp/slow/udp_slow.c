@@ -3,6 +3,7 @@
 
 #include "appif.h"
 #include "udp_slow.h"
+#include "udp.h"
 #include "log.h"
 
 int init_udp_slow_context(struct udp_slow_context *ctx);
@@ -114,13 +115,18 @@ int handle_new_sock(struct udp_slow_context *ctx,
   struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
 {
   int ret;
-  struct udp_socket_slow *socks, *sock;
+  struct udp_sock_mape *sock;
   struct proto_queue_lib *protoq;
   struct udp_queue_entry *qe_res;
   struct udp_queue_new_sock_req *req;
   struct udp_queue_new_sock_res *res;
+
+  struct udp_off_mape *offs_table = ctx->proto->shm_base + 
+      actx->app->offs_map->off;
+  struct udp_sock_mape *socks_table = ctx->proto->shm_base + 
+      offs_table[MTYPE_SOCKS].off;
   
-  if (actx->app->n_socks >= actx->app->socks->nelems)
+  if (offs_table[MTYPE_SOCKS].n >= offs_table[MTYPE_SOCKS].max_n)
   {
     LOG_ERROR("Socket map is full");
     return -1;
@@ -135,12 +141,19 @@ int handle_new_sock(struct udp_slow_context *ctx,
   }
   res = &qe_res->data.new_sock_res;
   res->opaque = req->opaque;
-  res->id_slow = actx->app->n_socks;
-  socks = (struct udp_socket_slow *) (ctx->proto->shm_base + 
-      actx->app->socks->off);
-  sock = &socks[res->id_slow];
-  sock->id = res->id_slow;
-  actx->app->n_socks++;
+  res->id_slow = offs_table[MTYPE_SOCKS].n;
+
+  sock = &socks_table[res->id_slow];
+  sock->id = offs_table[MTYPE_SOCKS].n;
+  sock->next_id = ID_INVALID;
+  
+  if (offs_table[MTYPE_SOCKS].tail == ID_INVALID)
+    offs_table[MTYPE_SOCKS].head = sock->id;
+  else
+    socks_table[offs_table[MTYPE_SOCKS].tail].next_id = sock->id;
+
+  offs_table[MTYPE_SOCKS].tail = sock->id;
+  offs_table[MTYPE_SOCKS].n++;
 
   /* Create queue for RX buffer */
   /* TODO: Have size of buffer be a parameter */
