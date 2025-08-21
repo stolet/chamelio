@@ -1,7 +1,7 @@
 # Chamelio
 
 Chamelio is a shared, high-performance, and flexible network stack. Guests
-can run and upload custom protocols to run on Cbamelio in the host.
+can upload and run custom network protocols on the host with Chamelio.
 
 ## Building
 
@@ -34,4 +34,4 @@ You can start Chamelio on the host with the following command
 sudo code/build/chamelio/chamelio --ip-addr=192.168.10.1/24 --fp-cores-max=1 --dpdk-extra="-ad8:00.0"
 ```
 
-The `-a` dpdk-extra arg is the PCI ID of the NIC port that you want DPDK to use.
+The `-a` dpdk-extra arg is the PCI ID of the NIC port to be used by DPDK.
