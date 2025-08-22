@@ -27,7 +27,7 @@ Before running Chamelio the following steps are necessary
 sudo modprobe vfio-pci
 sudo mount -t hugetlbfs nodev /dev/hugepages
 echo 1024 | sudo tee /sys/devices/system/node/node*/hugepages/hugepages-2048kB/nr_hugepages
-sudo ~/dpdk-inst/usertools/dpdk-devbind  -b vfio-pci 0000:08:00.0
+sudo python3 ~/dpdk-inst/usertools/dpdk-devbind.py  -b vfio-pci 0000:08:00.0
 ```
 
 You can start Chamelio on the host with the following command
