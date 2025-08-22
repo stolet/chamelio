@@ -12,10 +12,11 @@ Requirements
 To build Chamelio run the following commands
 ```
 meson setup build
+cd build
 ninja
 ```
 
-## Running
+## Running Chamelio
 
 Before running Chamelio the following steps are necessary
   * Make sure `hugetlbfs` is mounted on `/dev/hugepages` and enough huge pages are
@@ -33,5 +34,25 @@ You can start Chamelio on the host with the following command
 ```
 sudo code/build/chamelio/chamelio --ip-addr=192.168.10.1/24 --fp-cores-max=1 --dpdk-extra="-ad8:00.0"
 ```
-
 The `-a` dpdk-extra arg is the PCI ID of the NIC port to be used by DPDK.
+
+## Running Slow-path
+
+This repo has some examples of different slow-path protocol implementations in the
+`protos/` directory. For example, you can run the UDP slow-path after starting Chamelio.
+
+```
+sudo code/build/protos/udp/slow/slow
+```
+
+This registers a slow-path and creates a shared memory region to be
+used by the protocol, application and Chamelio.
+
+## Running Applications
+
+Applications can use custom protocols registed with Chamelio by using the
+libraries exposed by the custom protocol. For example, `code/protos/udp/lib`
+exposes a library that can be used by applications to send and receive
+messages using an example Chamelio UDP protocol.
+
+Example applications that use these libraries can be found in `code/examples`.
