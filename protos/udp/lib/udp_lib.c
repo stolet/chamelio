@@ -334,9 +334,8 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
   sock->tx_avail = sock->tx_avail + n;
     
   /* Send bump message to update TX available */
-  /* TODO: Don't send default just to core 0 */
-  q = udp_ctx->app_fast_qs[0];
-  qe = udp_queue_tail(udp_ctx->app_fast_qs[0]);
+  q = udp_ctx->app_fast_qs[sock->core];
+  qe = udp_queue_tail(q);
   if (qe == NULL)
   {
     LOG_ERROR("failed to get queue tail");
@@ -406,7 +405,7 @@ int udp_recvfrom(int sockfd, void *buf, size_t len,
     sock->rx_head = sock->rx_head - sock->rx_len;
 
   /* Send bump message to update RX head */
-  q = udp_ctx->app_fast_qs[0];
+  q = udp_ctx->app_fast_qs[sock->core];
   qe = udp_queue_tail(q);
   if (qe == NULL)
   {
@@ -457,6 +456,7 @@ int handle_new_sock_res(struct udp_queue_entry *qe)
 
   res = &qe->data.new_sock_res;
   sock = (struct udp_socket *) res->opaque;
+  sock->core = res->core;
   sock->rx_qid = res->rx_qid;
   sock->rx_len = res->rx_len;
   sock->rx_buf = udp->shm_base + res->rx_off;

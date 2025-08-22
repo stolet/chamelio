@@ -269,6 +269,7 @@ static int handle_new_queue_req(struct control_context *ctx,
   res->qid = nqueues;
   res->size = g_req->size;
   res->off = sh->off;
+  res->opaque = g_req->opaque;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
   assert(ret == 0);
   return 0;
@@ -289,7 +290,7 @@ static int handle_new_map_req(struct control_context *ctx,
   assert(qe_res != NULL);
   res = (struct queue_new_map_res *) &qe_res->data;
  
-  if (g->proto.nmaps == MAX_PROTO_MAPS)
+  if (g->proto.nmaps >= MAX_PROTO_MAPS)
   {
     LOG_WARN("requested more maps than the maximum supported");
     res->nelems = 0;
@@ -315,6 +316,7 @@ static int handle_new_map_req(struct control_context *ctx,
   res->off = sh->off;
   res->elsize = g_req->elsize;
   res->nelems = g_req->nelems;
+  res->opaque = g_req->opaque;
   g->proto.nmaps++;
 
   /* Send request for maps to the fast-path */

@@ -3,9 +3,11 @@
 
 #include <stdint.h>
 
+#include "queue.h"
+
 #define UDP_MSS 1400
 
-#define MAX_OFFS 2
+#define MAX_OFFS 8
 #define MAX_APPS 8
 #define MAX_CTXS 8
 #define MAX_READY 16
@@ -19,18 +21,19 @@ enum udp_map_type {
   MTYPE_SOCKS = 0,
   MTYPE_TXSCHED,
   MTYPE_TXREADY,
+  MTYPE_BUMPQ,
 };
 
-/* Entry for the offset map */
+/* Entry in the map offset table */
 struct udp_off_mape
 {
   /* Identifying ID of what this entry is for */
   enum udp_map_type id;
-  /* Offset in shared memory for this other map */
+  /* Offset in shared memory for a map */
   uint64_t off;
-  /* Number of elements actually added to this map */
+  /* Number of elements added to this map entry */
   uint32_t n;
-  /* Max number of elements in this map */
+  /* Max number of elements in this map entry */
   uint32_t max_n;
   /* Key for first entry in the map */
   uint32_t head;
@@ -44,6 +47,10 @@ struct udp_sock_mape {
   uint32_t id;
   /* ID of next socket in list */
   uint32_t next_id;
+  /* Fast-path core this socket is currently running on */
+  uint16_t core;
+  /* Queue ID to bump app */
+  uint16_t app_bump_qid;
 
   /* Queue ID used for RX buffer */
   uint16_t rx_qid;
@@ -88,6 +95,16 @@ struct udp_txready_mape {
   uint32_t sock_id;
   /* Amount of bytes to be transmitted */
   uint32_t tx_ready;
+};
+
+/* Entry for bump map */ 
+struct udp_bump_mape {
+  /* Queue ID */
+  uint16_t id;
+  /* Next ID */
+  uint16_t next_id;
+  /* Queue only for enqueueing */
+  struct equeue q;  
 };
 
 #endif

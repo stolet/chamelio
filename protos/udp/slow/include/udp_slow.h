@@ -14,6 +14,10 @@ struct udp_app_context_slow {
   struct dqueue *app_slow_q;
   /* Queue for messages slow->app */
   struct equeue *slow_app_q;
+  /* App bump queues */
+  struct proto_queue_lib *app_bump_qs[MAX_FP_CORES];
+  /* Fast-path bump queues */
+  struct proto_queue_lib *fast_bump_qs[MAX_FP_CORES];
 };
 
 struct udp_app_slow {

@@ -142,10 +142,13 @@ int handle_new_sock(struct udp_slow_context *ctx,
   res = &qe_res->data.new_sock_res;
   res->opaque = req->opaque;
   res->id_slow = offs_table[MTYPE_SOCKS].n;
+  res->core = 0;
 
   sock = &socks_table[res->id_slow];
   sock->id = offs_table[MTYPE_SOCKS].n;
   sock->next_id = ID_INVALID;
+  sock->core = 0;
+  sock->app_bump_qid = actx->app_bump_qs[0]->id;
   
   if (offs_table[MTYPE_SOCKS].tail == ID_INVALID)
     offs_table[MTYPE_SOCKS].head = sock->id;
@@ -184,7 +187,6 @@ int handle_new_sock(struct udp_slow_context *ctx,
   sock->tx_head = 0;
   sock->tx_buf = ctx->proto->shm_base + protoq->off;
 
-  LOG_DEBUG("created socket in slow-path");
   /* Send response to app */
   ret = udp_queue_enqueue(actx->slow_app_q, UDP_QUEUE_NEW_SOCK_RES);
   if (ret != 0)

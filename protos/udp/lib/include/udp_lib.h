@@ -14,6 +14,8 @@ struct udp_socket {
     int fd;
     /* Context that created this socket */
     struct udp_context_lib *ctx;
+    /* Fast-path core of this socket */
+    uint16_t core;
 
     /* Queue ID used for RX buffer */
     uint16_t rx_qid;

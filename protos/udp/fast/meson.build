@@ -3,6 +3,7 @@ udp_fast_inc = include_directories('include', '../include')
 deps = [
   dependency('log_dep'),
   dependency('utils_dep'),
+  dependency('udp_queue_dep'),
 ]
 
 udp_fast_lib = static_library(

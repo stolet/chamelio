@@ -7,6 +7,7 @@ deps = [
   dependency('log_dep'),
   dependency('shm_dep'),
   dependency('queue_dep'),
+  dependency('uxsocket_dep'),
 ]
 
 control_lib = static_library(

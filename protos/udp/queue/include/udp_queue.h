@@ -35,6 +35,8 @@ struct udp_queue_new_sock_req {
 struct udp_queue_new_sock_res {
   /* Pointer to socket in the library */
   uint64_t opaque;
+  /* Fast-path core this socket is running */
+  uint16_t core;
   /* ID of the socket in slow-path */
   uint32_t id_slow;
   /* Queue ID of RX buffer */

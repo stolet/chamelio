@@ -1,5 +1,7 @@
 subdir('log')
 subdir('uxsocket')
+subdir('shm')
+subdir('queue')
 
 utils_inc = include_directories('include')
 
@@ -12,6 +14,8 @@ utils_lib = static_library(
 deps = [
   dependency('log_dep'),
   dependency('uxsocket_dep'),
+  dependency('shm_dep'),
+  dependency('queue_dep'),
 ]
 
 utils_dep = declare_dependency(

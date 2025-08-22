@@ -367,10 +367,10 @@ int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
   struct proto_queue_lib *q;
 
   res = &qe->data.new_queue_res;
-  q = &p->queues[res->qid];
+  q = (struct proto_queue_lib *) res->opaque;
   q->id = res->qid;
-  q->size = res->size;
   q->off = res->off;
+  q->size = res->size;
   q->proto = p;
   p->nqueues++;
 
@@ -380,13 +380,16 @@ int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
 int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe)
 {
   struct queue_new_map_res *res;
+  struct proto_map_lib *m;
 
   res = &qe->data.new_map_res;
+  m = (struct proto_map_lib *) res->opaque;
+  m->id = res->id;
+  m->off = res->off;
+  m->nelems = res->nelems;
+  m->elsize = res->elsize;
+  m->proto = p;
   p->nmaps++;
-  p->maps[res->id].id = res->id;
-  p->maps[res->id].off = res->off;
-  p->maps[res->id].nelems = res->nelems;
-  p->maps[res->id].elsize = res->elsize;
 
   return 0;
   
