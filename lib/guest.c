@@ -205,6 +205,7 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size)
   struct equeue *q;
   struct queue_entry *qe;
   struct queue_new_queue_req *req;
+  struct proto_queue_lib *pq;
 
   nqueues = p->nqueues;
   q = p->guest_ctl_q;
@@ -217,7 +218,11 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size)
 
   req = &qe->data.new_queue_req;
   req->size = size;
-  req->opaque = (uint64_t) &p->queues[nqueues];
+  pq = &p->queues[nqueues];
+  req->opaque = (uint64_t) pq;
+
+  /* Set to 0 so we can check it was initialised when we poll control */
+  pq->size = 0;
 
   ret = queue_enqueue(q, QUEUE_NEW_QUEUE_REQ);
   if (ret != 0)
@@ -229,7 +234,8 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size)
 
   /* Poll waiting for response */
   /* TODO: Make this async instead of blocking here */
-  while (cham_poll_control(p) != QUEUE_NEW_QUEUE_RES) {}
+  while (pq->size == 0)
+    cham_poll_control(p);
 
   return &p->queues[nqueues];
 }
@@ -242,6 +248,7 @@ struct proto_map_lib * cham_new_map(struct proto_lib *p,
   struct equeue *q;
   struct queue_entry *qe;
   struct queue_new_map_req *req;
+  struct proto_map_lib *m;
 
   nmaps = p->nmaps;
   q = p->guest_ctl_q;
@@ -255,7 +262,11 @@ struct proto_map_lib * cham_new_map(struct proto_lib *p,
   req = &qe->data.new_map_req;
   req->nelems = nelems;
   req->elsize = elsize;
-  req->opaque = (uint64_t) &p->maps[nmaps];
+  m = &p->maps[nmaps];
+  req->opaque = (uint64_t) m;
+
+  /* Set to 0 so we can check it was initialised when we poll control */
+  m->nelems = 0;
 
   ret = queue_enqueue(q, QUEUE_NEW_MAP_REQ);
   if (ret != 0)
@@ -267,7 +278,8 @@ struct proto_map_lib * cham_new_map(struct proto_lib *p,
   
   /* Poll waiting for response */
   /* TODO: Make this async instead of blocking here */
-  while (cham_poll_control(p) != QUEUE_NEW_MAP_RES) {}
+  while (m->nelems == 0)
+    cham_poll_control(p);
 
   return &p->maps[nmaps];;
 }

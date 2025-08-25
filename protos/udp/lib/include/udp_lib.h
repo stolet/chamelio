@@ -7,7 +7,7 @@
 #include "queue.h"
 
 #define MAX_SOCKETS 8192
-#define SOCK_INACTIVE 0
+#define SOCK_INACTIVE (-1U)
 
 struct udp_socket {
     /* File descriptor identifier for this socket */

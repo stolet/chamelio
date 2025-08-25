@@ -257,6 +257,9 @@ int udp_socket()
   sock->rx_head = 0;
   sock->tx_avail = 0;
   sock->tx_head = 0;
+  
+  /* Set to 0 here so we can check it was initialised when polling slow-path */
+  sock->rx_len = 0;
 
   /* Create socket in slow-path */
   assert(udp_ctx != NULL);
@@ -278,9 +281,10 @@ int udp_socket()
   }
 
   /* Wait poll for response */
-  while (udp_poll_slow() != UDP_QUEUE_NEW_SOCK_RES) {}
+  while (sock->rx_len == 0) 
+    udp_poll_slow();
 
-  return 0;
+  return sock->fd;
 }
 
 int udp_sendto(int sockfd, const void *buf, size_t len, 
