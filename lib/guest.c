@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 #include <sys/mman.h>
 
-#include "cham_lib.h"
+#include "include/cham_lib.h"
 #include "queue.h"
 #include "log.h"
 #include "uxsocket.h"
@@ -14,7 +14,13 @@
 static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe);
 static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
 
-struct guest_lib * cham_connect_guest()
+
+/* Uploads an eBPF program to Chamelio and register it with the fast-path */
+int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
+int cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
+int cham_free_ebpf(struct proto_lib *p, uint32_t size);   
+
+struct guest_lib *cham_connect_guest()
 {
   struct guest_lib *g;
   struct sockaddr_un s_un;
@@ -22,22 +28,22 @@ struct guest_lib * cham_connect_guest()
   int64_t tmp;
 
   sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (sock_fd < 0) 
+  if (sock_fd < 0)
   {
     LOG_ERROR("failed to create socket");
     return NULL;
   }
 
   s_un.sun_family = AF_UNIX;
-  ret = snprintf(s_un.sun_path, sizeof(s_un.sun_path), 
-      "%s", GUEST_SOCKET_PATH);
-  if (ret < 0 || ret >= sizeof(s_un.sun_path)) 
+  ret = snprintf(s_un.sun_path, sizeof(s_un.sun_path),
+                 "%s", GUEST_SOCKET_PATH);
+  if (ret < 0 || ret >= sizeof(s_un.sun_path))
   {
     LOG_ERROR("could not copy unix socket path");
     goto close_sockfd;
   }
 
-  if (connect(sock_fd, (struct sockaddr *)&s_un, sizeof(s_un)) < 0) 
+  if (connect(sock_fd, (struct sockaddr *)&s_un, sizeof(s_un)) < 0)
   {
     LOG_ERROR("cannot connect to chamelio, %s", GUEST_SOCKET_PATH);
     perror("");
@@ -45,11 +51,11 @@ struct guest_lib * cham_connect_guest()
   }
 
   /* Get shared mem fd */
-  if (uxsocket_read_one_msg(sock_fd, &tmp, &shm_fd) < 0 || tmp != -1 || shm_fd < 0) 
+  if (uxsocket_read_one_msg(sock_fd, &tmp, &shm_fd) < 0 || tmp != -1 || shm_fd < 0)
   {
-    if (shm_fd >= 0) 
+    if (shm_fd >= 0)
       close(shm_fd);
-    
+
     LOG_ERROR("cannot read shared memory fd from chamelio");
     goto close_sockfd;
   }
@@ -71,7 +77,7 @@ close_sockfd:
   return NULL;
 }
 
-struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
+struct proto_lib *cham_new_proto(struct guest_lib *g, uint32_t shmsize)
 {
   int ret;
   ssize_t sz, off;
@@ -84,23 +90,23 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   struct shm_handle *sh;
   uint8_t resp_buf[sizeof(*res)];
   struct queue_new_proto_req req = {
-    .proto_type = 1,
+      .proto_type = 1,
   };
 
   /* Send request on kernel socket */
   struct iovec iov = {
-    .iov_base = &req,
-    .iov_len = sizeof(req),
+      .iov_base = &req,
+      .iov_len = sizeof(req),
   };
 
   struct msghdr msg = {
-    .msg_name = NULL,
-    .msg_namelen = 0,
-    .msg_iov = &iov,
-    .msg_iovlen = 1,
-    .msg_control = NULL,
-    .msg_controllen = 0,
-    .msg_flags = 0,
+      .msg_name = NULL,
+      .msg_namelen = 0,
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = NULL,
+      .msg_controllen = 0,
+      .msg_flags = 0,
   };
 
   sz = sendmsg(g->uxsocket_fd, &msg, 0);
@@ -112,12 +118,12 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   }
 
   /* Receive response on kernel socket */
-  res = (struct queue_new_proto_res *) resp_buf;
+  res = (struct queue_new_proto_res *)resp_buf;
   off = 0;
-  while (off < sizeof(*res)) 
+  while (off < sizeof(*res))
   {
-    sz = read(g->uxsocket_fd, (uint8_t *) res + off, sizeof(*res) - off);
-    if (sz < 0) 
+    sz = read(g->uxsocket_fd, (uint8_t *)res + off, sizeof(*res) - off);
+    if (sz < 0)
     {
       LOG_ERROR("read failed");
       perror("");
@@ -126,9 +132,9 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
     off += sz;
   }
 
-  shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE, 
-      MAP_SHARED | MAP_POPULATE, g->shm_fd, 0);
-  if (shm_base == (void *) -1) 
+  shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE,
+                  MAP_SHARED | MAP_POPULATE, g->shm_fd, 0);
+  if (shm_base == (void *)-1)
   {
     LOG_ERROR("failed to map shm region");
     return NULL;
@@ -244,8 +250,8 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p,
   return &p->queues[nqueues];
 }
 
-struct proto_map_lib * cham_new_map(struct proto_lib *p, 
-    uint32_t nelems, uint32_t elsize)
+struct proto_map_lib *cham_new_map(struct proto_lib *p,
+                                   uint32_t nelems, uint32_t elsize)
 {
   int ret;
   uint16_t nmaps;
@@ -279,13 +285,15 @@ struct proto_map_lib * cham_new_map(struct proto_lib *p,
     return NULL;
   }
   p->nmaps++;
-  
+
   /* Poll waiting for response */
   /* TODO: Make this async instead of blocking here */
   while (m->nelems == 0)
     cham_poll_control(p);
 
   return &p->maps[nmaps];
+  return &p->maps[nmaps];
+  ;
 }
 
 int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
@@ -346,6 +354,13 @@ int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
   return 0;
 }
 
+int cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
+{
+  
+
+  return 0;
+}
+
 int cham_poll_control(struct proto_lib *p)
 {
   struct dqueue *q;
@@ -360,21 +375,22 @@ int cham_poll_control(struct proto_lib *p)
 
   switch (qe->type)
   {
-    case QUEUE_NEW_QUEUE_RES:
-      handle_new_queue_res(p, qe);
-      queue_dequeue(q);
-      return QUEUE_NEW_QUEUE_RES;
-    case QUEUE_NEW_MAP_RES:
-      handle_new_map_res(p, qe);
-      queue_dequeue(q);
-      return QUEUE_NEW_MAP_RES;
-    default:
-      LOG_ERROR("unknown queue entry type from "
-          "guest to control-path type=%d", qe->type);
-      abort();
+  case QUEUE_NEW_QUEUE_RES:
+    handle_new_queue_res(p, qe);
+    queue_dequeue(q);
+    return QUEUE_NEW_QUEUE_RES;
+  case QUEUE_NEW_MAP_RES:
+    handle_new_map_res(p, qe);
+    queue_dequeue(q);
+    return QUEUE_NEW_MAP_RES;
+  default:
+    LOG_ERROR("unknown queue entry type from "
+              "guest to control-path type=%d",
+              qe->type);
+    abort();
   }
 
-  return 0;  
+  return 0;
 }
 
 static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
@@ -391,7 +407,7 @@ static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
   q->proto = p;
   p->nqueues++;
 
-  return 0;  
+  return 0;
 }
 
 static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe)
@@ -409,5 +425,4 @@ static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe)
   p->nmaps++;
 
   return 0;
-  
 }
