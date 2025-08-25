@@ -17,6 +17,7 @@ static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
 
 /* Uploads an eBPF program to Chamelio and register it with the fast-path */
 int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
+int cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
 int cham_free_ebpf(struct proto_lib *p, uint32_t size);   
 
 struct guest_lib *cham_connect_guest()
@@ -290,8 +291,6 @@ struct proto_map_lib *cham_new_map(struct proto_lib *p,
     cham_poll_control(p);
 
   return &p->maps[nmaps];
-  return &p->maps[nmaps];
-  ;
 }
 
 int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
