@@ -79,11 +79,11 @@ int queue_dequeue(struct dqueue *q)
 
   head = q->head + sizeof(struct queue_entry);
   if (head > q->size)
-    head = 0;
+  head = 0;
   q->head = head;
-
+  
   MEM_BARRIER();
-  qe->type = 0;
+  qe->type = QUEUE_EMPTY;
 
   return 0;
 }

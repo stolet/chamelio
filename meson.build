@@ -15,7 +15,7 @@ threads_dep = dependency('threads', required: true)
 rt_dep = cc.find_library('rt', required : true)
 
 subdir('utils')
-subdir('chamelio')
 subdir('lib')
 subdir('protos')
+subdir('chamelio')
 subdir('examples')

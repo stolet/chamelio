@@ -66,11 +66,13 @@ struct proto_fast {
   struct proto_map_fast maps[MAX_PROTO_MAPS];
 
   /* Processes one received packet */
-  uint8_t (*process_rx)(void *, struct rte_mbuf *);
-  /* Processes one packet to transmit */
-  uint8_t (*process_tx)(void *, struct rte_mbuf *);
-  /* Polls application queues to check how much data to transmit */
-  uint8_t (*process_queues)();
+  int (*event_rx)(void *pkt, void *shm, void *map);
+  /* Processes one scheduled packet for transmissiojn */
+  int (*event_tx)(void *, void *shm, void *map);
+  /* Dequeue and process entry from a queue */
+  int (*event_deq)(int qid, void *shm, void *map);
+  /* Schedules packet for transmission */
+  int (*act_txsched)(int n, void *shm, void *map);
 };
 
 struct guest_fast {

@@ -33,12 +33,12 @@ struct udp_queue_new_sock_req {
 
 /* Response for new socket created */
 struct udp_queue_new_sock_res {
+  /* ID of the socket in slow-path */
+  uint32_t sock_id;
   /* Pointer to socket in the library */
   uint64_t opaque;
   /* Fast-path core this socket is running */
   uint16_t core;
-  /* ID of the socket in slow-path */
-  uint32_t id_slow;
   /* Queue ID of RX buffer */
   uint16_t rx_qid;
   /* Length of RX buffer */
@@ -85,6 +85,10 @@ struct udp_queue_new_actx_res {
 
 /* Message that bumps the RX and TX avail or head */
 struct udp_queue_bump {
+  /* Socket ID used by slow-path */
+  uint32_t sock_id;
+  /* Pointer to struct in app library */
+  uint64_t opaque;
   /* Bump for RX available */
   uint32_t rx_avail;
   /* Bump for RX head */

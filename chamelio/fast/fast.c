@@ -84,11 +84,11 @@ int fast_loop(struct fast_context *ctx)
     //   return -1;
     // }
 
-    // ret = poll_queues(ctx);
-    // if (ret < 0)
-    // {
-    //   LOG_ERROR("poll_queues failed");
-    // }
+    ret = poll_queues(ctx);
+    if (ret < 0)
+    {
+      LOG_ERROR("poll_queues failed");
+    }
 
     // ret = poll_tx(ctx);
     // if (ret < 0)
@@ -134,6 +134,23 @@ int poll_rx(struct fast_context *ctx)
 
 int poll_queues(struct fast_context *ctx)
 {
+  int i, j;
+  struct guest_fast *g;
+  struct proto_queue_fast *q;
+
+  for (i = 0; i < ctx->n_guests; i++)
+  {
+    g = &ctx->guests[i];
+    for (j = 0; j < g->proto.nqueues; j++)
+    {
+      q = &g->proto.queues[j];
+      if (!q->active)
+        continue;
+      
+      /* Execute custom dequeue procedure */
+      g->proto.event_deq(j, g->shm_base, g->shm_base + g->proto.maps[0].off);
+    }
+  }
   return 0;
 }
 

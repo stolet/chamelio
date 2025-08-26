@@ -18,7 +18,8 @@ static struct udp_lib *udp = NULL;
 /* One context per thread */
 static __thread struct udp_context_lib *udp_ctx = NULL;
 
-int handle_new_sock_res(struct udp_queue_entry *qe);
+static int handle_new_sock_res(struct udp_queue_entry *qe);
+static int handle_bump(struct udp_queue_entry *qe);
 
 int udp_connect_slow()
 {
@@ -281,7 +282,7 @@ int udp_socket()
   }
 
   /* Wait poll for response */
-  while (sock->rx_len == 0) 
+  while (sock->rx_len == 0)
     udp_poll_slow();
 
   return sock->fd;
@@ -347,6 +348,7 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
   }
 
   bump = &qe->data.bump;
+  bump->sock_id = sock->sock_id;
   bump->tx_head = 0;
   bump->tx_avail = n;
   bump->rx_head = 0;
@@ -444,6 +446,8 @@ int udp_poll_slow()
       handle_new_sock_res(qe);
       queue_dequeue(q);
       return UDP_QUEUE_NEW_SOCK_RES;
+    case UDP_QUEUE_BUMP:
+      handle_bump(qe);
     default:
       LOG_ERROR("unknown queue entry type from "
           "slow-path to app type=%d", qe->type);
@@ -453,7 +457,7 @@ int udp_poll_slow()
   return 0;  
 }
 
-int handle_new_sock_res(struct udp_queue_entry *qe)
+static int handle_new_sock_res(struct udp_queue_entry *qe)
 {
   struct udp_queue_new_sock_res *res;
   struct udp_socket *sock;
@@ -461,12 +465,27 @@ int handle_new_sock_res(struct udp_queue_entry *qe)
   res = &qe->data.new_sock_res;
   sock = (struct udp_socket *) res->opaque;
   sock->core = res->core;
+  sock->sock_id = sock->sock_id;
   sock->rx_qid = res->rx_qid;
   sock->rx_len = res->rx_len;
   sock->rx_buf = udp->shm_base + res->rx_off;
   sock->tx_qid = res->tx_qid;
   sock->tx_len = res->tx_len;
   sock->tx_buf = udp->shm_base + res->tx_off;
+
+  return 0;  
+}
+
+static int handle_bump(struct udp_queue_entry *qe)
+{
+  struct udp_queue_bump *bump;
+  struct udp_socket *sock;
+
+  bump = &qe->data.bump;
+  sock = (struct udp_socket *) bump->opaque;
+
+  sock->rx_avail += bump->rx_avail;
+  sock->tx_head += bump->tx_head;
 
   return 0;  
 }

@@ -12,7 +12,7 @@
 #include "uxsocket.h"
 
 static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe);
-int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
+static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
 
 struct guest_lib * cham_connect_guest()
 {
@@ -373,7 +373,7 @@ int cham_poll_control(struct proto_lib *p)
   return 0;  
 }
 
-int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
+static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
 {
   struct queue_new_queue_res *res;
   struct proto_queue_lib *q;
@@ -389,7 +389,7 @@ int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
   return 0;  
 }
 
-int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe)
+static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe)
 {
   struct queue_new_map_res *res;
   struct proto_map_lib *m;

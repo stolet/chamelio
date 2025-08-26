@@ -39,6 +39,8 @@ int main (int argc, char **argv)
       (struct sockaddr *) &addr, addr_len);
   if (ret < 0)
     abort();
+
+  while (1) {}
   // g = cham_connect_guest();
   // assert(g != NULL);
 

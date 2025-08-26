@@ -21,7 +21,8 @@ enum udp_map_type {
   MTYPE_SOCKS = 0,
   MTYPE_TXSCHED,
   MTYPE_TXREADY,
-  MTYPE_BUMPQ,
+  MTYPE_APP_BUMPQ,
+  MTYPE_FAST_BUMPQ,
 };
 
 /* Entry in the map offset table */
@@ -45,6 +46,8 @@ struct udp_off_mape
 struct udp_sock_mape {
   /* Socket ID */
   uint32_t id;
+  /* Pointer to socket in application */
+  uint64_t opaque;
   /* ID of next socket in list */
   uint32_t next_id;
   /* Fast-path core this socket is currently running on */
@@ -97,14 +100,24 @@ struct udp_txready_mape {
   uint32_t tx_ready;
 };
 
-/* Entry for bump map */ 
-struct udp_bump_mape {
+/* Entry for app bump map */ 
+struct udp_app_bump_mape {
   /* Queue ID */
   uint16_t id;
   /* Next ID */
   uint16_t next_id;
   /* Queue only for enqueueing */
   struct equeue q;  
+};
+
+/* Entry for fast-path bump map */ 
+struct udp_fast_bump_mape {
+  /* Queue ID */
+  uint16_t id;
+  /* Next ID */
+  uint16_t next_id;
+  /* Queue only for dequeueing */
+  struct dqueue q;  
 };
 
 #endif

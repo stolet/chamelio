@@ -5,6 +5,8 @@
 #include "udp_queue.h"
 #include "log.h"
 
+int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN]);
+
 int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN])
 {
     unsigned int tmp[ETH_ADDR_LEN];
@@ -40,14 +42,14 @@ int udp_event_tx(void *pkt, void *shm, void *map)
   uint32_t ip_src_be, ip_dst_be;
   struct udp_txready_mape *ready_entry;
   struct udp_sock_mape *sock_entry;
-  struct udp_bump_mape *bump_entry;
+  struct udp_app_bump_mape *bump_entry;
   struct udp_queue_entry *qe;
   struct udp_queue_bump *bump; 
 
   struct udp_off_mape *off_table = map;
   struct udp_sock_mape *sock_table = shm + off_table[MTYPE_SOCKS].off;
   struct udp_txready_mape *ready_table = shm + off_table[MTYPE_TXREADY].off;
-  struct udp_bump_mape *bump_table = shm + off_table[MTYPE_BUMPQ].off;
+  struct udp_app_bump_mape *bump_table = shm + off_table[MTYPE_APP_BUMPQ].off;
   struct udp_pkt *p = (struct udp_pkt *) pkt;
 
   /* Get first entry in ready table */
@@ -122,12 +124,14 @@ int udp_event_tx(void *pkt, void *shm, void *map)
     LOG_DEBUG("failed to get bump queue tail");
     return -1;
   }
-  bump = &qe->data.bump;
   
+  bump = &qe->data.bump;
+  bump->opaque = sock_entry->opaque;
   bump->rx_avail = 0;
   bump->rx_head = 0;
   bump->tx_avail = 0;
   bump->tx_head = payload_len;
+  
   ret = udp_queue_enqueue(&bump_entry->q, UDP_QUEUE_BUMP);
   if (ret != 0)
   {
@@ -208,12 +212,47 @@ int udp_act_txsched(int n, void *shm, void *map)
   return n_sched;
 }
 
-int udp_event_deq(int qid, void *qe)
+int udp_event_deq(int qid, void *shm, void *map)
 {
-  return 0;
-}
+  int ret;
+  struct udp_sock_mape *sock_entry;
+  struct udp_fast_bump_mape *bump_entry; 
+  struct dqueue *q;
+  struct udp_queue_entry *qe;
+  struct udp_queue_bump *bump;
 
-int udp_act_enq(int qid, void *qe)
-{
+  struct udp_off_mape *off_table = map;
+  struct udp_fast_bump_mape *bump_table = shm + off_table[MTYPE_FAST_BUMPQ].off;
+  struct udp_sock_mape *sock_table = shm + off_table[MTYPE_SOCKS].off;
+
+  bump_entry = &bump_table[qid];
+  q = &bump_entry->q;
+
+  /* This is hacky but we need to update entries to be 
+     shm_base of the fast-path + off instead of using
+     the shm_base from the slow-path where the queue
+     was created and initialised */
+  q->entries = shm + q->off;
+  
+  qe = udp_queue_head(q);
+  
+  /* Queue is empty */
+  if (qe == NULL)
+    return 0;
+
+  bump = &qe->data.bump;
+  sock_entry = &sock_table[bump->sock_id];
+  sock_entry->tx_avail += bump->tx_avail;
+  sock_entry->rx_head += bump->rx_head;
+
+  LOG_DEBUG("received bump!");
+  
+  ret = queue_dequeue(q);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to dequeue queue");
+    return -1;
+  }
+
   return 0;
 }

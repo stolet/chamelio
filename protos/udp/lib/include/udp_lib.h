@@ -12,6 +12,8 @@
 struct udp_socket {
     /* File descriptor identifier for this socket */
     int fd;
+    /* Socket ID in the slow-path */
+    uint32_t sock_id;
     /* Context that created this socket */
     struct udp_context_lib *ctx;
     /* Fast-path core of this socket */

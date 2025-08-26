@@ -141,14 +141,15 @@ int handle_new_sock(struct udp_slow_context *ctx,
   }
   res = &qe_res->data.new_sock_res;
   res->opaque = req->opaque;
-  res->id_slow = offs_table[MTYPE_SOCKS].n;
+  res->sock_id = offs_table[MTYPE_SOCKS].n;
   res->core = 0;
 
-  sock = &socks_table[res->id_slow];
+  sock = &socks_table[res->sock_id];
   sock->id = offs_table[MTYPE_SOCKS].n;
   sock->next_id = ID_INVALID;
   sock->core = 0;
   sock->app_bump_qid = actx->app_bump_qs[0]->id;
+  sock->opaque = req->opaque;
   
   if (offs_table[MTYPE_SOCKS].tail == ID_INVALID)
     offs_table[MTYPE_SOCKS].head = sock->id;

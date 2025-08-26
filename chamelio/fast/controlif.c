@@ -1,6 +1,6 @@
 #include "fast.h"
 #include "queue.h"
-#include "udp.h"
+#include "udp_fast.h"
 
 static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe);
@@ -68,6 +68,12 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
   /* TODO: Have a separate message to initialise protocol */
   g->proto.nqueues = 0;
   g->proto.nmaps = 0;
+
+  /* TODO: Add ebpf code here */
+  g->proto.event_rx = udp_event_rx;
+  g->proto.event_tx = udp_event_tx;
+  g->proto.event_deq = udp_event_deq;
+  g->proto.act_txsched = udp_act_txsched;
   
   ctx->n_guests++;
 }
@@ -92,7 +98,7 @@ static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe)
   q->off = req->off;
   q->proto = p;
   q->size = req->size;
-
+  p->nqueues++;
   LOG_DEBUG("created queue in fast-path with size=%d", req->size);
 }
 
@@ -113,7 +119,6 @@ static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)
   m->nelems = req->nelems;
   m->off = req->off;
   m->proto = p;
-
   p->nmaps++;
   LOG_DEBUG("created map in fast-path");
 }

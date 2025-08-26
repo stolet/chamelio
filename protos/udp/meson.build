@@ -6,8 +6,6 @@ subdir('lib')
 udp_inc = include_directories('include')
 
 deps = [
-  dependency('fast_dep'),
-  dependency('control_dep'),
   dependency('queue_dep'),
 ]
 

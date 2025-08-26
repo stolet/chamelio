@@ -107,9 +107,7 @@ struct udp_pkt {
 
 int udp_event_rx(void *pkt, void *shm, void *map);
 int udp_event_tx(void *pkt, void *shm, void *map);
-int udp_event_deq(int qid, void *qe);
-
-int udp_act_enq(int qid, void *qe);
+int udp_event_deq(int qid, void *shm, void *map);
 int udp_act_txsched(int n, void *shm, void *map);
 
 #endif
