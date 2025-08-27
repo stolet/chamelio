@@ -22,6 +22,7 @@ int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
 int poll_tx(struct fast_context *ctx);
 int poll_control(struct fast_context *ctx);
+int poll_qman(struct fast_context *ctx);
 
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, uint16_t thread_id,
@@ -87,6 +88,12 @@ int fast_loop(struct fast_context *ctx)
     if (ret < 0)
     {
       LOG_ERROR("poll_queues failed");
+    }
+
+    ret = poll_qman(ctx);
+    if (ret < 0)
+    {
+      LOG_ERROR("poll_qman failed");
     }
 
     // ret = poll_tx(ctx);
