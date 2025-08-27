@@ -1,6 +1,7 @@
 #include "fast.h"
 #include "queue.h"
 #include "udp_fast.h"
+#include "qman.h"
 
 static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe);
@@ -70,11 +71,14 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
   g->proto.nmaps = 0;
 
   /* TODO: Add ebpf code here */
-  g->proto.event_rx = udp_event_rx;
-  g->proto.event_tx = udp_event_tx;
-  g->proto.event_deq = udp_event_deq;
-  g->proto.act_txsched = udp_act_txsched;
+  g->proto.event_rx = NULL;
+  g->proto.event_tx = NULL;
+  g->proto.event_deq = NULL;
+  g->proto.act_txsched = NULL;
   
+  /* Init qman */
+  qman_init(&g->proto.qman);
+
   ctx->n_guests++;
 }
 

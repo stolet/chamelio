@@ -13,6 +13,7 @@
 #include "log.h"
 #include "config.h"
 #include "controlif.h"
+#include "qman.h"
 
 
 struct guest_fast * init_guest(uint8_t id, uint64_t shm_len);
@@ -62,8 +63,6 @@ int fast_context_init(struct fast_context *f_ctx,
   f_ctx->guests = guests;
 
   return 0;
-
-  return -1;
 }
 
 void fast_context_destroy()
@@ -132,6 +131,25 @@ int poll_rx(struct fast_context *ctx)
   return n;
 }
 
+int poll_qman(struct fast_context *ctx)
+{
+  int i;
+  struct guest_fast *g;
+  struct qman *q;
+  struct qman_entry *qm_entry;
+
+  for (i = 0; i < ctx->n_guests; i++)
+  {
+    g = &ctx->guests[i];
+    q = &g->proto.qman;
+    qm_entry = &q->entries[q->free_head];
+    g->proto.act_txsched(qm_entry);
+    qman_add(q, qm_entry);
+  }
+
+  return 0;
+}
+
 int poll_queues(struct fast_context *ctx)
 {
   int i, j;
@@ -148,7 +166,7 @@ int poll_queues(struct fast_context *ctx)
         continue;
       
       /* Execute custom dequeue procedure */
-      g->proto.event_deq(j, g->shm_base, g->shm_base + g->proto.maps[0].off);
+      g->proto.event_deq(j, NULL);
     }
   }
   return 0;

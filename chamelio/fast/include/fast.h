@@ -9,6 +9,7 @@
 #include "nic_fast.h" 
 #include "config.h"
 #include "queue.h"
+#include "qman.h"
 
 #define BATCH_SIZE 16
 
@@ -65,14 +66,19 @@ struct proto_fast {
   /* List of maps in shared memory */
   struct proto_map_fast maps[MAX_PROTO_MAPS];
 
+  /* Queue manager used to schedule data for this protocol */
+  struct qman qman;
+
+  /* Initialises the fast-path */
+  int (*init_fp)(void *config);
   /* Processes one received packet */
-  int (*event_rx)(void *pkt, void *shm, void *map);
+  int (*event_rx)(void *pkt);
   /* Processes one scheduled packet for transmissiojn */
-  int (*event_tx)(void *, void *shm, void *map);
+  int (*event_tx)(void *pkt, struct qman_entry *qm_entry);
   /* Dequeue and process entry from a queue */
-  int (*event_deq)(int qid, void *shm, void *map);
+  int (*event_deq)(int qid, struct queue_entry *q_entry);
   /* Schedules packet for transmission */
-  int (*act_txsched)(int n, void *shm, void *map);
+  int (*act_txsched)(struct qman_entry *qm_entry);
 };
 
 struct guest_fast {

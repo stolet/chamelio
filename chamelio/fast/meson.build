@@ -3,7 +3,8 @@ fast_inc = include_directories('include')
 fast_srcs = files(
   'fast.c', 
   'fast_process.c',
-  'controlif.c'
+  'controlif.c',
+  'qman.c',
 )
 
 deps = [
