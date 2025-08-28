@@ -208,16 +208,16 @@ static int poll_guests(struct control_context *ctx)
 static int handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
-  int i, ret;
+  int ret;
   uint16_t nqueues;
   struct queue_entry *qe_res;
-  struct queue_new_queue_req *g_req, *c_req;
+  struct queue_new_queue_req *req;
   struct queue_new_queue_res *res;
   struct shm_handle *sh;
 
   nqueues = g->proto.nqueues;
   g->proto.nqueues++;
-  g_req = &qe_req->data.new_queue_req;
+  req = &qe_req->data.new_queue_req;
   
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
@@ -233,7 +233,7 @@ static int handle_new_queue_req(struct control_context *ctx,
   }
 
   /* Allocate requested queue */
-  ret = shmalloc_alloc(g->alloc, g_req->size, &sh);
+  ret = shmalloc_alloc(g->alloc, req->size, &sh);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocate memory for queue=%d", nqueues);
@@ -245,31 +245,16 @@ static int handle_new_queue_req(struct control_context *ctx,
   memset(sh->addr, 0, sh->len);
 
   g->proto.queues[nqueues].id = nqueues;
-  g->proto.queues[nqueues].size = g_req->size;
+  g->proto.queues[nqueues].size = req->size;
   g->proto.queues[nqueues].off = sh->off;
   g->proto.queues[nqueues].core = CORE_INVALID;
   res->off = sh->off;
 
-  /* Send request for new queue to the fast-path */
-  for (i = 0; i < ctx->config->fp_cores_max; i++)
-  {
-    qe_req = queue_tail(ctx->ctl_fast_qs[i]);
-    assert(qe_req != NULL);
-   
-    c_req = &qe_req->data.new_queue_req;
-    c_req->gid = g->id;
-    c_req->size = g_req->size;
-    c_req->off = sh->off;
-
-    ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_NEW_QUEUE_REQ);
-    assert(ret == 0);
-  }
-
   /* Send response back to guest */
   res->qid = nqueues;
-  res->size = g_req->size;
+  res->size = req->size;
   res->off = sh->off;
-  res->opaque = g_req->opaque;
+  res->opaque = req->opaque;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
   assert(ret == 0);
   return 0;
@@ -368,8 +353,9 @@ static int handle_enableq_req(struct control_context *ctx,
   req_fast = (struct queue_enableq_req *) &qe->data;
   req_fast->gid = g->id;
   req_fast->qid = req->qid;
+  req_fast->off = q->off;
+  req_fast->size = q->size;
   req_fast->core = req->core;
-  
   g->proto.queues[req->qid].core = req->core;
   
   /* Enable queue in fast-path */

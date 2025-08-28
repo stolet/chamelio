@@ -13,7 +13,7 @@
 #include "log.h"
 #include "config.h"
 #include "controlif.h"
-#include "qman.h"
+#include "scheduler.h"
 
 
 struct guest_fast * init_guest(uint8_t id, uint64_t shm_len);
@@ -22,7 +22,7 @@ int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
 int poll_tx(struct fast_context *ctx);
 int poll_control(struct fast_context *ctx);
-int poll_qman(struct fast_context *ctx);
+int poll_sched(struct fast_context *ctx, struct ready_entry *ready_entries);
 
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, uint16_t thread_id,
@@ -74,6 +74,7 @@ void fast_context_destroy()
 int fast_loop(struct fast_context *ctx)
 {
   int ret;
+  struct ready_entry ready_entries[BATCH_SIZE];
 
   while(1) 
   {
@@ -90,10 +91,10 @@ int fast_loop(struct fast_context *ctx)
       LOG_ERROR("poll_queues failed");
     }
 
-    ret = poll_qman(ctx);
+    ret = poll_sched(ctx, ready_entries);
     if (ret < 0)
     {
-      LOG_ERROR("poll_qman failed");
+      LOG_ERROR("poll_sched failed");
     }
 
     // ret = poll_tx(ctx);
@@ -138,20 +139,35 @@ int poll_rx(struct fast_context *ctx)
   return n;
 }
 
-int poll_qman(struct fast_context *ctx)
+int poll_sched(struct fast_context *ctx, struct ready_entry *ready_entries)
 {
-  int i;
+  int i, nsched;
   struct guest_fast *g;
-  struct qman *q;
-  struct qman_entry *qm_entry;
+  struct scheduler *sched;
+  struct ready_entry *re;
+  struct sched_entry *se;
 
-  for (i = 0; i < ctx->n_guests; i++)
+  nsched = 0;
+  for (i = 0; i < ctx->n_guests && nsched < BATCH_SIZE; i++)
   {
     g = &ctx->guests[i];
-    q = &g->proto.qman;
-    qm_entry = &q->entries[q->free_head];
-    g->proto.act_txsched(qm_entry);
-    qman_add(q, qm_entry);
+    sched = &g->proto.sched;
+    re = &ready_entries[nsched];
+    se = sched_head(sched);
+
+    /* This protocol has nothing to schedule */
+    if (se == NULL)
+      continue;
+
+    /* Run the custom transmit scheduler for this protocol */
+    g->proto.act_txsched(se, re);
+
+    /* Protocol actually staged something to the ready queue */
+    if (re->id != SCHED_ID_INVALID)
+    {
+      sched_pop(sched);
+      nsched++;
+    }
   }
 
   return 0;
@@ -159,21 +175,51 @@ int poll_qman(struct fast_context *ctx)
 
 int poll_queues(struct fast_context *ctx)
 {
-  int i, j;
+  int i, ret, ndeq;
+  uint16_t qid;
   struct guest_fast *g;
   struct proto_queue_fast *q;
+  struct queue_entry *qe;
+  struct sched_entry *se;
+  struct scheduler *sched;
 
+  ndeq = 0;
   for (i = 0; i < ctx->n_guests; i++)
   {
     g = &ctx->guests[i];
-    for (j = 0; j < g->proto.nqueues; j++)
+    qid = g->proto.queues_head;
+    while (qid != PROTOQ_ID_INVALID && ndeq < BATCH_SIZE)
     {
-      q = &g->proto.queues[j];
-      if (!q->active)
+      q = &g->proto.queues[qid];
+        
+      /* If there are no messages in queue continue */
+      qe = queue_head(&q->dq);
+      if (qe == NULL)
+      {
+        qid = q->next;
         continue;
-      
+      }
+
+      ndeq++;
+      sched = &g->proto.sched;
+      se = &sched->entries[sched->free_head];
+
       /* Execute custom dequeue procedure */
-      g->proto.event_deq(j, NULL);
+      g->proto.event_deq(q->id, qe, se);
+
+      /* Protocol signaled it wants to stage entry to the scheduler */
+      if (se->id != SCHED_ID_INVALID)
+        sched_add(sched, se);
+
+      /* Pop the queue */
+      ret = queue_dequeue(&q->dq);
+      if (ret != 0)
+      {
+        LOG_ERROR("failed to dequeue queue for proto=%d", g->id);
+        return -1;
+      }
+
+      qid = q->next;
     }
   }
   return 0;

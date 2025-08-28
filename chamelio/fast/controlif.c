@@ -1,10 +1,9 @@
 #include "fast.h"
 #include "queue.h"
 #include "udp_fast.h"
-#include "qman.h"
+#include "scheduler.h"
 
 static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
-static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe);
@@ -14,7 +13,7 @@ int controlif_poll(struct fast_context *ctx)
   uint8_t type;
   struct dqueue *q;
   struct queue_entry *qe;
-
+ 
   /* TODO: Poll up to batch size */
   q = ctx->ctl_fast_q;
   qe = queue_head(q);
@@ -29,10 +28,6 @@ int controlif_poll(struct fast_context *ctx)
       break;
     case QUEUE_NEW_GUEST_REQ:
       handle_new_guest(ctx, qe);
-      queue_dequeue(q);
-      break;
-    case QUEUE_NEW_QUEUE_REQ:
-      handle_new_queue(ctx, qe);
       queue_dequeue(q);
       break;
     case QUEUE_NEW_MAP_REQ:
@@ -69,6 +64,8 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
   /* TODO: Have a separate message to initialise protocol */
   g->proto.nqueues = 0;
   g->proto.nmaps = 0;
+  g->proto.queues_head = PROTOQ_ID_INVALID;
+  g->proto.queues_tail = PROTOQ_ID_INVALID;
 
   /* TODO: Add ebpf code here */
   g->proto.event_rx = NULL;
@@ -77,33 +74,9 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
   g->proto.act_txsched = NULL;
   
   /* Init qman */
-  qman_init(&g->proto.qman);
+  sched_init(&g->proto.sched);
 
   ctx->n_guests++;
-}
-
-static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe)
-{
-  uint16_t nqueues;
-  struct guest_fast *g;
-  struct proto_fast *p;
-  struct proto_queue_fast *q;
-
-  struct queue_new_queue_req *req = &qe->data.new_queue_req;
-
-  g = &ctx->guests[req->gid];
-  p = &g->proto;
-  nqueues = p->nqueues;
-
-  q = &p->queues[nqueues];
-  q->id = nqueues;
-  q->core = 0;
-  q->active = PROTOQ_DISABLED;
-  q->off = req->off;
-  q->proto = p;
-  q->size = req->size;
-  p->nqueues++;
-  LOG_DEBUG("created queue in fast-path with size=%d", req->size);
 }
 
 static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)
@@ -132,12 +105,34 @@ static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe)
   struct guest_fast *g;
   struct proto_fast *p;
   struct queue_enableq_req *req;
+  struct proto_queue_fast *q;
   
   req = &qe->data.enableq_req;
   g = &ctx->guests[req->gid];
   p = &g->proto;
   
-  p->queues[req->qid].active = PROTOQ_ENABLED;
+  /* Get uninitialised queue from protocol list */
+  q = &p->queues[req->qid];
+  q->id = req->qid;
+
+  /* Initialise dequeue struct */
+  q->dq.head = 0;
+  q->dq.size = req->size;
+  q->dq.off = req->off;
+  q->dq.entries = g->shm_base + req->off;
+  LOG_DEBUG("enabled queue off=%d", req->off);
+  
+  /* Add queue to protocol list */
+  if (p->queues_tail == PROTOQ_ID_INVALID)
+    p->queues_head = req->qid;
+  else
+    p->queues[p->queues_tail].next = req->qid;
+
+  q->prev = p->queues_tail;
+  q->next = PROTOQ_ID_INVALID;
+  p->queues_tail = req->qid;
+  p->nqueues++;
+  
   LOG_DEBUG("enabled queue qid=%d in core=%d", req->qid, req->core);
 }
 
@@ -146,11 +141,27 @@ static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe)
   struct guest_fast *g;
   struct proto_fast *p;
   struct queue_disableq_req *req;
-  
+  struct proto_queue_fast *q;
+
   req = &qe->data.disableq_req;
   g = &ctx->guests[req->gid];
   p = &g->proto;
   
-  p->queues[req->qid].active = PROTOQ_DISABLED;
-  LOG_DEBUG("disabled queue qid=%d in core=%d", req->qid, req->core);
+  q = &p->queues[req->qid];
+
+  if (p->queues_head == q->id)
+    p->queues_head = q->next;
+
+  if (p->queues_tail == q->id)
+    p->queues_tail = q->prev;
+
+  if (q->next != PROTOQ_ID_INVALID)
+    p->queues[q->next].prev = PROTOQ_ID_INVALID;
+
+  if (q->prev != PROTOQ_ID_INVALID)
+    p->queues[q->prev].next = PROTOQ_ID_INVALID;
+
+  q->next = PROTOQ_ID_INVALID;
+  q->prev = PROTOQ_ID_INVALID;
+  p->nqueues--;
 }

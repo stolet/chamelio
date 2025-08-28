@@ -72,8 +72,6 @@ struct queue_new_queue_req {
   uint8_t gid;
   /* Size of the queue in bytes */
   uint32_t size;
-  /* Offset for queue in shm */
-  uint64_t off;
   /* Pointer to queue struct in library */
   uint64_t opaque;
 } __attribute__((packed));
@@ -124,6 +122,10 @@ struct queue_enableq_req {
   uint16_t qid;
   /* Guest ID */
   uint16_t gid;
+  /* Queue offset in shared memory */
+  uint64_t off;
+  /* Queue size in bytes */
+  uint32_t size;
   /* Fast-path core to enable queue */
   uint16_t core;
 } __attribute__((packed));

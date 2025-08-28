@@ -40,7 +40,6 @@ int main (int argc, char **argv)
   if (ret < 0)
     abort();
 
-  while (1) {}
   // g = cham_connect_guest();
   // assert(g != NULL);
 

@@ -9,12 +9,17 @@
 #include "nic_fast.h" 
 #include "config.h"
 #include "queue.h"
-#include "qman.h"
+#include "scheduler.h"
 
 #define BATCH_SIZE 16
 
 #define PROTOQ_DISABLED 0
 #define PROTOQ_ENABLED 1
+#define PROTOQ_ID_INVALID UINT16_MAX
+
+/* We want the TXBUF_SIZE to be double the BATCH_SIZE so we can 
+   fit packets from the TX phase and ACKs sent in the receive phase */
+#define TXBUF_SIZE 2 * BATCH_SIZE
 
 /* Types of protocols supported by Chamelio */
 enum protocol_type {
@@ -23,9 +28,18 @@ enum protocol_type {
   PROTO_RDMA,
 };
 
-/* We want the TXBUF_SIZE to be double the BATCH_SIZE so we can 
-   fit packets from the TX phase and ACKs sent in the receive phase */
-#define TXBUF_SIZE 2 * BATCH_SIZE
+struct proto_queue_fast {
+  /* ID of this protocol queue */
+  uint16_t id;
+  /* Queue structure */
+  struct dqueue dq;
+  /* Next queue in active list */
+  uint16_t next;
+  /* Previous queue in list */
+  uint16_t prev;
+  /* Protocol this queue belongs to */
+  struct proto_fast *proto;
+};
 
 struct proto_map_fast {
   /* ID of this map in protocol */
@@ -40,25 +54,21 @@ struct proto_map_fast {
   struct proto_fast *proto;
 };
 
-struct proto_queue_fast {
-  /* ID of this protocol queue */
-  uint16_t id;
-  /* Core this queue is running */
-  uint16_t core;
-  /* Wether this queue is active or not */
-  uint8_t active;
-  /* Size of this queue in bytes */
-  uint32_t size;
-  /* Offset in shared memory to start of the queue */
-  uint64_t off;
-  /* Protocol this queue belongs to */
-  struct proto_fast *proto;
+struct ready_entry {
+  /* ID used by protocol to identify what should send */
+  uint64_t id;
+  /* How much data should be sent */
+  uint32_t ready;
 };
 
 struct proto_fast {
   /* Number of queues */
   uint16_t nqueues;
-  /* List of queues in shared memory */
+  /* Head of enabled queues */
+  uint16_t queues_head;
+  /* Tail of enabled queues */
+  uint16_t queues_tail;
+  /* List of enabled queues queues in shared memory */
   struct proto_queue_fast queues[MAX_PROTO_QUEUES];
 
   /* Number of maps in shared memory */
@@ -66,19 +76,19 @@ struct proto_fast {
   /* List of maps in shared memory */
   struct proto_map_fast maps[MAX_PROTO_MAPS];
 
-  /* Queue manager used to schedule data for this protocol */
-  struct qman qman;
+  /* TX scheduler for this protocol */
+  struct scheduler sched;
 
   /* Initialises the fast-path */
   int (*init_fp)(void *config);
   /* Processes one received packet */
   int (*event_rx)(void *pkt);
   /* Processes one scheduled packet for transmissiojn */
-  int (*event_tx)(void *pkt, struct qman_entry *qm_entry);
+  int (*event_tx)(void *pkt, struct ready_entry *re);
   /* Dequeue and process entry from a queue */
-  int (*event_deq)(int qid, struct queue_entry *q_entry);
+  int (*event_deq)(int qid, struct queue_entry *qe, struct sched_entry *se);
   /* Schedules packet for transmission */
-  int (*act_txsched)(struct qman_entry *qm_entry);
+  int (*act_txsched)(struct sched_entry *se, struct ready_entry *re);
 };
 
 struct guest_fast {
