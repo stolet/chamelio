@@ -22,7 +22,7 @@ int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
 int poll_tx(struct fast_context *ctx);
 int poll_control(struct fast_context *ctx);
-int poll_sched(struct fast_context *ctx, struct ready_entry *ready_entries);
+int poll_sched(struct fast_context *ctx, struct cham_ready_entry *ready_entries);
 
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, uint16_t thread_id,
@@ -38,7 +38,9 @@ int fast_context_init(struct fast_context *f_ctx,
   f_ctx->shm_base_internal= shm_base_internal;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
 
-  cfq = dqueue_new(config->cham_queue_len, cf_handle->addr, cf_handle->off);
+  cfq = dqueue_new(config->cham_queue_len, 
+      sizeof(struct queue_entry),
+      cf_handle->addr, cf_handle->off);
   if (cfq == NULL)
   {
     LOG_ERROR("failed to create fast to control path queue");
@@ -46,7 +48,8 @@ int fast_context_init(struct fast_context *f_ctx,
   }
   f_ctx->ctl_fast_q = cfq;
 
-  fcq = equeue_new(config->cham_queue_len, fc_handle->addr, fc_handle->off);
+  fcq = equeue_new(config->cham_queue_len, sizeof(struct queue_entry),
+      fc_handle->addr, fc_handle->off);
   if (fcq == NULL)
   {
     LOG_ERROR("failed to create control to fast path queue");
@@ -74,7 +77,7 @@ void fast_context_destroy()
 int fast_loop(struct fast_context *ctx)
 {
   int ret;
-  struct ready_entry ready_entries[BATCH_SIZE];
+  struct cham_ready_entry ready_entries[BATCH_SIZE];
 
   while(1) 
   {
@@ -139,13 +142,13 @@ int poll_rx(struct fast_context *ctx)
   return n;
 }
 
-int poll_sched(struct fast_context *ctx, struct ready_entry *ready_entries)
+int poll_sched(struct fast_context *ctx, struct cham_ready_entry *ready_entries)
 {
   int i, nsched;
   struct guest_fast *g;
   struct scheduler *sched;
-  struct ready_entry *re;
-  struct sched_entry *se;
+  struct cham_ready_entry *re;
+  struct cham_sched_entry *se;
 
   nsched = 0;
   for (i = 0; i < ctx->n_guests && nsched < BATCH_SIZE; i++)
@@ -180,7 +183,7 @@ int poll_queues(struct fast_context *ctx)
   struct guest_fast *g;
   struct proto_queue_fast *q;
   struct queue_entry *qe;
-  struct sched_entry *se;
+  struct cham_sched_entry *se;
   struct scheduler *sched;
 
   ndeq = 0;

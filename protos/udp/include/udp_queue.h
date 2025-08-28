@@ -3,11 +3,11 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <cham_fast.h>
 
 #include "shmalloc.h"
 #include "queue.h"
 
-#define MAX_FP_CORES 16
 
 /* Type of queue entries */
 enum udp_queue_type {
@@ -65,20 +65,28 @@ struct udp_queue_new_actx_res {
   uint32_t n_fp_cores;
   /* Size of shm region */
   uint32_t shm_len;
-  /* Size of app->slow queue */
-  uint32_t as_len;
+  /* NUmber of elements app->slow queue */
+  uint32_t as_nelems;
+  /* Size of elements app->slow queue */
+  uint32_t as_elsize;
   /* Offset in shm of app->slow queue */
   uint64_t as_off;
-  /* Size of slow->app queue */
-  uint32_t sa_len;
+  /* Number of elements slow->app queue */
+  uint32_t sa_nelems;
+  /* Size of elements slow->app queue */
+  uint32_t sa_elsize;
   /* Offset in shm of slow->app queue */
   uint64_t sa_off;
-  /* Size of app->fast queues */
-  uint32_t af_len;
+  /* Number of elements app->fast queues */
+  uint32_t af_nelems;
+  /* Size of elements app->fast queues */;
+  uint32_t af_elsize;
   /* Offsets for app->fast bump queues */
   uint64_t af_offs[MAX_FP_CORES];
-  /* Size of fast->app queues */
-  uint32_t fa_len;
+  /* Number of elements fast->app queues */
+  uint32_t fa_nelems;
+  /* Size of elements fast->app queues */
+  uint32_t fa_elsize;
   /* Offsets for fast->app bump queues */
   uint64_t fa_offs[MAX_FP_CORES];
 } __attribute__((packed));
@@ -118,14 +126,5 @@ struct udp_queue_entry {
    probably doesn't have to be in udp_queue.h */
 /* We want queue entries to be cache line sized for faster retrieval */
 STATIC_ASSERT(sizeof(struct udp_queue_entry) == 512, udp_queue_entry_size);
-
-/* Advances the tail pointer for the queue */
-int udp_queue_enqueue(struct equeue *q, uint8_t type);
-/* Advances the head pointer for the queue */
-int udp_queue_dequeue(struct dqueue *q);
-/* Returns a pointer to the queue entry at the head of the queue */
-struct udp_queue_entry * udp_queue_head(struct dqueue *q);
-/* Returns a pointer to the next empty queue entry at the tail of the queue */
-struct udp_queue_entry * udp_queue_tail(struct equeue *q);
 
 #endif

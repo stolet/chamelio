@@ -1,4 +1,3 @@
-subdir('queue')
 subdir('fast')
 subdir('slow')
 subdir('lib')

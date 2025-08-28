@@ -81,7 +81,7 @@ int poll_apps(struct udp_slow_context *ctx)
     for (j = 0; j < ctx->apps[i].n_ctxs; j++)
     {
       q = ctx->apps[i].ctxs[j].app_slow_q;
-      qe = udp_queue_head(q);
+      qe = queue_head(q);
 
       if (qe == NULL)
         return 0;
@@ -93,7 +93,7 @@ int poll_apps(struct udp_slow_context *ctx)
           break;
         case UDP_QUEUE_NEW_SOCK_REQ:
           handle_new_sock(ctx, &ctx->apps[i].ctxs[j], qe);
-          udp_queue_dequeue(q);
+          queue_dequeue(q);
           break;
         default:
           LOG_WARN("unknown queue tryt type from app" 
@@ -115,25 +115,22 @@ int handle_new_sock(struct udp_slow_context *ctx,
   struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
 {
   int ret;
-  struct udp_sock_mape *sock;
+  struct udp_sock *sock;
   struct proto_queue_lib *protoq;
   struct udp_queue_entry *qe_res;
   struct udp_queue_new_sock_req *req;
   struct udp_queue_new_sock_res *res;
 
-  struct udp_off_mape *offs_table = ctx->proto->shm_base + 
-      actx->app->offs_map->off;
-  struct udp_sock_mape *socks_table = ctx->proto->shm_base + 
-      offs_table[MTYPE_SOCKS].off;
-  
-  if (offs_table[MTYPE_SOCKS].n >= offs_table[MTYPE_SOCKS].max_n)
+  struct udp_sock *socks_map = ctx->proto->shm_base + actx->app->socks_map->off;
+
+  if (actx->app->n_socks >= MAX_SOCKETS)
   {
     LOG_ERROR("Socket map is full");
     return -1;
   }
 
   req = &qe_req->data.new_sock_req;
-  qe_res = udp_queue_tail(actx->slow_app_q);
+  qe_res = queue_tail(actx->slow_app_q);
   if (qe_res == NULL)
   {
     LOG_ERROR("failed to get tail of slow->app queue");
@@ -141,55 +138,47 @@ int handle_new_sock(struct udp_slow_context *ctx,
   }
   res = &qe_res->data.new_sock_res;
   res->opaque = req->opaque;
-  res->sock_id = offs_table[MTYPE_SOCKS].n;
+  res->sock_id = actx->app->n_socks;
   res->core = 0;
 
-  sock = &socks_table[res->sock_id];
-  sock->id = offs_table[MTYPE_SOCKS].n;
+  sock = &socks_map[res->sock_id];
+  sock->id = res->sock_id;
   sock->next_id = ID_INVALID;
   sock->core = 0;
   sock->app_bump_qid = actx->app_bump_qs[0]->id;
   sock->opaque = req->opaque;
-  
-  if (offs_table[MTYPE_SOCKS].tail == ID_INVALID)
-    offs_table[MTYPE_SOCKS].head = sock->id;
-  else
-    socks_table[offs_table[MTYPE_SOCKS].tail].next_id = sock->id;
-
-  offs_table[MTYPE_SOCKS].tail = sock->id;
-  offs_table[MTYPE_SOCKS].n++;
 
   /* Create queue for RX buffer */
   /* TODO: Have size of buffer be a parameter */
-  protoq = cham_new_queue(ctx->proto, 16384);
+  protoq = cham_new_queue(ctx->proto, 256, 64);
   if (protoq == NULL)
   {
     LOG_ERROR("failed to create new queue");
     return -1;
   }
   res->rx_qid = protoq->id;
-  res->rx_len = protoq->size;
+  res->rx_len = protoq->elsize * protoq->nelems;
   res->rx_off = protoq->off;
   sock->rx_qid = protoq->id;
-  sock->rx_len = protoq->size;
+  sock->rx_len = protoq->elsize * protoq->nelems;
   sock->rx_avail = 0;
   sock->rx_head = 0;
   sock->rx_buf = ctx->proto->shm_base + protoq->off;
 
   /* Create queue for TX buffer */
   /* TODO: Have size of buffer be a parameter */
-  protoq = cham_new_queue(ctx->proto, 16384);
+  protoq = cham_new_queue(ctx->proto, 256, 64);
   res->tx_qid = protoq->id;
-  res->tx_len = protoq->size;
+  res->tx_len = protoq->nelems * protoq->elsize;
   res->tx_off = protoq->off;
   sock->tx_qid = protoq->id;
-  sock->tx_len = protoq->size;
+  sock->tx_len = protoq->nelems * protoq->elsize;
   sock->tx_avail = 0;
   sock->tx_head = 0;
   sock->tx_buf = ctx->proto->shm_base + protoq->off;
 
   /* Send response to app */
-  ret = udp_queue_enqueue(actx->slow_app_q, UDP_QUEUE_NEW_SOCK_RES);
+  ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_NEW_SOCK_RES);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue new socket response");

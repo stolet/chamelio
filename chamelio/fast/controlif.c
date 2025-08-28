@@ -117,10 +117,10 @@ static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe)
 
   /* Initialise dequeue struct */
   q->dq.head = 0;
-  q->dq.size = req->size;
+  q->dq.nelems = req->nelems;
+  q->dq.elsize = req->elsize;
   q->dq.off = req->off;
   q->dq.entries = g->shm_base + req->off;
-  LOG_DEBUG("enabled queue off=%d", req->off);
   
   /* Add queue to protocol list */
   if (p->queues_tail == PROTOQ_ID_INVALID)

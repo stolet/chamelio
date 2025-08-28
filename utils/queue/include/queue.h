@@ -62,16 +62,20 @@ struct queue_new_proto_res {
   uint32_t n_fp_cores;
   /* Size of shm region */
   uint32_t shm_len;
-  /* Size of Guest <-> Control queues */
-  uint32_t guestq_len;
+  /* Number of elements in Guest <-> Control queues */
+  uint32_t guestq_nelems;
+  /* Element size of Guest <-> Control queues */
+  uint32_t guestq_elsize;
 } __attribute__((packed));
 
 /* Request to create queues for the protocol */
 struct queue_new_queue_req {
-  /* Gueste ID for this protocol */
+  /* Guest ID for this protocol */
   uint8_t gid;
-  /* Size of the queue in bytes */
-  uint32_t size;
+  /* Number of elements in the queue */
+  uint32_t nelems;
+  /* Size of each element in the queue */
+  size_t elsize;
   /* Pointer to queue struct in library */
   uint64_t opaque;
 } __attribute__((packed));
@@ -80,8 +84,10 @@ struct queue_new_queue_req {
 struct queue_new_queue_res {
   /* ID of the queue */
   uint32_t qid;
-  /* Size of queue created */
-  uint32_t size;
+  /* Number of elements in the queue */
+  uint32_t nelems;
+  /* Size of each element in the queue */
+  size_t elsize;
   /* Offset for each queue in shm */
   uint64_t off;
   /* Pointer to queue struct in library */
@@ -124,8 +130,10 @@ struct queue_enableq_req {
   uint16_t gid;
   /* Queue offset in shared memory */
   uint64_t off;
-  /* Queue size in bytes */
-  uint32_t size;
+  /* Number of elements in queue */
+  uint32_t nelems;
+  /* Size of elements in queue */
+  uint32_t elsize;
   /* Fast-path core to enable queue */
   uint16_t core;
 } __attribute__((packed));
@@ -166,8 +174,10 @@ STATIC_ASSERT(sizeof(struct queue_entry) == 64, queue_entry_size);
 struct equeue {
   /* Only the side that enqueues updates the tail */
   uint32_t tail;
-  /* Size of the queue in bytes */
-  uint32_t size;
+  /* Number of elements in the queue */
+  uint32_t nelems;
+  /* Size of each element in the queue */
+  size_t elsize;
   /* Offset from the shared memory region to start of the queue */
   uint64_t off;
   /* List of entries that points to the start of the queue in the shm region */
@@ -178,8 +188,10 @@ struct equeue {
 struct dqueue {
   /* Only the side that dequeues updates the head */
   uint32_t head;
-  /* Size of the queue in bytes */
-  uint32_t size;
+  /* Number of elements in the queue */
+  uint32_t nelems;
+  /* Size of each element in the queue */
+  size_t elsize;
   /* Offset from the shared memory region to start of the queue */
   uint64_t off;
   /* List of entries that points to the start of the queue in the shm region */
@@ -188,17 +200,19 @@ struct dqueue {
 
 /* Creates a new queue that can only enqueue entries. 
    Prevents race conditions */
-struct equeue * equeue_new(uint32_t size, void *addr, uint64_t off);
+struct equeue * equeue_new(uint32_t nelems, size_t elsize, 
+    void *addr, uint64_t off);
 /* Creates a new queue that can only dequeue entries. 
    Prevents race conditions */
-struct dqueue * dqueue_new(uint32_t size, void *addr, uint64_t off);
+struct dqueue * dqueue_new(uint32_t nelems, size_t elsize, 
+    void *addr, uint64_t off);
 /* Advances the tail pointer for the queue */
 int queue_enqueue(struct equeue *q, uint8_t type);
 /* Advances the head pointer for the queue */
 int queue_dequeue(struct dqueue *q);
 /* Returns a pointer to the queue entry at the head of the queue */
-struct queue_entry * queue_head(struct dqueue *q);
+void * queue_head(struct dqueue *q);
 /* Returns a pointer to the next empty queue entry at the tail of the queue */
-struct queue_entry * queue_tail(struct equeue *q);
+void * queue_tail(struct equeue *q);
 
 #endif

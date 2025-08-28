@@ -5,6 +5,7 @@
 
 #include <rte_ethdev.h>
 
+#include "cham_fast.h"
 #include "nic.h"
 #include "nic_fast.h" 
 #include "config.h"
@@ -54,13 +55,6 @@ struct proto_map_fast {
   struct proto_fast *proto;
 };
 
-struct ready_entry {
-  /* ID used by protocol to identify what should send */
-  uint64_t id;
-  /* How much data should be sent */
-  uint32_t ready;
-};
-
 struct proto_fast {
   /* Number of queues */
   uint16_t nqueues;
@@ -79,16 +73,17 @@ struct proto_fast {
   /* TX scheduler for this protocol */
   struct scheduler sched;
 
+  /* TODO: Pass protocol handler */
   /* Initialises the fast-path */
   int (*init_fp)(void *config);
   /* Processes one received packet */
   int (*event_rx)(void *pkt);
   /* Processes one scheduled packet for transmissiojn */
-  int (*event_tx)(void *pkt, struct ready_entry *re);
+  int (*event_tx)(void *pkt, struct cham_ready_entry *re);
   /* Dequeue and process entry from a queue */
-  int (*event_deq)(int qid, struct queue_entry *qe, struct sched_entry *se);
+  int (*event_deq)(int qid, struct queue_entry *qe, struct cham_sched_entry *se);
   /* Schedules packet for transmission */
-  int (*act_txsched)(struct sched_entry *se, struct ready_entry *re);
+  int (*act_txsched)(struct cham_sched_entry *se, struct cham_ready_entry *re);
 };
 
 struct guest_fast {

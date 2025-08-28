@@ -15,8 +15,10 @@
 struct proto_queue_lib {
   /* ID of this queue */
   uint16_t id;
-  /* Size of the queue */
-  uint32_t size;
+  /* Number of elements in the queue */
+  uint32_t nelems;
+  /* Size of elements in the queue */
+  uint32_t elsize;
   /* Offset in shared memory to start of queue */
   uint64_t off;
   /* Protocol this queue belongs to */
@@ -80,7 +82,8 @@ struct guest_lib * cham_connect_guest();
 struct proto_lib* cham_new_proto(struct guest_lib *g, uint32_t shmsize);
 
 /* Creates a queue of the specified size in the shared memory of the protocol */
-struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size);
+struct proto_queue_lib * cham_new_queue(struct proto_lib *p, 
+    uint32_t nelems, uint32_t elsize);
 /* Creates a new map in shared memory */
 struct proto_map_lib * cham_new_map(struct proto_lib *p, 
     uint32_t nelems, uint32_t elsize);

@@ -10,6 +10,7 @@
 #include <cham_lib.h>
 
 #include "udp_lib.h"
+#include "queue.h"
 #include "udp_queue.h"
 #include "log.h"
 #include "uxsocket.h"
@@ -178,7 +179,8 @@ int udp_ctx_new()
   while (udp->shm_base == NULL) {}
 
   /* Set queue from app to slow-path */
-  eq = equeue_new(res->as_len, udp->shm_base + res->as_off, res->as_off);
+  eq = equeue_new(res->as_nelems, res->as_elsize,
+      udp->shm_base + res->as_off, res->as_off);
   if (eq == NULL)
   {
     LOG_ERROR("failed to create queue from app to slow-path");
@@ -187,7 +189,7 @@ int udp_ctx_new()
   ctx->app_slow_q = eq;
   
   /* Set queue from slow-path to app */
-  dq = dqueue_new(res->sa_len, udp->shm_base + res->sa_off, res->sa_off);
+  dq = dqueue_new(res->sa_nelems, res->sa_elsize,udp->shm_base + res->sa_off, res->sa_off);
   if (dq == NULL)
   {
     LOG_ERROR("failed to create queue from slow-path to app");
@@ -215,7 +217,7 @@ int udp_ctx_new()
   /* Create each queue between app and fast-path */
   for (i = 0; i < res->n_fp_cores; i++)
   {
-    eq = equeue_new(res->af_len, 
+    eq = equeue_new(res->af_nelems, res->af_elsize,
         udp->shm_base + res->af_offs[i], res->af_offs[i]);
     if (eq == NULL)
     {
@@ -224,7 +226,7 @@ int udp_ctx_new()
     }
     eq_list[i] = eq;
 
-    dq = dqueue_new(res->fa_len,
+    dq = dqueue_new(res->fa_nelems, res->fa_elsize,
         udp->shm_base + res->fa_offs[i], res->fa_offs[i]);
     if (dq == NULL)
     {
@@ -265,7 +267,7 @@ int udp_socket()
   /* Create socket in slow-path */
   assert(udp_ctx != NULL);
   q = udp_ctx->app_slow_q;
-  qe = udp_queue_tail(q);
+  qe = queue_tail(q);
   if (qe == NULL)
   {
     LOG_ERROR("failed to get queue tail");
@@ -274,7 +276,7 @@ int udp_socket()
 
   req = &qe->data.new_sock_req;
   req->opaque = (uint64_t) sock;
-  ret = udp_queue_enqueue(q, UDP_QUEUE_NEW_SOCK_REQ);
+  ret = queue_enqueue(q, UDP_QUEUE_NEW_SOCK_REQ);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue new sock req");
@@ -340,7 +342,7 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
     
   /* Send bump message to update TX available */
   q = udp_ctx->app_fast_qs[sock->core];
-  qe = udp_queue_tail(q);
+  qe = queue_tail(q);
   if (qe == NULL)
   {
     LOG_ERROR("failed to get queue tail");
@@ -412,7 +414,7 @@ int udp_recvfrom(int sockfd, void *buf, size_t len,
 
   /* Send bump message to update RX head */
   q = udp_ctx->app_fast_qs[sock->core];
-  qe = udp_queue_tail(q);
+  qe = queue_tail(q);
   if (qe == NULL)
   {
     LOG_ERROR("failed to get queue tail");
@@ -434,7 +436,7 @@ int udp_poll_slow()
   struct udp_queue_entry *qe;
 
   q = udp_ctx->slow_app_q;
-  qe = udp_queue_head(q);
+  qe = queue_head(q);
 
   /* Queue is empty */
   if (qe == NULL)

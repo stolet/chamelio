@@ -114,7 +114,8 @@ int main (int argc, char **argv)
   /* Allocate memory for queues between the control path and the fast path */
   for (i = 0; i < config->fp_cores_max; i++)
   {
-    ret = shmalloc_alloc(alloc, config->cham_queue_len, &sh);
+    ret = shmalloc_alloc(alloc, config->cham_queue_len * 
+        sizeof(struct queue_entry), &sh);
     if (ret != 0)
     {
       LOG_ERROR("failed to allocated memory in"
@@ -124,7 +125,8 @@ int main (int argc, char **argv)
     memset(sh->addr, 0, config->cham_queue_len);
     fs_handles[i] = sh;
 
-    ret = shmalloc_alloc(alloc, config->cham_queue_len, &sh);
+    ret = shmalloc_alloc(alloc, config->cham_queue_len * 
+        sizeof(struct queue_entry), &sh);
     if (ret != 0)
     {
       LOG_ERROR("failed to allocated memory in" 

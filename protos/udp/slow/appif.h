@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#include "queue.h"
 #include "udp_queue.h"
 #include "udp_slow.h"
 

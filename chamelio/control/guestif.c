@@ -240,7 +240,8 @@ static int uxsocket_accept(struct control_context *ctx)
   g->alloc = alloc;
 
   /* Create queue that holds messages from guest to Chamelio */
-  ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len, &guest_cham_handle);
+  ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len * 
+      sizeof(struct queue_entry), &guest_cham_handle);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocate memory in shared memory");
@@ -249,6 +250,7 @@ static int uxsocket_accept(struct control_context *ctx)
   memset(guest_cham_handle->addr, 0, ctx->config->agt_queue_len);
 
   guest_cham_q = dqueue_new(ctx->config->agt_queue_len, 
+      sizeof(struct queue_entry),
       guest_cham_handle->addr, guest_cham_handle->off);
   if (guest_cham_q == NULL)
   {
@@ -259,7 +261,8 @@ static int uxsocket_accept(struct control_context *ctx)
   g->guest_cham_q = guest_cham_q;
 
   /* Create queue that holds messages from Chamelio to guest */
-  ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len, &cham_guest_handle);
+  ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len * 
+    sizeof(struct queue_entry), &cham_guest_handle);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocated memory in shared memory");
@@ -268,13 +271,15 @@ static int uxsocket_accept(struct control_context *ctx)
   memset(cham_guest_handle->addr, 0, ctx->config->agt_queue_len);
 
   cham_guest_q = equeue_new(ctx->config->agt_queue_len, 
+      sizeof(struct queue_entry),
       cham_guest_handle->addr, cham_guest_handle->off);
   if (cham_guest_q == NULL)
   {
     LOG_ERROR("failed to create chamelio->guest queue");
     goto free_cham_guest_handle;
   }
-  assert(cham_guest_q->off == ctx->config->agt_queue_len);
+  assert(cham_guest_q->off == 
+      ctx->config->agt_queue_len * sizeof(struct queue_entry));
   g->cham_guest_q = cham_guest_q;
 
   /* Add connection to epoll */
@@ -411,7 +416,8 @@ static void uxsocket_receive(struct control_context *ctx, struct guest_event *ge
   /* Initialise response */
   gev->proto_res.n_fp_cores = ctx->config->fp_cores_max;
   gev->proto_res.shm_len = ctx->config->shm_len;
-  gev->proto_res.guestq_len = ctx->config->agt_queue_len;
+  gev->proto_res.guestq_nelems = ctx->config->agt_queue_len;
+  gev->proto_res.guestq_elsize = sizeof(struct queue_entry);
 
   /* Send out response */
   res_sz = sizeof(struct queue_new_proto_res);

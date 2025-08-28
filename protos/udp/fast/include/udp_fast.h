@@ -2,6 +2,7 @@
 #define UDP_FAST_H_
 
 #include "utils.h"
+#include "cham_fast.h"
 
 /*** ETH ***/
 
@@ -105,9 +106,10 @@ struct udp_pkt {
   struct udp_hdr udp;
 } __attribute__ ((packed));
 
-int udp_event_rx(void *pkt, void *shm, void *map);
-int udp_event_tx(void *pkt, void *shm, void *map);
-int udp_event_deq(int qid, void *shm, void *map);
-int udp_act_txsched(int n, void *shm, void *map);
+int udp_init_fp(void *config);
+int udp_event_rx(void *pkt);
+int udp_event_tx(void *pkt, struct cham_ready_entry *re);
+int udp_event_deq(int qid, struct queue_entry *qe, struct cham_sched_entry *se);
+int udp_act_txsched(struct cham_sched_entry *se, struct cham_ready_entry *re);
 
 #endif

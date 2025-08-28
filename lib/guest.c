@@ -156,14 +156,14 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   }
 
   /* Create queue for messages from guest to the control-path */
-  ret = shmalloc_alloc(alloc, res->guestq_len, &sh);
+  ret = shmalloc_alloc(alloc, res->guestq_nelems * res->guestq_elsize, &sh);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocate memory for queue");
     return NULL;
   }
 
-  eq = equeue_new(sh->len, sh->addr, sh->off);
+  eq = equeue_new(res->guestq_nelems, res->guestq_elsize, sh->addr, sh->off);
   if (eq == NULL)
   {
     LOG_ERROR("failed to create queue");
@@ -176,14 +176,14 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   assert(eq->off == 0);
 
   /* Create queue for messages from control-path to the guest */
-  ret = shmalloc_alloc(alloc, res->guestq_len, &sh);
+  ret = shmalloc_alloc(alloc, res->guestq_nelems * res->guestq_elsize, &sh);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocate memory for queue");
     return NULL;
   }
 
-  dq = dqueue_new(sh->len, sh->addr, sh->off);
+  dq = dqueue_new(res->guestq_nelems, res->guestq_elsize, sh->addr, sh->off);
   if (dq == NULL)
   {
     LOG_ERROR("failed to allocate memory for queue");
@@ -193,12 +193,13 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
 
   /* Queue from the control path to the guest should always be the
      second thing allocated in the shared memory region */
-  assert(dq->off == res->guestq_len);
+  assert(dq->off == (res->guestq_nelems * res->guestq_elsize));
 
   return p;
 }
 
-struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size)
+struct proto_queue_lib * cham_new_queue(struct proto_lib *p, 
+    uint32_t nelems, uint32_t elsize)
 {
   int ret;
   uint16_t nqueues;
@@ -217,12 +218,14 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size)
   }
 
   req = &qe->data.new_queue_req;
-  req->size = size;
+  req->nelems = nelems;
+  req->elsize = elsize;
   pq = &p->queues[nqueues];
   req->opaque = (uint64_t) pq;
 
   /* Set to 0 so we can check it was initialised when we poll control */
-  pq->size = 0;
+  pq->elsize = 0;
+  pq->nelems = 0;
 
   ret = queue_enqueue(q, QUEUE_NEW_QUEUE_REQ);
   if (ret != 0)
@@ -234,7 +237,7 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p, uint32_t size)
 
   /* Poll waiting for response */
   /* TODO: Make this async instead of blocking here */
-  while (pq->size == 0)
+  while (pq->nelems == 0)
     cham_poll_control(p);
 
   return &p->queues[nqueues];
@@ -281,7 +284,7 @@ struct proto_map_lib * cham_new_map(struct proto_lib *p,
   while (m->nelems == 0)
     cham_poll_control(p);
 
-  return &p->maps[nmaps];;
+  return &p->maps[nmaps];
 }
 
 int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
@@ -382,7 +385,8 @@ static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
   q = (struct proto_queue_lib *) res->opaque;
   q->id = res->qid;
   q->off = res->off;
-  q->size = res->size;
+  q->elsize = res->elsize;
+  q->nelems = res->nelems;
   q->proto = p;
   p->nqueues++;
 

@@ -2,6 +2,7 @@
 #define UDP_SLOW_H_
 
 #include <cham_lib.h>
+#include <cham_fast.h>
 
 #include "udp.h"
 
@@ -27,8 +28,10 @@ struct udp_app_slow {
   uint8_t n_ctxs;
   /* List of application contexts */
   struct udp_app_context_slow ctxs[MAX_CTXS];
-  /* Map of offsets to different Chamelio maps */
-  struct proto_map_lib *offs_map;
+  /* Number of sockets registered */
+  uint32_t n_socks;
+  /* Chamelio socket map */
+  struct proto_map_lib *socks_map;
 };
 
 struct udp_slow_context {

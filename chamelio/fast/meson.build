@@ -17,6 +17,7 @@ deps = [
   dependency('queue_dep'),
   dependency('chamelio_dep'),
   dependency('udp_fast_dep'),
+  dependency('chamelio_lib'),
 ]
 
 fast_lib = static_library(
@@ -30,6 +31,7 @@ fast_lib = static_library(
 fast_dep = declare_dependency(
   link_with : fast_lib,
   include_directories : fast_inc,
+  dependencies: deps,
 )
 
 meson.override_dependency('fast_dep', fast_dep)

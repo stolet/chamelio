@@ -1,8 +1,7 @@
-udp_lib_inc = include_directories('include')
+udp_lib_inc = include_directories('include', '../include')
 
 deps = [
   dependency('queue_dep'),
-  dependency('udp_queue_dep'),
   dependency('chamelio_lib'),
 ]
 

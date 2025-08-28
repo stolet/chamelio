@@ -12,7 +12,7 @@
 #include "log.h"
 #include "appif.h"
 #include "udp_slow.h"
-#include "udp_queue.h"
+#include "queue.h"
 #include "uxsocket.h"
 
 #define EP_LISTEN_APP 1
@@ -176,9 +176,7 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   struct epoll_event ev;
   struct udp_app_slow *a;
   struct app_event *aev;
-  struct proto_map_lib *socks_map, *offs_map, *ready_map;
-  struct proto_map_lib *sched_map, *app_bump_map, *fast_bump_map;
-  struct udp_off_mape *offs_table;
+  struct proto_map_lib *socks_map;
 
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));
@@ -212,104 +210,17 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   a = &ctx->apps[ctx->n_apps];
   a->id = ctx->n_apps;
   a->n_ctxs = 0;
-
-  /* Create map used to hold offsets to other maps.
-     This must always be the first map created
-     because the fast-path uses index 0 to access it */
-  offs_map = cham_new_map(ctx->proto, MAX_OFFS, 
-      sizeof(struct udp_off_mape));
-  if (offs_map == NULL)
-  {
-    LOG_ERROR("faield to create map to hold offsets");
-    goto free_aev;
-  }
-  a->offs_map = offs_map;
-  offs_table = ctx->proto->shm_base + offs_map->off;
+  a->n_socks = 0;
 
   /* Create map used to hold sockets */
   socks_map = cham_new_map(ctx->proto, MAX_SOCKETS, 
-      sizeof(struct udp_sock_mape));
+      sizeof(struct udp_sock));
   if (socks_map == NULL)
   {
     LOG_ERROR("failed to create map to hold sockets");
     goto free_aev;
   }
-
-  /* Create map used to hold scheduler data */
-  sched_map = cham_new_map(ctx->proto, MAX_SCHED, 
-      sizeof(struct udp_txsched_mape));
-  if (sched_map == NULL)
-  {
-    LOG_ERROR("failed to create map to hold tx sched");
-    goto free_aev;
-  }
-
-  /* Create map used to hold data ready to transmit */
-  ready_map = cham_new_map(ctx->proto, MAX_READY, 
-      sizeof(struct udp_txready_mape));
-  if (ready_map == NULL)
-  {
-    LOG_ERROR("failed to create map to hold tx ready");
-    goto free_aev;
-  }
-  
-  /* Create map used to hold list of queues to bump app */
-  app_bump_map = cham_new_map(ctx->proto, MAX_PROTO_QUEUES, 
-      sizeof(struct udp_app_bump_mape));
-  if (app_bump_map == NULL)
-  {
-    LOG_ERROR("failed to create map to hold app bump queues");
-    goto free_aev;
-  }
-
-  /* Create map used to hold list of queues to bump fast-path */
-  fast_bump_map = cham_new_map(ctx->proto, MAX_PROTO_QUEUES, 
-      sizeof(struct udp_fast_bump_mape));
-  if (fast_bump_map == NULL)
-  {
-    LOG_ERROR("failed to create map to hold fast-path bump queues");
-    goto free_aev;
-  }
-
-  /* Add sockets map to offset table */
-  offs_table[MTYPE_SOCKS].head = ID_INVALID;
-  offs_table[MTYPE_SOCKS].tail = ID_INVALID;
-  offs_table[MTYPE_SOCKS].id = MTYPE_SOCKS;
-  offs_table[MTYPE_SOCKS].off = socks_map->off;
-  offs_table[MTYPE_SOCKS].n = 0;
-  offs_table[MTYPE_SOCKS].max_n = socks_map->nelems;
-
-  /* Add scheduler map to offset table */
-  offs_table[MTYPE_TXSCHED].head = ID_INVALID;
-  offs_table[MTYPE_TXSCHED].tail = ID_INVALID;
-  offs_table[MTYPE_TXSCHED].id = MTYPE_SOCKS;
-  offs_table[MTYPE_TXSCHED].off = sched_map->off;
-  offs_table[MTYPE_TXSCHED].n = 0;
-  offs_table[MTYPE_TXSCHED].max_n = sched_map->nelems;
-  
-  /* Add tx ready map to offset table */
-  offs_table[MTYPE_TXREADY].head = ID_INVALID;
-  offs_table[MTYPE_TXREADY].tail = ID_INVALID;
-  offs_table[MTYPE_TXREADY].id = MTYPE_TXREADY;
-  offs_table[MTYPE_TXREADY].off = ready_map->off;
-  offs_table[MTYPE_TXREADY].n = 0;
-  offs_table[MTYPE_TXREADY].max_n = ready_map->nelems;
-  
-  /* Add app bump queue map to offset table */
-  offs_table[MTYPE_APP_BUMPQ].head = ID_INVALID;
-  offs_table[MTYPE_APP_BUMPQ].tail = ID_INVALID;
-  offs_table[MTYPE_APP_BUMPQ].id = MTYPE_APP_BUMPQ;
-  offs_table[MTYPE_APP_BUMPQ].off = app_bump_map->off;
-  offs_table[MTYPE_APP_BUMPQ].n = 0;
-  offs_table[MTYPE_APP_BUMPQ].max_n = app_bump_map->nelems;
-
-  /* Add fast-path bump queue map to offset table */
-  offs_table[MTYPE_FAST_BUMPQ].head = ID_INVALID;
-  offs_table[MTYPE_FAST_BUMPQ].tail = ID_INVALID;
-  offs_table[MTYPE_FAST_BUMPQ].id = MTYPE_FAST_BUMPQ;
-  offs_table[MTYPE_FAST_BUMPQ].off = fast_bump_map->off;
-  offs_table[MTYPE_FAST_BUMPQ].n = 0;
-  offs_table[MTYPE_FAST_BUMPQ].max_n = fast_bump_map->nelems;
+  a->socks_map = socks_map;
 
   /* Add connection to epoll */
   aev->type = EP_APP;
@@ -354,9 +265,6 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
   struct equeue *eq;
   struct dqueue *dq;
   struct proto_queue_lib *q;
-  struct udp_off_mape *offs_table;
-  struct udp_app_bump_mape *app_bump_table;
-  struct udp_fast_bump_mape *fast_bump_table;
   struct udp_app_context_slow *actx;
 
   struct iovec iov = {
@@ -410,34 +318,35 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
   actx = &aev->app->ctxs[aev->app->n_ctxs];
 
   /* Create queue for messages app->slow */
-  q = cham_new_queue(ctx->proto, 16384);
+  q = cham_new_queue(ctx->proto, 128, sizeof(struct udp_queue_entry));
   if (q == NULL)
   {
     LOG_ERROR("failed to create queue app->slow");
     goto error_uxsocket;
   }
 
-  dq = dqueue_new(q->size, 
+  dq = dqueue_new(q->nelems, q->elsize, 
       ctx->proto->shm_base + q->off, q->off);
   if (dq == NULL)
   {
     LOG_ERROR("failed to create dqueue for app->slow");
     goto error_uxsocket;
   }
-  
-  aev->app_res.as_len = q->size;
+
+  aev->app_res.as_nelems = q->nelems;
+  aev->app_res.as_elsize = q->elsize;
   aev->app_res.as_off = q->off;
   actx->app_slow_q = dq;
   
   /* Create queue for messages slow->app */
-  q = cham_new_queue(ctx->proto, 16384);
+  q = cham_new_queue(ctx->proto, 128, sizeof(struct udp_queue_entry));
   if (q == NULL)
   {
     LOG_ERROR("failed to create queue slow->app");
     goto error_uxsocket;
   }
   
-  eq = equeue_new(q->size, 
+  eq = equeue_new(q->nelems, q->elsize, 
       ctx->proto->shm_base + q->off, q->off);
   if (eq == NULL)
   {
@@ -445,71 +354,38 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
     goto error_uxsocket;
   }
   
-  aev->app_res.sa_len = q->size;
+  aev->app_res.sa_nelems = q->nelems;
+  aev->app_res.sa_elsize = q->elsize;
   aev->app_res.sa_off = q->off;
   actx->slow_app_q = eq;
   
-  offs_table = ctx->proto->shm_base + aev->app->offs_map->off;
-  fast_bump_table = ctx->proto->shm_base + offs_table[MTYPE_FAST_BUMPQ].off;
-  app_bump_table = ctx->proto->shm_base + offs_table[MTYPE_APP_BUMPQ].off;
   for (i = 0; i < ctx->proto->n_fp_cores; i++)
   {
     /* Create queue for bumps fast->app */
-    q = cham_new_queue(ctx->proto, 16384);
+    q = cham_new_queue(ctx->proto, 128, sizeof(struct udp_queue_entry));
     if (q == NULL)
     {
       LOG_ERROR("failed to create queue fast->app core=%d", i);
       goto error_uxsocket;
     }
-    aev->app_res.fa_len = q->size;
+    aev->app_res.fa_nelems = q->nelems;
+    aev->app_res.fa_elsize = q->elsize;
     aev->app_res.fa_offs[i] = q->off;
     actx->app_bump_qs[i] = q;
     
-    /* We need to add these queues to the bump table so
-       the fast-path TX can bump the app when it's done */
-    app_bump_table[q->id].id = q->id;
-    app_bump_table[q->id].q.tail = 0;
-    app_bump_table[q->id].q.off = q->off;
-    app_bump_table[q->id].q.size = q->size;
-    app_bump_table[q->id].q.entries = ctx->proto->shm_base + q->off;
-    
-    if (offs_table[MTYPE_APP_BUMPQ].tail == ID_INVALID)
-      offs_table[MTYPE_APP_BUMPQ].head = q->id;
-    else
-      app_bump_table[offs_table[MTYPE_APP_BUMPQ].tail].next_id = q->id;
-      
-    offs_table[MTYPE_APP_BUMPQ].tail = q->id;
-    
     /* Create queue for bumps app->fast */
-    q = cham_new_queue(ctx->proto, 16384);
+    q = cham_new_queue(ctx->proto, 128, sizeof(struct udp_queue_entry));
     if (q == NULL)
     {
       LOG_ERROR("failed to create queue app->fast core=%d", i);
       goto error_uxsocket;
     }
-    aev->app_res.af_len = q->size;
+    aev->app_res.af_nelems = q->nelems;
+    aev->app_res.af_elsize = q->elsize;
     aev->app_res.af_offs[i] = q->off;
     actx->fast_bump_qs[i] = q;
 
-    /* We need to add these queues to the bump table so
-       the fast-path can dequeue bumps from the app */
-    fast_bump_table[q->id].id = q->id;
-    fast_bump_table[q->id].q.head = 0;
-    fast_bump_table[q->id].q.off = q->off;
-    fast_bump_table[q->id].q.size = q->size;
-    fast_bump_table[q->id].q.entries = ctx->proto->shm_base + q->off;
-
-    if (offs_table[MTYPE_FAST_BUMPQ].tail == ID_INVALID)
-      offs_table[MTYPE_FAST_BUMPQ].head = q->id;
-    else
-      fast_bump_table[offs_table[MTYPE_FAST_BUMPQ].tail].next_id = q->id;
-      
-    offs_table[MTYPE_FAST_BUMPQ].tail = q->id;
-
-    MEM_BARRIER();
-
     /* Enable queue so fast-path can poll it */
-    /* TODO: Now it is just enabled on core 0 but we should load balance it */
     cham_enable_queue(ctx->proto, q->id, 0);
   }
     

@@ -283,7 +283,8 @@ static int uxsocket_accept(struct control_context *ctx)
   g->alloc = alloc;
 
   /* Create queue that holds messages from guest agent to Chamelio */
-  ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len, &guest_cham_handle);
+  ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len * 
+      sizeof(struct queue_entry), &guest_cham_handle);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocated memory in shared memory");
@@ -291,7 +292,8 @@ static int uxsocket_accept(struct control_context *ctx)
   }
   memset(guest_cham_handle->addr, 0, ctx->config->agt_queue_len);
 
-  guest_cham_q = dqueue_new(ctx->config->agt_queue_len, 
+  guest_cham_q = dqueue_new(ctx->config->agt_queue_len,
+      sizeof(struct queue_entry),
       guest_cham_handle->addr, guest_cham_handle->off);
   if (guest_cham_q == NULL)
   {
@@ -302,7 +304,8 @@ static int uxsocket_accept(struct control_context *ctx)
   g->guest_cham_q = guest_cham_q;
 
   /* Create queue that holds messages from Chamelio to guest agent */
-  ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len, &cham_guest_handle);
+  ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len * 
+    sizeof(struct queue_entry), &cham_guest_handle);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocated memory in shared memory");
@@ -311,6 +314,7 @@ static int uxsocket_accept(struct control_context *ctx)
   memset(cham_guest_handle->addr, 0, ctx->config->agt_queue_len);
 
   cham_guest_q = equeue_new(ctx->config->agt_queue_len, 
+      sizeof(struct queue_entry),
       cham_guest_handle->addr, cham_guest_handle->off);
   if (cham_guest_q == NULL)
   {

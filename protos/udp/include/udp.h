@@ -16,34 +16,8 @@
 
 #define ID_INVALID (-1U)
 
-/* Types of possible maps in UDP protocol */
-enum udp_map_type {
-  MTYPE_SOCKS = 0,
-  MTYPE_TXSCHED,
-  MTYPE_TXREADY,
-  MTYPE_APP_BUMPQ,
-  MTYPE_FAST_BUMPQ,
-};
-
-/* Entry in the map offset table */
-struct udp_off_mape
-{
-  /* Identifying ID of what this entry is for */
-  enum udp_map_type id;
-  /* Offset in shared memory for a map */
-  uint64_t off;
-  /* Number of elements added to this map entry */
-  uint32_t n;
-  /* Max number of elements in this map entry */
-  uint32_t max_n;
-  /* Key for first entry in the map */
-  uint32_t head;
-  /* Key for last entry in the map */
-  uint32_t tail;
-};
-
 /* Entry for the socket map */
-struct udp_sock_mape {
+struct udp_sock {
   /* Socket ID */
   uint32_t id;
   /* Pointer to socket in application */
@@ -78,28 +52,6 @@ struct udp_sock_mape {
   void *tx_buf;
 };
 
-/* Entry for TX scheduler map */
-struct udp_txsched_mape {
-  /* Socket ID */
-  uint32_t id;
-  /* ID of next socket in schedler queue */
-  uint32_t next_id;
-  /* Number of bytes available to be scheduled */
-  uint32_t tx_avail;
-};
-
-/* Entry for TX ready map */
-struct udp_txready_mape {
-  /* TX ready ID */
-  uint32_t id;
-  /* ID of next ready in list */
-  uint32_t next_id;
-  /* Socket ID */
-  uint32_t sock_id;
-  /* Amount of bytes to be transmitted */
-  uint32_t tx_ready;
-};
-
 /* Entry for app bump map */ 
 struct udp_app_bump_mape {
   /* Queue ID */
@@ -108,16 +60,6 @@ struct udp_app_bump_mape {
   uint16_t next_id;
   /* Queue only for enqueueing */
   struct equeue q;  
-};
-
-/* Entry for fast-path bump map */ 
-struct udp_fast_bump_mape {
-  /* Queue ID */
-  uint16_t id;
-  /* Next ID */
-  uint16_t next_id;
-  /* Queue only for dequeueing */
-  struct dqueue q;  
 };
 
 #endif

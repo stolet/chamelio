@@ -8,7 +8,8 @@
     the library also uses the queue interface but it can't allocate
     from hugepages. */
 
-struct equeue * equeue_new(uint32_t size, void *addr, uint64_t off)
+struct equeue * equeue_new(uint32_t nelems, size_t elsize,
+    void *addr, uint64_t off)
 {
   struct equeue *q;
 
@@ -22,12 +23,14 @@ struct equeue * equeue_new(uint32_t size, void *addr, uint64_t off)
   q->off = off;
   q->entries = addr;
   q->tail = 0;
-  q->size = size;
+  q->nelems = nelems;
+  q->elsize = elsize;
 
   return q;
 }
 
-struct dqueue * dqueue_new(uint32_t size, void *addr, uint64_t off)
+struct dqueue * dqueue_new(uint32_t nelems, size_t elsize, 
+    void *addr, uint64_t off)
 {
   struct dqueue *q;
 
@@ -41,7 +44,8 @@ struct dqueue * dqueue_new(uint32_t size, void *addr, uint64_t off)
   q->off = off;
   q->entries = addr;
   q->head = 0;
-  q->size = size;
+  q->nelems = nelems;
+  q->elsize = elsize;
 
   return q;
 }
@@ -50,19 +54,21 @@ struct dqueue * dqueue_new(uint32_t size, void *addr, uint64_t off)
 int queue_enqueue(struct equeue *q, uint8_t type)
 {
   uint32_t tail;
-  struct queue_entry *tail_entry = q->entries + q->tail;
-  
+  uint8_t *tail_type;
+
+  tail_type = (uint8_t *) q->entries + q->tail;
+
   /* Queue is full */
-  if (tail_entry->type != QUEUE_EMPTY)
+  if (*tail_type != QUEUE_EMPTY)
     return -1;
 
-  tail = q->tail + sizeof(struct queue_entry);
-  if (tail > q->size)
+  tail = q->tail + q->elsize;
+  if (tail > (q->elsize * q->nelems))
     tail = 0;
   q->tail = tail;
     
   MEM_BARRIER();
-  tail_entry->type = type;
+  *tail_type = type;
 
   return 0;
 }
@@ -71,43 +77,47 @@ int queue_enqueue(struct equeue *q, uint8_t type)
 int queue_dequeue(struct dqueue *q)
 {
   uint32_t head;
-  struct queue_entry *qe = q->entries + q->head;
+  uint8_t *type;
+  
+  type = (uint8_t *) q->entries + q->head;
 
   /* Queue is empty */
-  if (qe->type == QUEUE_EMPTY)
+  if (*type == QUEUE_EMPTY)
     return -1;
 
-  head = q->head + sizeof(struct queue_entry);
-  if (head > q->size)
+  head = q->head + q->elsize;
+  if (head > (q->elsize * q->nelems))
   head = 0;
   q->head = head;
   
   MEM_BARRIER();
-  qe->type = QUEUE_EMPTY;
+  *type = QUEUE_EMPTY;
 
   return 0;
 }
 
-struct queue_entry * queue_head(struct dqueue *q)
+void * queue_head(struct dqueue *q)
 {
-  struct queue_entry *qe;
-  qe = (void *) q->entries + q->head;
+  uint8_t *type;
+  
+  type = (uint8_t *) q->entries + q->head;
   
   /* Queue is empty */
-  if (qe->type == QUEUE_EMPTY)
+  if (*type == QUEUE_EMPTY)
     return NULL;
 
-  return qe;
+  return type;
 }
 
-struct queue_entry * queue_tail(struct equeue *q)
+void * queue_tail(struct equeue *q)
 {
-  struct queue_entry *qe;
-  qe = (void *) q->entries + q->tail;
+  uint8_t *type;
+  
+  type = (uint8_t *) q->entries + q->tail;
   
   /* Queue is empty */
-  if (qe->type != QUEUE_EMPTY)
+  if (*type != QUEUE_EMPTY)
     return NULL;
 
-  return qe;
+  return type;
 }

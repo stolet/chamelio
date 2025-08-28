@@ -60,7 +60,7 @@ int control_context_init(struct control_context *ctx, struct configuration *conf
   /* Create a queue with each shared memory handle */
   for (i = 0; i < config->fp_cores_max; i++)
   {
-    cfq = equeue_new(config->cham_queue_len, 
+    cfq = equeue_new(config->cham_queue_len, sizeof(struct queue_entry), 
         cf_handles[i]->addr, cf_handles[i]->off);
     if (cfq == NULL)
     {
@@ -69,7 +69,7 @@ int control_context_init(struct control_context *ctx, struct configuration *conf
     }
     ctx->ctl_fast_qs[i] = cfq;
 
-    fcq = dqueue_new(config->cham_queue_len, 
+    fcq = dqueue_new(config->cham_queue_len, sizeof(struct queue_entry),
         fc_handles[i]->addr, fc_handles[i]->off);
     if (fcq == NULL)
     {
@@ -226,18 +226,20 @@ static int handle_new_queue_req(struct control_context *ctx,
   if (nqueues >= MAX_PROTO_QUEUES)
   {
     LOG_WARN("requested more queues than the maximum supported");
-    res->size = 0;
+    res->elsize = 0;
+    res->nelems = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
     assert(ret == 0);
     return -1;
   }
 
   /* Allocate requested queue */
-  ret = shmalloc_alloc(g->alloc, req->size, &sh);
+  ret = shmalloc_alloc(g->alloc, req->elsize * req->nelems, &sh);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocate memory for queue=%d", nqueues);
-    res->size = 0;
+    res->elsize = 0;
+    res->nelems = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
     assert(ret == 0);
     return -1;
@@ -245,14 +247,16 @@ static int handle_new_queue_req(struct control_context *ctx,
   memset(sh->addr, 0, sh->len);
 
   g->proto.queues[nqueues].id = nqueues;
-  g->proto.queues[nqueues].size = req->size;
+  g->proto.queues[nqueues].nelems = req->nelems;
+  g->proto.queues[nqueues].elsize = req->elsize;
   g->proto.queues[nqueues].off = sh->off;
   g->proto.queues[nqueues].core = CORE_INVALID;
   res->off = sh->off;
 
   /* Send response back to guest */
   res->qid = nqueues;
-  res->size = req->size;
+  res->nelems = req->nelems;
+  res->elsize = req->elsize;
   res->off = sh->off;
   res->opaque = req->opaque;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
@@ -354,7 +358,8 @@ static int handle_enableq_req(struct control_context *ctx,
   req_fast->gid = g->id;
   req_fast->qid = req->qid;
   req_fast->off = q->off;
-  req_fast->size = q->size;
+  req_fast->nelems = q->nelems; 
+  req_fast->elsize = q->elsize;
   req_fast->core = req->core;
   g->proto.queues[req->qid].core = req->core;
   
