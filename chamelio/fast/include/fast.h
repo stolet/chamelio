@@ -16,7 +16,6 @@
 
 #define PROTOQ_DISABLED 0
 #define PROTOQ_ENABLED 1
-#define PROTOQ_ID_INVALID UINT16_MAX
 
 /* We want the TXBUF_SIZE to be double the BATCH_SIZE so we can 
    fit packets from the TX phase and ACKs sent in the receive phase */
@@ -29,53 +28,18 @@ enum protocol_type {
   PROTO_RDMA,
 };
 
-struct proto_queue_fast {
-  /* ID of this protocol queue */
-  uint16_t id;
-  /* Queue structure */
-  struct dqueue dq;
-  /* Next queue in active list */
-  uint16_t next;
-  /* Previous queue in list */
-  uint16_t prev;
-  /* Protocol this queue belongs to */
-  struct proto_fast *proto;
-};
-
-struct proto_map_fast {
-  /* ID of this map in protocol */
-  uint16_t id;
-  /* Number of elements in the map */
-  uint32_t nelems;
-  /* Size of each element in the map */
-  uint32_t elsize;
-  /* Offset in shared memory where this map starts */
-  uint64_t off;
-  /* Protocol this map belongs to */
-  struct proto_fast *proto;
-};
-
 struct proto_fast {
-  /* Number of queues */
-  uint16_t nqueues;
+  /* Number of enabled queues */
+  uint16_t ndqueues;
   /* Head of enabled queues */
-  uint16_t queues_head;
+  uint16_t dqueues_head;
   /* Tail of enabled queues */
-  uint16_t queues_tail;
-  /* List of enabled queues queues in shared memory */
-  struct proto_queue_fast queues[MAX_PROTO_QUEUES];
+  uint16_t dqueues_tail;
+  /* Array of nodes for enabled queues dequeued by Chamelio */
+  struct cham_dqueue dqueues[MAX_PROTO_QUEUES];
+  /* Handle containing protocol state passed to custom fast-path */  
+  struct proto_handle handle;
 
-  /* Number of maps in shared memory */
-  uint16_t nmaps;
-  /* List of maps in shared memory */
-  struct proto_map_fast maps[MAX_PROTO_MAPS];
-
-  /* TX scheduler for this protocol */
-  struct scheduler sched;
-
-  /* TODO: Pass protocol handler */
-  /* Initialises the fast-path */
-  int (*init_fp)(void *config);
   /* Processes one received packet */
   int (*event_rx)(void *pkt);
   /* Processes one scheduled packet for transmissiojn */

@@ -72,10 +72,14 @@ struct queue_new_proto_res {
 struct queue_new_queue_req {
   /* Guest ID for this protocol */
   uint8_t gid;
+  /* Queue ID */
+  uint32_t qid;
   /* Number of elements in the queue */
   uint32_t nelems;
   /* Size of each element in the queue */
   size_t elsize;
+  /* Offser to the start of the queue */
+  uint64_t off;
   /* Pointer to queue struct in library */
   uint64_t opaque;
 } __attribute__((packed));
@@ -98,6 +102,8 @@ struct queue_new_queue_res {
 struct queue_new_map_req {
   /* Guest ID for this protocol */
   uint8_t gid;
+  /* Map ID */
+  uint32_t mid;
   /* Number of elements in each map */
   uint32_t nelems;
   /* Size of element in each map */

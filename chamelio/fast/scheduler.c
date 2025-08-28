@@ -1,7 +1,7 @@
 #include "cham_fast.h"
 #include "scheduler.h"
 
-void sched_init(struct scheduler *sched)
+void sched_init(struct cham_scheduler *sched)
 {
   sched->head = SCHED_ID_INVALID;
   sched->tail = SCHED_ID_INVALID;
@@ -19,7 +19,7 @@ void sched_init(struct scheduler *sched)
   sched->entries[MAX_SCHED_ENTRIES - 1].id = SCHED_ID_INVALID;
 }
 
-int sched_add(struct scheduler *sched, struct cham_sched_entry *entry)
+int sched_add(struct cham_scheduler *sched, struct cham_sched_entry *entry)
 {
   int prev, cur;
   struct cham_sched_entry *new_entry;
@@ -71,7 +71,7 @@ int sched_add(struct scheduler *sched, struct cham_sched_entry *entry)
   return 0;
 }
 
-int sched_remove(struct scheduler *sched, uint32_t id)
+int sched_remove(struct cham_scheduler *sched, uint32_t id)
 {
   int prev, cur;
 
@@ -108,7 +108,7 @@ int sched_remove(struct scheduler *sched, uint32_t id)
   return -1;
 }
 
-struct cham_sched_entry *sched_head(struct scheduler *sched)
+struct cham_sched_entry *sched_head(struct cham_scheduler *sched)
 {
   if (sched->head == SCHED_ID_INVALID)
     return NULL;
@@ -116,7 +116,7 @@ struct cham_sched_entry *sched_head(struct scheduler *sched)
   return &sched->entries[sched->head];
 }
 
-int sched_pop(struct scheduler *sched)
+int sched_pop(struct cham_scheduler *sched)
 {
   int pop_idx;
   struct cham_sched_entry *pop_entry;

@@ -20,17 +20,14 @@ int main (int argc, char **argv)
   ret = udp_connect_slow();
   if (ret != 0)
     abort();
-  fprintf(stderr, "connected udp");
     
   ret = udp_ctx_new();
   if (ret != 0)
     abort();
-  fprintf(stderr,"created udp context");
 
   sockfd = udp_socket();
   if (sockfd < 0)
     abort();
-  fprintf(stderr,"created udp socket");
 
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;

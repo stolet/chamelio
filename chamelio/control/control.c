@@ -208,10 +208,10 @@ static int poll_guests(struct control_context *ctx)
 static int handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
-  int ret;
+  int i, ret;
   uint16_t nqueues;
   struct queue_entry *qe_res;
-  struct queue_new_queue_req *req;
+  struct queue_new_queue_req *req, *req_fast;
   struct queue_new_queue_res *res;
   struct shm_handle *sh;
 
@@ -253,6 +253,22 @@ static int handle_new_queue_req(struct control_context *ctx,
   g->proto.queues[nqueues].core = CORE_INVALID;
   res->off = sh->off;
 
+  /* Register queue with each fast-path core */
+  for (i = 0; i < ctx->config->fp_cores_max; i++)
+  {
+    qe_req = queue_tail(ctx->ctl_fast_qs[i]);
+    assert(qe_req != NULL);
+    req_fast = &qe_req->data.new_queue_req;
+    req_fast->gid = g->id;
+    req_fast->qid = g->proto.queues[nqueues].id;
+    req_fast->nelems = g->proto.queues[nqueues].nelems;
+    req_fast->elsize = g->proto.queues[nqueues].elsize;
+    req_fast->off = g->proto.queues[nqueues].off;
+
+    ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_NEW_QUEUE_REQ);
+    assert(ret == 0);
+  }
+  
   /* Send response back to guest */
   res->qid = nqueues;
   res->nelems = req->nelems;
@@ -315,6 +331,7 @@ static int handle_new_map_req(struct control_context *ctx,
     assert(qe_req != NULL);
     c_req = &qe_req->data.new_map_req;
     c_req->gid = g->id;
+    c_req->mid = res->id;
     c_req->elsize = g_req->elsize;
     c_req->nelems = g_req->nelems;
     c_req->off = sh->off;

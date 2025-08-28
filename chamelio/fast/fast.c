@@ -146,7 +146,7 @@ int poll_sched(struct fast_context *ctx, struct cham_ready_entry *ready_entries)
 {
   int i, nsched;
   struct guest_fast *g;
-  struct scheduler *sched;
+  struct cham_scheduler *sched;
   struct cham_ready_entry *re;
   struct cham_sched_entry *se;
 
@@ -154,7 +154,7 @@ int poll_sched(struct fast_context *ctx, struct cham_ready_entry *ready_entries)
   for (i = 0; i < ctx->n_guests && nsched < BATCH_SIZE; i++)
   {
     g = &ctx->guests[i];
-    sched = &g->proto.sched;
+    sched = &g->proto.handle.sched;
     re = &ready_entries[nsched];
     se = sched_head(sched);
 
@@ -181,19 +181,19 @@ int poll_queues(struct fast_context *ctx)
   int i, ret, ndeq;
   uint16_t qid;
   struct guest_fast *g;
-  struct proto_queue_fast *q;
+  struct cham_dqueue *q;
   struct queue_entry *qe;
   struct cham_sched_entry *se;
-  struct scheduler *sched;
+  struct cham_scheduler *sched;
 
   ndeq = 0;
   for (i = 0; i < ctx->n_guests; i++)
   {
     g = &ctx->guests[i];
-    qid = g->proto.queues_head;
+    qid = g->proto.dqueues_head;
     while (qid != PROTOQ_ID_INVALID && ndeq < BATCH_SIZE)
     {
-      q = &g->proto.queues[qid];
+      q = &g->proto.dqueues[qid];
         
       /* If there are no messages in queue continue */
       qe = queue_head(&q->dq);
@@ -204,7 +204,7 @@ int poll_queues(struct fast_context *ctx)
       }
 
       ndeq++;
-      sched = &g->proto.sched;
+      sched = &g->proto.handle.sched;
       se = &sched->entries[sched->free_head];
 
       /* Execute custom dequeue procedure */
