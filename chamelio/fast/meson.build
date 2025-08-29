@@ -4,7 +4,6 @@ fast_srcs = files(
   'fast.c', 
   'fast_process.c',
   'controlif.c',
-  'scheduler.c',
 )
 
 deps = [

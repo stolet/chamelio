@@ -3,6 +3,7 @@ lib_inc = include_directories('include')
 lib_srcs = files(
   'guest.c', 
   'ivshmem.c', 
+  'scheduler.c',
 )
 
 deps = [

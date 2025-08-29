@@ -13,7 +13,7 @@
 #include "log.h"
 #include "config.h"
 #include "controlif.h"
-#include "scheduler.h"
+#include "cham_scheduler.h"
 
 
 struct guest_fast * init_guest(uint8_t id, uint64_t shm_len);
@@ -22,13 +22,13 @@ int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
 int poll_tx(struct fast_context *ctx);
 int poll_control(struct fast_context *ctx);
-int poll_sched(struct fast_context *ctx, struct cham_ready_entry *ready_entries);
 
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, uint16_t thread_id,
     struct shm_handle *fc_handle, struct shm_handle *cf_handle,
     struct configuration *config, int shm_fd_internal, void *shm_base_internal)
 {
+  int i, j;
   struct dqueue *cfq;
   struct equeue *fcq;
   struct guest_fast *guests;
@@ -66,6 +66,15 @@ int fast_context_init(struct fast_context *f_ctx,
   }
   f_ctx->guests = guests;
 
+  /* Set initial ID to invalid for each scheduler entry in guest */
+  for (i = 0; i < config->max_guests; i++)
+  {
+    for (j = 0; j < MAX_SCHED_ENTRIES; j++)
+    {
+      f_ctx->guests[i].proto.handle.sched.entries[j].id = SCHED_ID_INVALID;
+    }
+  }
+
   return 0;
 }
 
@@ -77,7 +86,6 @@ void fast_context_destroy()
 int fast_loop(struct fast_context *ctx)
 {
   int ret;
-  struct cham_ready_entry ready_entries[BATCH_SIZE];
 
   while(1) 
   {
@@ -92,12 +100,6 @@ int fast_loop(struct fast_context *ctx)
     if (ret < 0)
     {
       LOG_ERROR("poll_queues failed");
-    }
-
-    ret = poll_sched(ctx, ready_entries);
-    if (ret < 0)
-    {
-      LOG_ERROR("poll_sched failed");
     }
 
     // ret = poll_tx(ctx);
@@ -142,39 +144,39 @@ int poll_rx(struct fast_context *ctx)
   return n;
 }
 
-int poll_sched(struct fast_context *ctx, struct cham_ready_entry *ready_entries)
-{
-  int i, nsched;
-  struct guest_fast *g;
-  struct cham_scheduler *sched;
-  struct cham_ready_entry *re;
-  struct cham_sched_entry *se;
+// int poll_sched(struct fast_context *ctx, struct cham_ready_entry *ready_entries)
+// {
+//   int i, nsched;
+//   struct guest_fast *g;
+//   struct cham_scheduler *sched;
+//   struct cham_ready_entry *re;
+//   struct cham_sched_entry *se;
 
-  nsched = 0;
-  for (i = 0; i < ctx->n_guests && nsched < BATCH_SIZE; i++)
-  {
-    g = &ctx->guests[i];
-    sched = &g->proto.handle.sched;
-    re = &ready_entries[nsched];
-    se = sched_head(sched);
+//   nsched = 0;
+//   for (i = 0; i < ctx->n_guests && nsched < BATCH_SIZE; i++)
+//   {
+//     g = &ctx->guests[i];
+//     sched = &g->proto.handle.sched;
+//     re = &ready_entries[nsched];
+//     se = sched_head(sched);
 
-    /* This protocol has nothing to schedule */
-    if (se == NULL)
-      continue;
+//     /* This protocol has nothing to schedule */
+//     if (se == NULL)
+//       continue;
 
-    /* Run the custom transmit scheduler for this protocol */
-    g->proto.act_txsched(se, re);
+//     /* Run the custom transmit scheduler for this protocol */
+//     g->proto.act_txsched(se, re);
 
-    /* Protocol actually staged something to the ready queue */
-    if (re->id != SCHED_ID_INVALID)
-    {
-      sched_pop(sched);
-      nsched++;
-    }
-  }
+//     /* Protocol actually staged something to the ready queue */
+//     if (re->id != SCHED_ID_INVALID)
+//     {
+//       sched_pop(sched);
+//       nsched++;
+//     }
+//   }
 
-  return 0;
-}
+//   return 0;
+// }
 
 int poll_queues(struct fast_context *ctx)
 {
@@ -183,11 +185,9 @@ int poll_queues(struct fast_context *ctx)
   struct guest_fast *g;
   struct cham_dqueue *q;
   struct queue_entry *qe;
-  struct cham_sched_entry *se;
-  struct cham_scheduler *sched;
 
   ndeq = 0;
-  for (i = 0; i < ctx->n_guests; i++)
+  for (i = 0; i < ctx->n_guests && ndeq < BATCH_SIZE; i++)
   {
     g = &ctx->guests[i];
     qid = g->proto.dqueues_head;
@@ -203,16 +203,9 @@ int poll_queues(struct fast_context *ctx)
         continue;
       }
 
-      ndeq++;
-      sched = &g->proto.handle.sched;
-      se = &sched->entries[sched->free_head];
-
       /* Execute custom dequeue procedure */
-      g->proto.event_deq(q->id, qe, se);
-
-      /* Protocol signaled it wants to stage entry to the scheduler */
-      if (se->id != SCHED_ID_INVALID)
-        sched_add(sched, se);
+      ndeq++;
+      g->proto.event_deq(q->id, qe, &g->proto.handle);
 
       /* Pop the queue */
       ret = queue_dequeue(&q->dq);

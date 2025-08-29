@@ -1,4 +1,6 @@
 #include <rte_ip4.h>
+#include <cham_fast.h>
+#include <cham_scheduler.h>
 
 #include "udp.h"
 #include "udp_fast.h"
@@ -6,8 +8,7 @@
 #include "queue.h"
 #include "log.h"
 
-/* UDP socket map */
-struct udp_sock *sock_map = NULL;
+#define SOCK_MAP_IDX 0
 
 int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN]);
 
@@ -40,7 +41,7 @@ int udp_event_rx(void *pkt)
   return 0;
 }
 
-int udp_event_tx(void *pkt, struct cham_ready_entry *re)
+int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
 {
   // int ret;
   // uint16_t opt_len, payload_len;
@@ -159,26 +160,18 @@ int udp_event_tx(void *pkt, struct cham_ready_entry *re)
   return 0;
 }
 
-int udp_act_txsched(struct cham_sched_entry *se, struct cham_ready_entry *re)
+int udp_event_deq(int qid, struct queue_entry *qe,
+  struct cham_proto_handle *handle)
 {
-  uint32_t bytes;
-
-  bytes = se->avail;
-  if (se->avail > UDP_MSS)
-    bytes = UDP_MSS;
-
-  re->id = se->id;
-  re->ready = bytes;
-
-  return 0;
-}
-
-int udp_event_deq(int qid, struct queue_entry *qe, struct cham_sched_entry *se)
-{
+  int ret;
   struct udp_sock *sock;
+  struct udp_sock *sock_map;
+  struct cham_scheduler *sched;
+  struct cham_sched_entry *se;
   struct udp_queue_entry *udp_qe;
   struct udp_queue_bump *bump;
   
+  sock_map = handle->maps[SOCK_MAP_IDX].addr;
   udp_qe = (struct udp_queue_entry *) qe;
   bump = &udp_qe->data.bump;
   sock = &sock_map[bump->sock_id];
@@ -186,10 +179,24 @@ int udp_event_deq(int qid, struct queue_entry *qe, struct cham_sched_entry *se)
   sock->rx_head += bump->rx_head;
   LOG_DEBUG("received bump!");
 
-  se->id = (uint64_t)sock;
-  se->priority = 0;
-  se->avail = sock->tx_avail;
-  se->next_entry = SCHED_ID_INVALID;
+  if (bump->tx_avail > 0)
+  {
+    sched = &handle->sched;
+    se = &sched->entries[sock->id];
+    se->avail += bump->tx_avail;
+  }
+
+  /* Add scheduler entry to the list if it has not been added yet */
+  if (se->id != SCHED_ID_INVALID)
+  {
+    se->opaque = (uint64_t) sock;
+    ret = sched_add(sched, se->id, 0);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to add entry to scheduler");
+      return -1;
+    }
+  }
 
   return 0;
 }

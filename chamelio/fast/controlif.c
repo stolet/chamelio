@@ -1,7 +1,7 @@
 #include "fast.h"
 #include "queue.h"
 #include "udp_fast.h"
-#include "scheduler.h"
+#include "cham_scheduler.h"
 
 static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe);
@@ -74,8 +74,7 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
   /* TODO: Add ebpf code here */
   g->proto.event_rx = NULL;
   g->proto.event_tx = NULL;
-  g->proto.event_deq = NULL;
-  g->proto.act_txsched = NULL;
+  g->proto.event_deq = udp_event_deq;
   
   /* Init qman */
   sched_init(&g->proto.handle.sched);
@@ -94,12 +93,9 @@ static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe)
   g = &ctx->guests[req->gid];
   p = &g->proto;
   q = &p->handle.equeues[req->qid];
-  
   q->id = req->qid;
-  q->eq.nelems = req->nelems;
-  q->eq.elsize = req->elsize;
-  q->eq.off = req->off;
-  q->eq.entries = g->shm_base + req->off;
+
+  equeue_init(&q->eq, req->nelems, req->elsize, g->shm_base + req->off, req->off);
   LOG_DEBUG("created queue qid=%d in fast-path", req->qid);
 }
 
@@ -119,6 +115,7 @@ static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)
   m->elsize = req->elsize;
   m->nelems = req->nelems;
   m->off = req->off;
+  m->addr = g->shm_base + req->off;
   LOG_DEBUG("created map qid=%d in fast-path", req->mid);
 }
 

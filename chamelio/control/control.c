@@ -351,6 +351,7 @@ static int handle_enableq_req(struct control_context *ctx,
 {
   int ret;
   struct equeue *q;
+  struct proto_queue_control *pq;
   struct queue_enableq_req *req, *req_fast;
   
   req = &qe->data.enableq_req;
@@ -371,12 +372,13 @@ static int handle_enableq_req(struct control_context *ctx,
   qe = queue_tail(q);
   assert(qe != NULL);
   
+  pq = &g->proto.queues[req->qid];
   req_fast = (struct queue_enableq_req *) &qe->data;
   req_fast->gid = g->id;
   req_fast->qid = req->qid;
-  req_fast->off = q->off;
-  req_fast->nelems = q->nelems; 
-  req_fast->elsize = q->elsize;
+  req_fast->off = pq->off;
+  req_fast->nelems = pq->nelems; 
+  req_fast->elsize = pq->elsize;
   req_fast->core = req->core;
   g->proto.queues[req->qid].core = req->core;
   

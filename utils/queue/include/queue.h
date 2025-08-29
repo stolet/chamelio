@@ -204,13 +204,19 @@ struct dqueue {
   void *entries;
 };
 
-/* Creates a new queue that can only enqueue entries. 
+/* Allocates a new queue that can only enqueue entries. 
    Prevents race conditions */
 struct equeue * equeue_new(uint32_t nelems, size_t elsize, 
     void *addr, uint64_t off);
-/* Creates a new queue that can only dequeue entries. 
+/* Allocates a new queue that can only dequeue entries. 
    Prevents race conditions */
 struct dqueue * dqueue_new(uint32_t nelems, size_t elsize, 
+    void *addr, uint64_t off);
+/* Initialises the struct for a new equeue */
+int equeue_init(struct equeue *q, uint32_t nelems, size_t elsize,
+    void *addr, uint64_t off);
+/* Initialises the struct for a new dqueue */
+int dqueue_init(struct dqueue *q, uint32_t nelems, size_t elsize,
     void *addr, uint64_t off);
 /* Advances the tail pointer for the queue */
 int queue_enqueue(struct equeue *q, uint8_t type);

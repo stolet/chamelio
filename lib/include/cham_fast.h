@@ -45,14 +45,16 @@ struct cham_dqueue {
 
 /* Entry in the scheduler priority list */
 struct cham_sched_entry {
-  /* Identifier for whatever is being scheduled (e.g. socket, flow) */
-  uint64_t id;
+  /* ID for the entry (e.g. flow_id or socket_id) */
+  uint32_t id;
   /* Next entry in the priority list */
   uint32_t next_entry;
   /* Priority for the entry */
   uint32_t priority;
   /* Units available for transmission */
   uint32_t avail;
+  /* Opaque pointer to a struct that wants to transmit (e.g. socket, flow) */
+  uint64_t opaque;
 };
 
 /* Map structure used by the fast-path */
@@ -65,6 +67,8 @@ struct cham_map {
   uint32_t elsize;
   /* Offset in shared memory where this map starts */
   uint64_t off;
+  /* Address to start of map entries */
+  void *addr;
 };
 
 /* Transmit scheduler that decides what should send next */
@@ -75,11 +79,9 @@ struct cham_scheduler {
   uint32_t head;
   /* Last element of the priority list */
   uint32_t tail;
-  /* Head of free list entries */
-  uint32_t free_head;
 };
 
-struct proto_handle {
+struct cham_proto_handle {
   /* List of protocol queues use by fast-path to enqueue */
   struct cham_equeue equeues[MAX_PROTO_QUEUES]; 
   /* List of created protocol maps */

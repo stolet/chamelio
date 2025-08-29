@@ -7,7 +7,6 @@
     so we allocate from hugepages. But this is a bit annoying since
     the library also uses the queue interface but it can't allocate
     from hugepages. */
-
 struct equeue * equeue_new(uint32_t nelems, size_t elsize,
     void *addr, uint64_t off)
 {
@@ -48,6 +47,36 @@ struct dqueue * dqueue_new(uint32_t nelems, size_t elsize,
   q->elsize = elsize;
 
   return q;
+}
+
+int equeue_init(struct equeue *q, uint32_t nelems, size_t elsize,
+    void *addr, uint64_t off)
+{
+  if (q == NULL)
+    return -1;
+
+  q->off = off;
+  q->entries = addr;
+  q->tail = 0;
+  q->nelems = nelems;
+  q->elsize = elsize;
+
+  return 0;
+}
+
+int dqueue_init(struct dqueue *q, uint32_t nelems, size_t elsize,
+    void *addr, uint64_t off)
+{
+  if (q == NULL)
+    return -1;
+
+  q->off = off;
+  q->entries = addr;
+  q->head = 0;
+  q->nelems = nelems;
+  q->elsize = elsize;
+
+  return 0;
 }
 
 /* Only one thread can enqueue */

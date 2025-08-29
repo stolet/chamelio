@@ -10,7 +10,6 @@
 #include "nic_fast.h" 
 #include "config.h"
 #include "queue.h"
-#include "scheduler.h"
 
 #define BATCH_SIZE 16
 
@@ -38,16 +37,15 @@ struct proto_fast {
   /* Array of nodes for enabled queues dequeued by Chamelio */
   struct cham_dqueue dqueues[MAX_PROTO_QUEUES];
   /* Handle containing protocol state passed to custom fast-path */  
-  struct proto_handle handle;
+  struct cham_proto_handle handle;
 
   /* Processes one received packet */
   int (*event_rx)(void *pkt);
   /* Processes one scheduled packet for transmissiojn */
-  int (*event_tx)(void *pkt, struct cham_ready_entry *re);
+  int (*event_tx)(void *pkt, struct cham_proto_handle *handle);
   /* Dequeue and process entry from a queue */
-  int (*event_deq)(int qid, struct queue_entry *qe, struct cham_sched_entry *se);
-  /* Schedules packet for transmission */
-  int (*act_txsched)(struct cham_sched_entry *se, struct cham_ready_entry *re);
+  int (*event_deq)(int qid, struct queue_entry *qe, 
+      struct cham_proto_handle *handle);
 };
 
 struct guest_fast {

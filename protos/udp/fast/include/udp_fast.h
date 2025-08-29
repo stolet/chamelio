@@ -108,8 +108,8 @@ struct udp_pkt {
 
 int udp_init_fp(void *config);
 int udp_event_rx(void *pkt);
-int udp_event_tx(void *pkt, struct cham_ready_entry *re);
-int udp_event_deq(int qid, struct queue_entry *qe, struct cham_sched_entry *se);
-int udp_act_txsched(struct cham_sched_entry *se, struct cham_ready_entry *re);
+int udp_event_tx(void *pkt, struct cham_proto_handle *handle);
+int udp_event_deq(int qid, struct queue_entry *qe, 
+    struct cham_proto_handle *handle);
 
 #endif
