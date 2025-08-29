@@ -80,6 +80,9 @@ struct proto_lib {
   uint16_t nmaps;
   /* Maps created with Chamelio */
   struct proto_map_lib maps[MAX_PROTO_MAPS];
+
+  /* One eBPF program per protocol for now */
+  struct proto_ebpf_lib ebpf_program;
 };
 
 /* Mocks a QEMU ivshmem client */
@@ -104,7 +107,6 @@ int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
 
 /* Uploads an eBPF program to Chamelio and register it with the fast-path */
 int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
-
 /* Polls the queue with the control plane */
 int cham_poll_control(struct proto_lib *p);
 
