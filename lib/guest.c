@@ -11,13 +11,19 @@
 #include "log.h"
 #include "uxsocket.h"
 
+<<<<<<< HEAD
 static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe);
 static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
 
+=======
+//supposed to be static
+int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe);
+int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
+int handle_allocate_ebpf_res(struct proto_lib *p, struct queue_entry *qe);
+>>>>>>> bd25eb4 (ca marche ou ca court?)
 
 /* Uploads an eBPF program to Chamelio and register it with the fast-path */
 int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
-int cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
 int cham_free_ebpf(struct proto_lib *p, uint32_t size);   
 
 struct guest_lib *cham_connect_guest()
@@ -257,7 +263,7 @@ struct proto_map_lib *cham_new_map(struct proto_lib *p,
   struct equeue *q;
   struct queue_entry *qe;
   struct queue_new_map_req *req;
-
+ 
   nmaps = p->nmaps;
   q = p->guest_ctl_q;
   qe = queue_tail(q);
@@ -410,20 +416,6 @@ int cham_poll_control(struct proto_lib *p)
               qe->type);
     abort();
   }
-
-  return 0;
-}
-
-int handle_allocate_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
-{
-  struct queue_allocate_ebpf_res *res;
-  struct proto_ebpf_lib *e;
-
-  res = &qe->data.alloc_ebpf_res;
-  e = &p->ebpf_program;
-  e->size = res->size;
-  e->off = res->off;
-  p->nqueues++;
 
   return 0;
 }
