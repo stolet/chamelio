@@ -17,7 +17,6 @@ static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
 
 /* Uploads an eBPF program to Chamelio and register it with the fast-path */
 int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
-int cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
 int cham_free_ebpf(struct proto_lib *p, uint32_t size);   
 
 struct guest_lib *cham_connect_guest()
@@ -258,7 +257,6 @@ struct proto_map_lib *cham_new_map(struct proto_lib *p,
   struct equeue *q;
   struct queue_entry *qe;
   struct queue_new_map_req *req;
-  struct proto_map_lib *m;
 
   nmaps = p->nmaps;
   q = p->guest_ctl_q;
@@ -354,10 +352,35 @@ int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
   return 0;
 }
 
-int cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
+struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
+{
+  struct equeue *q = p->guest_ctl_q;
+  struct queue_entry *qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return NULL;
+  }
+  struct queue_allocate_ebpf_req *req = &qe->data.alloc_ebpf_req;
+  req->size = size;
+  req->opaque = (uint64_t)&p->ebpf_program;
+  int ret = queue_enqueue(q, QUEUE_ALLOCATE_EBPF_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue request to allocate eBPF program");
+    return NULL;
+  }
+
+  //TODO: Make THIS asynchron. instead of blocking here
+  while(cham_poll_control(p) != QUEUE_ALLOCATE_EBPF_RES)
+  {
+  }
+  return &p->ebpf_program;
+}
+
+int cham_free_ebpf(struct proto_lib *p, uint32_t size)
 {
   
-
   return 0;
 }
 
@@ -389,6 +412,34 @@ int cham_poll_control(struct proto_lib *p)
               qe->type);
     abort();
   }
+
+  return 0;
+}
+
+int handle_allocate_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
+{
+  struct queue_allocate_ebpf_res *res;
+  struct proto_ebpf_lib *e;
+
+  res = &qe->data.alloc_ebpf_res;
+  e = &p->ebpf_program;
+  e->size = res->size;
+  e->off = res->off;
+  p->nqueues++;
+
+  return 0;
+}
+
+int handle_allocate_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
+{
+  struct queue_allocate_ebpf_res *res;
+  struct proto_ebpf_lib *e;
+
+  res = &qe->data.alloc_ebpf_res;
+  e = &p->ebpf_program;
+  e->size = res->size;
+  e->off = res->off;
+  p->nqueues++;
 
   return 0;
 }
