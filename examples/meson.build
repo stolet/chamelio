@@ -1,3 +1,5 @@
+subdir('udp')
+
 example_srcs = files('example.c')
 
 deps = [

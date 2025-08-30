@@ -17,6 +17,7 @@
 
 
 struct guest_fast * init_guest(uint8_t id, uint64_t shm_len);
+struct guest_fast *find_guest(struct fast_context *ctx, struct rte_mbuf *mbuf);
 
 int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
@@ -118,9 +119,9 @@ int fast_loop(struct fast_context *ctx)
 
 int poll_rx(struct fast_context *ctx)
 {
-  int i, n;
-  uint8_t rx_err;
+  int i, n, ret;
   struct rte_mbuf *mbs[BATCH_SIZE];
+  struct guest_fast *g;
 
   n = BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < n)
@@ -134,49 +135,19 @@ int poll_rx(struct fast_context *ctx)
 
   for (i = 0; i < n; i++)
   {
-    rx_err = fast_process_packet_rx(ctx, mbs[i]);
-    if (rx_err != 0)
-      LOG_ERROR("fast_process_packet_rx failed");
+    g = find_guest(ctx, mbs[i]);
+    if (g != NULL)
+    {
+      ret = g->proto.event_rx(mbs[i], &g->proto.handle);
+      if (ret != 0)
+        LOG_ERROR("failed to process packet from guest=%d", g->id);
+    }
   }
 
   rte_pktmbuf_free_bulk(mbs, n);
 
   return n;
 }
-
-// int poll_sched(struct fast_context *ctx, struct cham_ready_entry *ready_entries)
-// {
-//   int i, nsched;
-//   struct guest_fast *g;
-//   struct cham_scheduler *sched;
-//   struct cham_ready_entry *re;
-//   struct cham_sched_entry *se;
-
-//   nsched = 0;
-//   for (i = 0; i < ctx->n_guests && nsched < BATCH_SIZE; i++)
-//   {
-//     g = &ctx->guests[i];
-//     sched = &g->proto.handle.sched;
-//     re = &ready_entries[nsched];
-//     se = sched_head(sched);
-
-//     /* This protocol has nothing to schedule */
-//     if (se == NULL)
-//       continue;
-
-//     /* Run the custom transmit scheduler for this protocol */
-//     g->proto.act_txsched(se, re);
-
-//     /* Protocol actually staged something to the ready queue */
-//     if (re->id != SCHED_ID_INVALID)
-//     {
-//       sched_pop(sched);
-//       nsched++;
-//     }
-//   }
-
-//   return 0;
-// }
 
 int poll_queues(struct fast_context *ctx)
 {
@@ -282,4 +253,10 @@ int poll_tx(struct fast_context *ctx)
 int poll_control(struct fast_context *ctx)
 {
   return controlif_poll(ctx);
+}
+
+struct guest_fast *find_guest(struct fast_context *ctx, struct rte_mbuf *mbuf)
+{
+  /* TODO: Use GRE headers to identify guest and protocol */
+  return &ctx->guests[0];
 }

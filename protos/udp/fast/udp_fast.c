@@ -12,6 +12,9 @@
 
 int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN]);
 
+struct udp_sock * udp_sock_find(struct cham_proto_handle *handle,
+    uint32_t remote_ip_be, uint16_t remote_port_be);
+
 int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN])
 {
   unsigned int tmp[ETH_ADDR_LEN];
@@ -26,17 +29,201 @@ int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN])
   return 0;
 }
 
+/* TODO: For now just return the first socket always */
+struct udp_sock *udp_sock_find(struct cham_proto_handle *handle,
+    uint32_t remote_ip_be, uint16_t remote_port_be)
+{
+  struct udp_sock *sock_map;
+  sock_map = handle->maps[SOCK_MAP_IDX].addr;
+  return &sock_map[0];
+}
+
 int udp_init_fp(void *config)
 {
   return 0;
 }
 
-int udp_event_rx(void *pkt)
+int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
 {
-  struct udp_pkt *p = (struct udp_pkt *)pkt;
+  int ret;
+  uint16_t ip_hdrs_len, ip_total_len, udp_len, payload_len;
+  uint64_t mac_src_val, mac_dst_val;
+  struct eth_hdr *eth;
+  struct ip_hdr  *ip;
+  struct udp_hdr *udp;
+  void *payload;
+
+  struct udp_sock *sock;
+  struct equeue *q;
+  struct udp_queue_entry *qe;
+  struct udp_queue_bump *bump;
+
+  uint8_t *rx_base;
+  uint32_t free_bytes;
+  uint32_t tail;
+  uint32_t part;
+
+  uint16_t ip_saved_chksum, ip_comp_chksum;
+  uint16_t udp_saved_chksum, udp_comp_chksum;
+
+  sock = NULL;
+
+  /* Parse ETH header */
+  eth = (struct eth_hdr *) pkt;
+  if (f_beui16(eth->type) != ETH_TYPE_IP)
+  {
+    LOG_ERROR("rx drop: non-IPv4 ethertype=%04x", f_beui16(eth->type));
+    return -1;
+  }
+  memcpy(&mac_src_val, &eth->src, ETH_ADDR_LEN);
+  memcpy(&mac_dst_val, &eth->dst, ETH_ADDR_LEN);
+
+  /* Parse IP header */
+  ip = (struct ip_hdr *) ((uint8_t *) pkt + sizeof(struct eth_hdr));
+  if (IPH_V(ip) != 4 || IPH_HL(ip) < 5)
+  {
+    LOG_ERROR("rx drop: bad IPv4 header v=%u hl=%u", IPH_V(ip), IPH_HL(ip));
+    return -1;
+  }
+
+  ip_hdrs_len  = (uint16_t) (IPH_HL(ip) * 4);
+  ip_total_len = f_beui16(ip->len);
+
+  if (ip->proto != IP_PROTO_UDP)
+  {
+    LOG_ERROR("rx drop: proto=%u != UDP", ip->proto);
+    return -1;
+  }
+
+  /* Drop fragmented IPv4 for now */
+  if (f_beui16(ip->offset) & 0x3FFF)
+  {
+    LOG_ERROR("rx drop: fragmented packet (offset=%04x)", f_beui16(ip->offset));
+    return -1;
+  }
+
+  if (ip_total_len < ip_hdrs_len + (uint16_t) sizeof(struct udp_hdr))
+  {
+    LOG_ERROR("rx drop: malformed lengths ip_total=%u ip_hl=%u",
+              ip_total_len, ip_hdrs_len);
+    return -1;
+  }
+
+  /* Verify IPv4 header checksum */
+  ip_saved_chksum = ip->chksum;
+  ip->chksum = 0;
+  ip_comp_chksum = rte_ipv4_cksum((void *) ip);
+  ip->chksum = ip_saved_chksum;
+  if (ip_comp_chksum != ip_saved_chksum)
+  {
+    LOG_ERROR("rx drop: bad IPv4 checksum computed=%04x saved=%04x",
+              ip_comp_chksum, ip_saved_chksum);
+    return -1;
+  }
+
+  /* Parse UDP header */
+  udp = (struct udp_hdr *) ((uint8_t *) ip + ip_hdrs_len);
+  udp_len = f_beui16(udp->len);
+  if (udp_len < sizeof(struct udp_hdr))
+  {
+    LOG_ERROR("rx drop: bad UDP len=%u", udp_len);
+    return -1;
+  }
+  
+  if (ip_total_len < ip_hdrs_len + udp_len)
+  {
+    LOG_ERROR("rx drop: IP shorter than UDP (ip_total=%u need=%u)",
+              ip_total_len, ip_hdrs_len + udp_len);
+    return -1;
+  }
+
+  /* Verify UDP checksum for IPv4 (0 means “no checksum”) */
+  udp_saved_chksum = udp->chksum;
+  if (udp_saved_chksum != 0)
+  {
+    udp->chksum = 0;
+    udp_comp_chksum = rte_ipv4_udptcp_cksum((void *) ip, (void *) udp);
+    udp->chksum = udp_saved_chksum;
+    
+    if (udp_comp_chksum != udp_saved_chksum)
+    {
+      LOG_ERROR("rx drop: bad UDP checksum computed=%04x saved=%04x",
+                udp_comp_chksum, udp_saved_chksum);
+      return -1;
+    }
+  }
+
+  /* Lookup socket */
+  uint32_t src_ip_be  = htonl(f_beui32(ip->src));
+  uint16_t src_prt_be = htons(f_beui16(udp->src));
+  sock = udp_sock_find(handle, src_ip_be, src_prt_be);
+  
+  if (sock == NULL)
+  {
+    LOG_ERROR("rx drop: no socket for src=%08x:%u",
+              f_beui32(ip->src), f_beui16(udp->src));
+    return -1;
+  }
+
+  /* Copy payload */
+  payload_len = (uint16_t) (udp_len - sizeof(struct udp_hdr));
+  payload = (void *) ((uint8_t *) udp + sizeof(struct udp_hdr));
+  rx_base = (uint8_t *) handle->shm_base + sock->rx_off;
+  free_bytes = sock->rx_len - sock->rx_avail;
+
+  if (payload_len > free_bytes)
+  {
+    /* Dop whole datagram if it doesn’t fit */
+    LOG_ERROR("rx drop: ring full (need=%u free=%u)", payload_len, free_bytes);
+    return -1;
+  }
+
+  tail = (sock->rx_head + sock->rx_avail) % sock->rx_len;
+
+  if (tail + payload_len <= sock->rx_len)
+  {
+    memcpy(rx_base + tail, payload, payload_len);
+  }
+  else
+  {
+    part = sock->rx_len - tail;
+    memcpy(rx_base + tail, payload, part);
+    memcpy(rx_base, (uint8_t *) payload + part, payload_len - part);
+  }
+
+  /* Publish bytes for the consumer */
+  sock->rx_avail += payload_len;
+
+  /* Send bump to applocation */
+  q = &handle->equeues[sock->app_bump_qid].eq;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get bump queue tail");
+    return -1;
+  }
+
+  bump = &qe->data.bump;
+  bump->opaque   = sock->opaque;
+  bump->rx_avail = payload_len;
+  bump->rx_head  = 0;
+  bump->tx_avail = 0;
+  bump->tx_head  = 0;
+
+  ret = queue_enqueue(q, UDP_QUEUE_BUMP);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue bump message");
+    return -1;
+  }
 
   LOG_DEBUG("rx udp: src_port=%d dst_port=%d",
-            f_beui16(p->udp.src), f_beui16(p->udp.dst));
+            f_beui16(udp->src), f_beui16(udp->dst));
+  LOG_DEBUG("rx ip: src_ip=%08x dst_ip=%08x",
+            f_beui32(ip->src), f_beui32(ip->dst));
+  LOG_DEBUG("rx eth: src_mac=%012" PRIx64 " dst_mac=%012" PRIx64,
+            (uint64_t)(be64toh(mac_src_val)),
+            (uint64_t)(be64toh(mac_dst_val)));
 
   return 0;
 }

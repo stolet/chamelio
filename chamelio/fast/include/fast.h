@@ -40,7 +40,7 @@ struct proto_fast {
   struct cham_proto_handle handle;
 
   /* Processes one received packet */
-  int (*event_rx)(void *pkt);
+  int (*event_rx)(void *pkt, struct cham_proto_handle *handle);
   /* Processes one scheduled packet for transmissiojn */
   int (*event_tx)(void *pkt, struct cham_proto_handle *handle);
   /* Dequeue and process entry from a queue */
