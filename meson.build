@@ -2,7 +2,7 @@ project('chamelio', 'c',
   version : '1.0',
   default_options: [
     'c_std=gnu99',
-    'optimization=0',
+    'optimization=3',
     'debug=true',
     'c_args=-march=native -Wno-address-of-packed-member',
   ]
@@ -18,4 +18,5 @@ subdir('utils')
 subdir('lib')
 subdir('protos')
 subdir('chamelio')
+subdir('tests')
 subdir('examples')

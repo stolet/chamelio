@@ -13,7 +13,6 @@ struct cham_sched_entry *sched_head(struct cham_scheduler *sched);
 /* Removes the highest priority entry from the list*/
 int sched_pop(struct cham_scheduler *sched);
 /* Adds an entry to the queue manager priority list */
-int sched_add(struct cham_scheduler *sched, uint32_t id, uint32_t priority, 
-    uint32_t avail, uint64_t opaque);
+int sched_add(struct cham_scheduler *sched, uint32_t id, uint32_t priority);
 
 #endif

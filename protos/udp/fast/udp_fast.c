@@ -55,7 +55,7 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   uint16_t udp_hdrs_len, ip_hdrs_len, pkt_hdrs_len;
   uint64_t mac_src_val, mac_dst_val, part;
   struct eth_addr mac_src, mac_dst;
-  struct in_addr ip_src, ip_dst;
+  struct in_addr ip_src;
   uint32_t ip_src_be, ip_dst_be;
   struct udp_pkt *p = (struct udp_pkt *) pkt;
   
@@ -149,8 +149,7 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   /* Add entry to the back if there is still data to send */
   if (sched_entry->avail > 0)
   {
-    ret = sched_add(sched, sock->id, 0, 
-        sched_entry->avail, sched_entry->opaque);
+    ret = sched_add(sched, sock->id, 0);
     if (ret != 0)
     {
       LOG_ERROR("failed to re-add entry to scheduler");
@@ -209,25 +208,24 @@ int udp_event_deq(int qid, struct queue_entry *qe,
   sock = &sock_map[bump->sock_id];
   sock->tx_avail += bump->tx_avail;
   sock->rx_head += bump->rx_head;
-
-  if (bump->tx_avail > 0)
-  {
-    sched = &handle->sched;
-    se = &sched->entries[sock->id];
-  }
   
   /* TODO: We want to keep a list of out-of-order bumps so
      we can appropriately send each bump to the correct address */
   /* Set IP address and port to socket */
   sock->dst_ip = bump->dst_ip;
   sock->dst_port = bump->dst_port;
+  
+  
+  sched = &handle->sched;
+  se = &sched->entries[sock->id];
+  se->avail = se->avail + bump->tx_avail;
+  se->opaque = (uint64_t) sock;
 
   /* Add scheduler entry to the list if it has not been added yet */
   if (se->id == SCHED_ID_INVALID)
   {
     /* For UDP every socket has the same priority */
-    ret = sched_add(sched, bump->sock_id, 0, 
-        se->avail + bump->tx_avail, (uint64_t) sock);
+    ret = sched_add(sched, bump->sock_id, 0);
     if (ret != 0)
     {
       LOG_ERROR("failed to add entry to scheduler");
