@@ -2,7 +2,7 @@ udp_lib_inc = include_directories('include', '../include')
 
 deps = [
   dependency('queue_dep'),
-  dependency('chamelio_lib'),
+  dependency('cham_lib'),
 ]
 
 udp_lib_lib = static_library(

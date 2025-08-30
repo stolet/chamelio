@@ -1,13 +1,22 @@
-test_srcs = files('test_chamelio.c','test_utils.c')
+test_cham_lib_srcs = files('test_cham_lib.c','test_utils.c')
+test_cham_scheduler_srcs = files('test_cham_scheduler.c', 'test_utils.c')
 
 deps = [
-  dependency('chamelio_lib'),
+  dependency('cham_lib'),
 ]
 
-test_chamelio = executable(
-  'test_chamelio',
-  test_srcs,
+test_cham_lib = executable(
+  'test_cham_lib',
+  test_cham_lib_srcs,
   dependencies: deps,
 )
 
-test('chamelio-test', test_chamelio)
+test('cham-lib-test', test_cham_lib)
+
+test_cham_scheduler = executable(
+  'test_cham_scheduler',
+  test_cham_scheduler_srcs,
+  dependencies: deps,
+)
+
+test('cham-scheduler-test', test_cham_scheduler)

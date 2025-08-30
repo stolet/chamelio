@@ -3,7 +3,7 @@ udp_fast_inc = include_directories('include', '../include')
 deps = [
   dependency('log_dep'),
   dependency('utils_dep'),
-  dependency('chamelio_lib'),
+  dependency('cham_lib'),
 ]
 
 udp_fast_lib = static_library(

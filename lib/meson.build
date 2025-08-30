@@ -27,7 +27,7 @@ lib_dep = declare_dependency(
   dependencies : deps,
 )
 
-meson.override_dependency('chamelio_lib', lib_dep)
+meson.override_dependency('cham_lib', lib_dep)
 
 pkg = import('pkgconfig')
 pkg.generate(

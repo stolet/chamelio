@@ -52,7 +52,7 @@ static pid_t start_chamelio()
 
   /* Give Chamelio time to start */
   sleep(3);
-  printf("Chamelio started with PID %d\n\n", pid);
+  printf("Chamelio started with PID %d\n", pid);
   return pid;
 }
 
@@ -63,7 +63,7 @@ static void test_connect_guest()
   TEST_ASSERT(guest != NULL, "guest is NULL");
   TEST_ASSERT(guest->uxsocket_fd >= 0, "invalid uxsocket_fd");
   TEST_ASSERT(guest->shm_fd >= 0, "invalid shm_fd");
-  printf(ANSI_COLOR_GREEN "cham_connect_guest test passed" ANSI_COLOR_RESET "\n\n");
+  printf(ANSI_COLOR_GREEN "cham_connect_guest test passed" ANSI_COLOR_RESET "\n");
 }
 
 static void test_new_proto(struct guest_lib *guest)
@@ -76,35 +76,31 @@ static void test_new_proto(struct guest_lib *guest)
   TEST_ASSERT(proto->guest == guest, "incorrect guest pointer");
   TEST_ASSERT(proto->nqueues == 0, "nqueues not initialized to 0");
   TEST_ASSERT(proto->nmaps == 0, "nmaps not initialized to 0");
-  printf(ANSI_COLOR_GREEN "cham_new_proto test passed" ANSI_COLOR_RESET "\n\n");
+  printf(ANSI_COLOR_GREEN "cham_new_proto test passed" ANSI_COLOR_RESET "\n");
 }
 
 static void test_new_queue(struct proto_lib *proto)
 {
   printf(ANSI_COLOR_BLUE "Testing cham_new_queue..." ANSI_COLOR_RESET "\n");
-  fflush(stdout);
   struct proto_queue_lib *queue = cham_new_queue(proto, 
       TEST_QUEUE_NELEMS, TEST_QUEUE_ELSIZE);
   TEST_ASSERT(queue != NULL, "queue is NULL");
   TEST_ASSERT(queue->nelems == TEST_QUEUE_NELEMS, "incorrect nelems");
   TEST_ASSERT(queue->elsize == TEST_QUEUE_ELSIZE, "incorrect elsize");
   TEST_ASSERT(queue->proto == proto, "incorrect proto pointer");
-  printf(ANSI_COLOR_GREEN "cham_new_queue test passed" ANSI_COLOR_RESET "\n\n");
-  fflush(stdout);
+  printf(ANSI_COLOR_GREEN "cham_new_queue test passed" ANSI_COLOR_RESET "\n");
 }
 
 static void test_new_map(struct proto_lib *proto)
 {
   printf(ANSI_COLOR_BLUE "Testing cham_new_map..." ANSI_COLOR_RESET "\n");
-  fflush(stdout);
   struct proto_map_lib *map = cham_new_map(proto, 
       TEST_MAP_NELEMS, TEST_MAP_ELSIZE);
   TEST_ASSERT(map != NULL, "map is NULL");
   TEST_ASSERT(map->nelems == TEST_MAP_NELEMS, "incorrect nelems");
   TEST_ASSERT(map->elsize == TEST_MAP_ELSIZE, "incorrect elsize");
   TEST_ASSERT(map->proto == proto, "incorrect proto pointer");
-  printf(ANSI_COLOR_GREEN "cham_new_map test passed" ANSI_COLOR_RESET "\n\n");
-  fflush(stdout);
+  printf(ANSI_COLOR_GREEN "cham_new_map test passed" ANSI_COLOR_RESET "\n");
 }
 
 static void test_enable_queue(struct proto_lib *proto)
@@ -112,7 +108,7 @@ static void test_enable_queue(struct proto_lib *proto)
   printf(ANSI_COLOR_BLUE "Testing cham_enable_queue..." ANSI_COLOR_RESET "\n");
   int ret = cham_enable_queue(proto, 0, TEST_CORE_ID);
   TEST_ASSERT(ret == 0, "enable_queue failed");
-  printf(ANSI_COLOR_GREEN "cham_enable_queue test passed" ANSI_COLOR_RESET "\n\n");
+  printf(ANSI_COLOR_GREEN "cham_enable_queue test passed" ANSI_COLOR_RESET "\n");
 }
 
 static void test_disable_queue(struct proto_lib *proto)
@@ -120,7 +116,7 @@ static void test_disable_queue(struct proto_lib *proto)
   printf(ANSI_COLOR_BLUE "Testing cham_disable_queue..." ANSI_COLOR_RESET "\n");
   int ret = cham_disable_queue(proto, 0, TEST_CORE_ID);
   TEST_ASSERT(ret == 0, "disable_queue failed");
-  printf(ANSI_COLOR_GREEN "cham_disable_queue test passed" ANSI_COLOR_RESET "\n\n");
+  printf(ANSI_COLOR_GREEN "cham_disable_queue test passed" ANSI_COLOR_RESET "\n");
 }
 
 int main()
@@ -151,7 +147,7 @@ int main()
   test_enable_queue(proto);
   test_disable_queue(proto);
 
-  printf(ANSI_COLOR_GREEN "All tests passed!" ANSI_COLOR_RESET "\n");
+  printf("All tests passed!\n");
 
   // Clean shutdown
   kill(g_chamelio_pid, SIGTERM);

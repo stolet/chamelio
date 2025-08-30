@@ -56,3 +56,14 @@ exposes a library that can be used by applications to send and receive
 messages using an example Chamelio UDP protocol.
 
 Example applications that use these libraries can be found in `code/examples`.
+
+## Tests
+
+Chamelio tests are located in the `tests/` directory. To run all the tests
+execute the command `meson test -C build -v` from the Chamelio directory.
+Note that some tests need to start Chamelio, which needs sudo access.
+To run an invididual test suite execute `meson test -C build test-name -v`
+
+Chamelio tests
+- `test_cham_lib`: Tests the chamelio library function
+- `test_cham_scheduler`: Tests Chamelio scheduler that implements a priority list
