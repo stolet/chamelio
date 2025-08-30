@@ -3,6 +3,13 @@
 Chamelio is a shared, high-performance, and flexible network stack. Guests
 can upload and run custom network protocols on the host with Chamelio.
 
+The usual workflow to implement a new Chamelio protocol is to create
+a protocol specific slow-path that uses the Chamelio library in
+`cham_lib.h` to register, create queues, and
+allocate maps in Chamelio. The protocol implementer will then write
+an application library that applications in the guest can use
+to send and receive data.
+
 ## Building
 
 Requirements
