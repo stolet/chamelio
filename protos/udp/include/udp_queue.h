@@ -95,8 +95,12 @@ struct udp_queue_new_actx_res {
 struct udp_queue_bump {
   /* Socket ID used by slow-path */
   uint32_t sock_id;
-  /* Pointer to struct in app library */
+  /* Opaque pointer to struct in app library */
   uint64_t opaque;
+  /* Destination port for this bump */
+  uint16_t dst_port;
+  /* Destination Ip for this bump */
+  uint32_t dst_ip;
   /* Bump for RX available */
   uint32_t rx_avail;
   /* Bump for RX head */

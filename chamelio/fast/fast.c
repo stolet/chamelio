@@ -102,11 +102,11 @@ int fast_loop(struct fast_context *ctx)
       LOG_ERROR("poll_queues failed");
     }
 
-    // ret = poll_tx(ctx);
-    // if (ret < 0)
-    // {
-    //   LOG_ERROR("poll_tx failed");
-    // }
+    ret = poll_tx(ctx);
+    if (ret < 0)
+    {
+      LOG_ERROR("poll_tx failed");
+    }
 
     ret = poll_control(ctx);
     if (ret < 0)
@@ -225,7 +225,6 @@ int poll_tx(struct fast_context *ctx)
 {
   unsigned n;
   int i, ret;
-  uint8_t tx_err;
   struct guest_fast *guest;
   struct rte_mbuf *mbs[BATCH_SIZE];
   uint8_t n_guests = ctx->n_guests;
@@ -251,12 +250,8 @@ int poll_tx(struct fast_context *ctx)
   guest = ctx->guests;
   for (i = 0; i < n_guests && guest != NULL && i < n; i++)
   {
-    tx_err = fast_process_packet_tx(ctx, mbs[i]);
-    if (tx_err < 0)
-    {
-      LOG_WARN("fast_process_packet_tx failed");
-    }
-    else
+    ret = guest->proto.event_tx(mbs[i]->buf_addr, &guest->proto.handle);
+    if (ret == 0)
     {
       ctx->tx_mbs[ctx->tx_n] = mbs[i];
       ctx->tx_n++;

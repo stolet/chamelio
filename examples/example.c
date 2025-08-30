@@ -13,7 +13,7 @@ int main (int argc, char **argv)
   int ret, sockfd;
   struct sockaddr_in addr;
   socklen_t addr_len;
-  uint8_t buf[64];
+  uint8_t buf[2048];
   // struct proto_lib *p;
   // struct guest_lib *g;
   
@@ -31,16 +31,19 @@ int main (int argc, char **argv)
 
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
-  inet_pton(AF_INET, "192.168.10.14", &(addr.sin_addr));
+  inet_pton(AF_INET, "192.168.10.13", &(addr.sin_addr));
   addr.sin_port = htons(1234);
   addr_len = sizeof(addr);
   
-  ret = udp_sendto(sockfd, buf, sizeof(buf), 
-      (struct sockaddr *) &addr, addr_len);
-  if (ret < 0)
-    abort();
+  // ret = udp_sendto(sockfd, buf, sizeof(buf), 
+  //     (struct sockaddr *) &addr, addr_len);
+  // if (ret < 0)
+  //   abort();
 
-  while(1){}
+  while(1){
+     udp_sendto(sockfd, buf, sizeof(buf), 
+       (struct sockaddr *) &addr, addr_len);
+  }
   // g = cham_connect_guest();
   // assert(g != NULL);
 

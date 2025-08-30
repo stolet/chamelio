@@ -73,11 +73,12 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
 
   /* TODO: Add ebpf code here */
   g->proto.event_rx = NULL;
-  g->proto.event_tx = NULL;
+  g->proto.event_tx = udp_event_tx;
   g->proto.event_deq = udp_event_deq;
   
   /* Init qman */
   sched_init(&g->proto.handle.sched);
+  g->proto.handle.shm_base = g->shm_base;
 
   ctx->n_guests++;
 }

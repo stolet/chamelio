@@ -80,7 +80,6 @@ struct fast_context {
   /* Queue from the control-path to the fast-path */
   struct dqueue *ctl_fast_q;
 
-  /* TODO: Pass internal fd and base to fast-path */
   /* File descriptor for internal shared memory */
   int shm_fd_internal;
   /* Base pointer for internal shared memory region */
@@ -94,7 +93,7 @@ int fast_context_init(struct fast_context *f_ctx,
     struct configuration *config, int shm_fd_internal, void *shm_base_internal);
 /* Dataplane loop in a fast-path core */
 int fast_loop(struct fast_context *ctx);
-/* Cleansup the fast-path */
+/* Cleans up the fast-path */
 void fast_context_destroy();
 
 #endif

@@ -82,6 +82,7 @@ int udp_connect_slow()
   u->shm_fd = shm_fd;
   u->shm_base = NULL;
   u->next_ctxid = 0;
+  u->next_sockfd = 0;
   udp = u;
   
   return 0;
@@ -294,8 +295,7 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
     const struct sockaddr *addr, socklen_t addrlen)
 {
   int n, ret;
-  uint32_t ip, tail, n1, n2;
-  uint16_t port;
+  uint32_t tail, n1, n2;
   struct udp_socket *sock;
   struct equeue *q;
   struct udp_queue_entry *qe;
@@ -308,9 +308,6 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
     LOG_ERROR("bad socket file descriptor");
     return -1;
   }
-
-  ip = ntohl(sin->sin_addr.s_addr);
-  port = ntohs(sin->sin_port);
 
   n = len;
   if (len > sock->tx_len - sock->tx_avail)
@@ -351,6 +348,9 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
 
   bump = &qe->data.bump;
   bump->sock_id = sock->sock_id;
+  bump->dst_ip = sin->sin_addr.s_addr;
+  bump->dst_port = sin->sin_port;
+  bump->opaque = (uint64_t) sock;
   bump->tx_head = 0;
   bump->tx_avail = n;
   bump->rx_head = 0;
@@ -430,6 +430,37 @@ int udp_recvfrom(int sockfd, void *buf, size_t len,
   return n;
 }
 
+int udp_poll_fast()
+{
+  int i;
+  struct dqueue *q;
+  struct udp_queue_entry *qe;
+
+  /* Poll for messages from each fast-path core */
+  for (i = 0; i < udp_ctx->ncores; i++)
+  {
+    q = udp_ctx->fast_app_qs[i];
+    qe = queue_head(q);
+  
+    /* Queue is empty */
+    if (qe == NULL)
+      return -1;
+  
+    switch (qe->type)
+    {
+      case UDP_QUEUE_BUMP:
+        LOG_DEBUG("got a bump from the fast-path");
+        handle_bump(qe);
+      default:
+        LOG_ERROR("unknown queue entry type from "
+            "fast-path to app type=%d", qe->type);
+        abort();
+    }
+  }
+
+  return 0;
+}
+
 int udp_poll_slow()
 {
   struct dqueue *q;
@@ -449,6 +480,7 @@ int udp_poll_slow()
       queue_dequeue(q);
       return UDP_QUEUE_NEW_SOCK_RES;
     case UDP_QUEUE_BUMP:
+      LOG_DEBUG("why did we get a bump from the slow-path?????");
       handle_bump(qe);
     default:
       LOG_ERROR("unknown queue entry type from "

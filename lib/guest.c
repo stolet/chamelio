@@ -223,7 +223,7 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p,
   pq = &p->queues[nqueues];
   req->opaque = (uint64_t) pq;
 
-  /* Set to 0 so we can check it was initialised when we poll control */
+  /* Set to 0 so we can check queue was initialised when we poll control */
   pq->elsize = 0;
   pq->nelems = 0;
 
@@ -268,7 +268,7 @@ struct proto_map_lib * cham_new_map(struct proto_lib *p,
   m = &p->maps[nmaps];
   req->opaque = (uint64_t) m;
 
-  /* Set to 0 so we can check it was initialised when we poll control */
+  /* Set to 0 so we can check map was initialised when we poll control */
   m->nelems = 0;
 
   ret = queue_enqueue(q, QUEUE_NEW_MAP_REQ);

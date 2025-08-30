@@ -88,6 +88,8 @@ struct cham_proto_handle {
   struct cham_map maps[MAX_PROTO_MAPS];
   /* TX scheduler for this protocol */
   struct cham_scheduler sched;
+  /* Shared memory base */
+  void *shm_base;
 };
 
 #endif 

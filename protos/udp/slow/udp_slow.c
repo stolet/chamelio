@@ -163,7 +163,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
   sock->rx_len = protoq->elsize * protoq->nelems;
   sock->rx_avail = 0;
   sock->rx_head = 0;
-  sock->rx_buf = ctx->proto->shm_base + protoq->off;
+  sock->rx_off = protoq->off;
 
   /* Create queue for TX buffer */
   /* TODO: Have size of buffer be a parameter */
@@ -175,7 +175,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
   sock->tx_len = protoq->nelems * protoq->elsize;
   sock->tx_avail = 0;
   sock->tx_head = 0;
-  sock->tx_buf = ctx->proto->shm_base + protoq->off;
+  sock->tx_off = protoq->off;
 
   /* Send response to app */
   ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_NEW_SOCK_RES);

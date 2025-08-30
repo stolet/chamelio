@@ -28,7 +28,11 @@ struct udp_sock {
   uint16_t core;
   /* Queue ID to bump app */
   uint16_t app_bump_qid;
-
+  /* Destinatio IP stored in network byte order */
+  uint32_t dst_ip;
+  /* Destination port stored in network byte order */
+  uint16_t dst_port;
+  
   /* Queue ID used for RX buffer */
   uint16_t rx_qid;
   /* Length of RX buffer */
@@ -38,7 +42,7 @@ struct udp_sock {
   /* Head of RX buffer */
   uint32_t rx_head;
   /* Pointer to start of RX buffer in shared memory */
-  void *rx_buf;
+  uint64_t rx_off;
   
   /* Queue ID used for TX buffer */
   uint16_t tx_qid;
@@ -48,8 +52,8 @@ struct udp_sock {
   uint32_t tx_avail;
   /* Head of the TX buffer */
   uint32_t tx_head;
-  /* Pointer to the start of the TX buffer in shared memory */
-  void *tx_buf;
+  /* Offset to the start of the TX buffer in shared memory */
+  uint64_t tx_off;
 };
 
 /* Entry for app bump map */ 
