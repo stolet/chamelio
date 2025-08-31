@@ -119,7 +119,7 @@ int fast_loop(struct fast_context *ctx)
 
 int poll_rx(struct fast_context *ctx)
 {
-  int i, n, ret;
+  int i, n;
   struct rte_mbuf *mbs[BATCH_SIZE];
   struct guest_fast *g;
 
@@ -138,7 +138,7 @@ int poll_rx(struct fast_context *ctx)
     g = find_guest(ctx, mbs[i]);
     if (g != NULL)
     {
-      ret = g->proto.event_rx(rte_pktmbuf_mtod(mbs[i], uint8_t *), 
+      g->proto.event_rx(rte_pktmbuf_mtod(mbs[i], uint8_t *), 
           &g->proto.handle);
     }
   }
