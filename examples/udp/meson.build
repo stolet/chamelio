@@ -12,11 +12,14 @@ executable(
   'udp_linux_server.c'
 )
 
-# executable(
-#   'udp_cham_client',
-#   'udp_cham_client.c'
-# )
-# executable(
-#   'udp_cham_server',
-#   'udp_cham_server.c'
-# )
+executable(
+  'udp_cham_client',
+  'udp_cham_client.c',
+  dependencies: deps,
+)
+
+executable(
+  'udp_cham_server',
+  'udp_cham_server.c',
+  dependencies : deps,
+)

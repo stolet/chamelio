@@ -92,7 +92,7 @@ int queue_enqueue(struct equeue *q, uint8_t type)
     return -1;
 
   tail = q->tail + q->elsize;
-  if (tail > (q->elsize * q->nelems))
+  if (tail >= (q->elsize * q->nelems))
     tail = 0;
   q->tail = tail;
     
@@ -115,8 +115,8 @@ int queue_dequeue(struct dqueue *q)
     return -1;
 
   head = q->head + q->elsize;
-  if (head > (q->elsize * q->nelems))
-  head = 0;
+  if (head >= (q->elsize * q->nelems))
+    head = 0;
   q->head = head;
   
   MEM_BARRIER();
@@ -144,7 +144,7 @@ void * queue_tail(struct equeue *q)
   
   type = (uint8_t *) q->entries + q->tail;
   
-  /* Queue is empty */
+  /* Queue is full */
   if (*type != QUEUE_EMPTY)
     return NULL;
 

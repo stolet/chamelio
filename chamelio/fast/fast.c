@@ -90,12 +90,12 @@ int fast_loop(struct fast_context *ctx)
 
   while(1) 
   {
-    // ret = poll_rx(ctx);
-    // if (ret < 0)
-    // {
-    //   LOG_ERROR("poll_rx failed");
-    //   return -1;
-    // }
+    ret = poll_rx(ctx);
+    if (ret < 0)
+    {
+      LOG_ERROR("poll_rx failed");
+      return -1;
+    }
 
     ret = poll_queues(ctx);
     if (ret < 0)
@@ -138,9 +138,8 @@ int poll_rx(struct fast_context *ctx)
     g = find_guest(ctx, mbs[i]);
     if (g != NULL)
     {
-      ret = g->proto.event_rx(mbs[i], &g->proto.handle);
-      if (ret != 0)
-        LOG_ERROR("failed to process packet from guest=%d", g->id);
+      ret = g->proto.event_rx(rte_pktmbuf_mtod(mbs[i], uint8_t *), 
+          &g->proto.handle);
     }
   }
 
@@ -195,7 +194,7 @@ int poll_queues(struct fast_context *ctx)
 int poll_tx(struct fast_context *ctx)
 {
   unsigned n;
-  int i, ret;
+  int i, ret, n_proc;
   struct guest_fast *guest;
   struct rte_mbuf *mbs[BATCH_SIZE];
   uint8_t n_guests = ctx->n_guests;
@@ -219,13 +218,25 @@ int poll_tx(struct fast_context *ctx)
   }
 
   guest = ctx->guests;
-  for (i = 0; i < n_guests && guest != NULL && i < n; i++)
+  n_proc = 0;
+  for (i = 0; i < n_guests && guest != NULL && n_proc < n; i++)
   {
-    ret = guest->proto.event_tx(mbs[i]->buf_addr, &guest->proto.handle);
-    if (ret == 0)
+    for (;n_proc < n;)
     {
-      ctx->tx_mbs[ctx->tx_n] = mbs[i];
-      ctx->tx_n++;
+      mbs[n_proc]->data_off = 0;
+      ret = guest->proto.event_tx(rte_pktmbuf_mtod(mbs[n_proc], uint8_t *), 
+          &guest->proto.handle);
+      if (ret >= 0)
+      {
+        mbs[n_proc]->pkt_len = mbs[n_proc]->data_len = ret;
+        ctx->tx_mbs[ctx->tx_n] = mbs[n_proc];
+        ctx->tx_n++;
+        n_proc++;
+      }
+      else
+      {
+        break;
+      }
     }
   }
 

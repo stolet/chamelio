@@ -32,7 +32,11 @@ struct udp_sock {
   uint32_t dst_ip;
   /* Destination port stored in network byte order */
   uint16_t dst_port;
-  
+  /* Source IP stored in network byte order */
+  uint32_t src_ip;
+  /* Source port stored in network byte order */
+  uint16_t src_port;
+
   /* Queue ID used for RX buffer */
   uint16_t rx_qid;
   /* Length of RX buffer */

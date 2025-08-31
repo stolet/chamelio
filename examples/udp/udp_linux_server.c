@@ -1,8 +1,8 @@
 /* Usage:
- *   ./udp_echo_server <bind_ip> <port> [--buf-size N]
+ *   ./udp_linux_server <bind_ip> <port> [--buf-size N]
  *
  * Example:
- *   ./udp_echo_server 0.0.0.0 9000 --buf-size 2048
+ *   ./udp_linux_server 0.0.0.0 9000 --buf-size 2048
  */
 
 #define _GNU_SOURCE
@@ -86,7 +86,7 @@ int main(int argc, char **argv)
   fflush(stdout);
   
   
-  for (;;)
+  while(1)
   {
     struct sockaddr_in src;
     socklen_t srclen = sizeof(src);

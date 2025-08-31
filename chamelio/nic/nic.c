@@ -28,7 +28,7 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   /* Setup receive configuration */
   port_conf->rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
   port_conf->rxmode.offloads = 0;
-  port_conf->rx_adv_conf.rss_conf.rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_TCP;
+  port_conf->rx_adv_conf.rss_conf.rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP;
 
   /* Setup transmit configuration */
   port_conf->txmode.mq_mode = RTE_ETH_MQ_RX_RSS;

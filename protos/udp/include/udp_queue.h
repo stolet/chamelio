@@ -21,6 +21,8 @@ enum udp_queue_type {
   UDP_QUEUE_NEW_SOCK_REQ,
   /* Response from slow-path for created socket */
   UDP_QUEUE_NEW_SOCK_RES,
+  /* Bind message for a socket */
+  UDP_QUEUE_BIND,
   /* Bump message to update buffer available or head */
   UDP_QUEUE_BUMP,
 };
@@ -91,6 +93,16 @@ struct udp_queue_new_actx_res {
   uint64_t fa_offs[MAX_FP_CORES];
 } __attribute__((packed));
 
+/* Message that sends the src port and ip */
+struct udp_queue_bind {
+  /* Socket ID used by slow-path */
+  uint32_t sock_id;
+  /* Source port for this bind */
+  uint16_t src_port;
+  /* Source IP for this bind */
+  uint32_t src_ip;
+} __attribute__((packed));
+
 /* Message that bumps the RX and TX avail or head */
 struct udp_queue_bump {
   /* Socket ID used by slow-path */
@@ -120,6 +132,7 @@ struct udp_queue_entry {
     struct udp_queue_new_actx_res new_actx_res;
     struct udp_queue_new_sock_req new_sock_req;
     struct udp_queue_new_sock_res new_sock_res;
+    struct udp_queue_bind bind;
     struct udp_queue_bump bump;
     /* Keeps queue entry the size of a cache line */
     uint8_t raw[511];

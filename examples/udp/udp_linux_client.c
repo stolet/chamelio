@@ -5,7 +5,7 @@
  * latency percentiles (p50, p99, p99.9) in microseconds.
  *
  * Usage:
- *   ./udp_client <server_ip> <port> [--msg-size N] [--duration S]
+ *   ./udp_linux_client <server_ip> <port> [--msg-size N] [--duration S]
  *
  * Notes:
  *   - --msg-size is the TOTAL UDP payload bytes (header included).
@@ -255,7 +255,6 @@ static int parse_args(int argc, char **argv)
 
 static int init_out_ring()
 {
-  fprintf(stderr, "out_ring_size=%ld\n", OUT_RING_SIZE);
   out_ring = (struct out_entry *) calloc(OUT_RING_SIZE, sizeof(*out_ring));
   
   if (!out_ring)
@@ -408,8 +407,34 @@ int main(int argc, char **argv)
     if (duration_sec > 0 && now >= t_end_ns) 
       break;
 
+    /* Send bursts */
+    for (int burst = 0; burst < max_pending; burst++)
+    {
+      ph = (struct payload_hdr *) txbuf;
+      ph->seq      = seq;
+      ph->tsc_send = util_rdtsc();
+      ph->magic    = PAYLOAD_MAGIC;
+
+      idx = seq & OUT_RING_MASK;
+      out_ring[idx].seq = seq;
+      out_ring[idx].tsc_send = ph->tsc_send;
+
+      s = sendto(fd, txbuf, msg_size, 0, (struct sockaddr *) &dst, dstlen);
+      if (s < 0)
+      {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+        if (errno == EINTR) continue;
+        break;
+      }
+      
+      tx_bytes_interval += (uint64_t)s;
+      tx_pkts_interval  += 1;
+      total_sent_pkts   += 1;
+      seq++;
+    }
+      
     /* Drain replies */
-    for (;;)
+    while(1)
     {
       ssize_t r = recvfrom(fd, rxbuf, msg_size, 0, NULL, NULL);
       if (r < 0)
@@ -438,32 +463,6 @@ int main(int argc, char **argv)
         e->seq = UINT64_MAX;
         e->tsc_send = 0;
       }
-    }
-
-    /* Send bursts */
-    for (int burst = 0; burst < max_pending; burst++)
-    {
-      ph = (struct payload_hdr *) txbuf;
-      ph->seq      = seq;
-      ph->tsc_send = util_rdtsc();
-      ph->magic    = PAYLOAD_MAGIC;
-
-      idx = seq & OUT_RING_MASK;
-      out_ring[idx].seq = seq;
-      out_ring[idx].tsc_send = ph->tsc_send;
-
-      s = sendto(fd, txbuf, msg_size, 0, (struct sockaddr *) &dst, dstlen);
-      if (s < 0)
-      {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-        if (errno == EINTR) continue;
-        break;
-      }
-      
-      tx_bytes_interval += (uint64_t)s;
-      tx_pkts_interval  += 1;
-      total_sent_pkts   += 1;
-      seq++;
     }
 
     /* Once per elapsed second */

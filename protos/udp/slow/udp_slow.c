@@ -12,6 +12,8 @@ int poll_apps(struct udp_slow_context *ctx);
 
 int handle_new_sock(struct udp_slow_context *ctx, 
   struct udp_app_context_slow *actx, struct udp_queue_entry *qe);
+int handle_bind(struct udp_slow_context *ctx, 
+    struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req);
   
 int main(int argc, char **argv)
 {
@@ -95,6 +97,10 @@ int poll_apps(struct udp_slow_context *ctx)
           handle_new_sock(ctx, &ctx->apps[i].ctxs[j], qe);
           queue_dequeue(q);
           break;
+        case UDP_QUEUE_BIND:
+          handle_bind(ctx, &ctx->apps[i].ctxs[j], qe);
+          queue_dequeue(q);
+          break;
         default:
           LOG_WARN("unknown queue tryt type from app" 
               "to udp slow-path type=%d", type);
@@ -112,7 +118,7 @@ int poll_control(struct udp_slow_context *ctx)
 }
 
 int handle_new_sock(struct udp_slow_context *ctx, 
-  struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
+    struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
 {
   int ret;
   struct udp_sock *sock;
@@ -121,7 +127,8 @@ int handle_new_sock(struct udp_slow_context *ctx,
   struct udp_queue_new_sock_req *req;
   struct udp_queue_new_sock_res *res;
 
-  struct udp_sock *socks_map = ctx->proto->shm_base + actx->app->socks_map->off;
+  struct udp_sock *socks_map = ctx->proto->shm_base + 
+      actx->app->socks_map->off;
 
   if (actx->app->n_socks >= MAX_SOCKETS)
   {
@@ -150,7 +157,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
 
   /* Create queue for RX buffer */
   /* TODO: Have size of buffer be a parameter */
-  protoq = cham_new_queue(ctx->proto, 256, 64);
+  protoq = cham_new_queue(ctx->proto, 512, 64);
   if (protoq == NULL)
   {
     LOG_ERROR("failed to create new queue");
@@ -167,7 +174,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
 
   /* Create queue for TX buffer */
   /* TODO: Have size of buffer be a parameter */
-  protoq = cham_new_queue(ctx->proto, 256, 64);
+  protoq = cham_new_queue(ctx->proto, 512, 64);
   res->tx_qid = protoq->id;
   res->tx_len = protoq->nelems * protoq->elsize;
   res->tx_off = protoq->off;
@@ -184,6 +191,29 @@ int handle_new_sock(struct udp_slow_context *ctx,
     LOG_ERROR("failed to enqueue new socket response");
     return -1;
   }
+
+  return 0;
+}
+
+int handle_bind(struct udp_slow_context *ctx, 
+    struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
+{
+  struct udp_queue_entry *qe_res;
+  struct udp_queue_bind *req;
+  struct udp_sock *sock;
+
+  qe_res = queue_tail(actx->slow_app_q);
+  if (qe_res == NULL)
+  {
+    LOG_ERROR("failed to get tail of slow->app queue");
+    return -1;
+  }
+  
+  req = &qe_req->data.bind;
+  struct udp_sock *socks_map = ctx->proto->shm_base + actx->app->socks_map->off;
+  sock = &socks_map[req->sock_id];
+  sock->src_ip = req->src_ip;
+  sock->src_port = req->src_port;
 
   return 0;
 }
