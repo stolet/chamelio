@@ -194,7 +194,7 @@ int poll_queues(struct fast_context *ctx)
 int poll_tx(struct fast_context *ctx)
 {
   unsigned n;
-  int i, ret, n_proc;
+  int i, ret, n_used;
   struct guest_fast *guest;
   struct rte_mbuf *mbs[BATCH_SIZE];
   uint8_t n_guests = ctx->n_guests;
@@ -218,20 +218,20 @@ int poll_tx(struct fast_context *ctx)
   }
 
   guest = ctx->guests;
-  n_proc = 0;
-  for (i = 0; i < n_guests && guest != NULL && n_proc < n; i++)
+  n_used = 0;
+  for (i = 0; i < n_guests && guest != NULL && n_used < n; i++)
   {
-    for (;n_proc < n;)
+    for (;n_used < n;)
     {
-      mbs[n_proc]->data_off = 0;
-      ret = guest->proto.event_tx(rte_pktmbuf_mtod(mbs[n_proc], uint8_t *), 
+      mbs[n_used]->data_off = 0;
+      ret = guest->proto.event_tx(rte_pktmbuf_mtod(mbs[n_used], uint8_t *), 
           &guest->proto.handle);
       if (ret >= 0)
       {
-        mbs[n_proc]->pkt_len = mbs[n_proc]->data_len = ret;
-        ctx->tx_mbs[ctx->tx_n] = mbs[n_proc];
+        mbs[n_used]->pkt_len = mbs[n_used]->data_len = ret;
+        ctx->tx_mbs[ctx->tx_n] = mbs[n_used];
         ctx->tx_n++;
-        n_proc++;
+        n_used++;
       }
       else
       {
@@ -242,7 +242,11 @@ int poll_tx(struct fast_context *ctx)
 
   /* Push packets to the NIC */
   ret = nic_fast_tx(&ctx->nic_ctx, ctx->tx_n, ctx->tx_mbs);
-  rte_pktmbuf_free_bulk(mbs, n);
+  
+  if (n_used < n) 
+  {
+    rte_pktmbuf_free_bulk(&mbs[n_used], n - n_used);
+  }
 
   if (ret == ctx->tx_n)
   {
