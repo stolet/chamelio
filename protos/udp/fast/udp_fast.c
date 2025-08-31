@@ -306,11 +306,8 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   // p->udp.src = t_beui16(1234);
   p->udp.src = t_beui16(1234);
   p->udp.dst = t_beui16(1234);
-
-  /* Checksum has to be 0 before we can compute it */
-  p->udp.chksum = 0;
-  p->udp.chksum = rte_ipv4_udptcp_cksum((void *) &p->ip, (void *) &p->udp);
   p->udp.len = t_beui16(udp_hdrs_len + payload_len);
+  p->udp.chksum = 0; /* UDP checksum has to be 0 before we compute it */
   
   /* Copy data to packet */
   payload = pkt + pkt_hdrs_len;
@@ -324,6 +321,11 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
     memcpy(payload, handle->shm_base + sock->tx_off + sock->tx_head, part);
     memcpy(payload + part, handle->shm_base + sock->tx_off, payload_len - part);
   }
+  
+  /* Compute checksum */
+  p->udp.chksum = rte_ipv4_udptcp_cksum((void *) &p->ip, (void *) &p->udp);
+  
+  /* Update socket and schduler structs */
   new_head = sock->tx_head + payload_len;
   if (new_head >= sock->tx_len)
     new_head -= sock->tx_len;

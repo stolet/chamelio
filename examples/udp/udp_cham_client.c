@@ -49,7 +49,7 @@ struct payload_hdr {
 /* Default arg values */
 size_t msg_size = 64; // Total payload bytes: includes payload_hdr
 int duration_sec = 30;
-int max_pending = 256;
+int max_pending = 1;
 const char *server_ip;
 int port;
 
