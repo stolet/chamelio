@@ -215,8 +215,8 @@ struct queue_entry {
     struct queue_disableq_req disableq_req;
     struct queue_allocate_ebpf_req alloc_ebpf_req;
     struct queue_allocate_ebpf_res alloc_ebpf_res;
-    struct queue_free_up_ebpf_req free_ebpf_req;
-    struct queue_free_up_ebpf_res upload_ebpf_res;
+    struct queue_free_up_ebpf_req free_up_ebpf_req;
+    struct queue_free_up_ebpf_res free_up_ebpf_res;
     /* Keeps queue entry the size of a cache line */
     uint8_t raw[63];
   } __attribute__((packed)) data;
