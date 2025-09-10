@@ -375,7 +375,8 @@ struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, void *ebpf_byteco
   return &p->ebpf_program;
 }
 
-int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode)
+//TODO: do we really need the size of the program here? Ask lil Mat
+int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
 {
   //TODO: this check necessary?
   if (p->ebpf_program.size == 0) 
