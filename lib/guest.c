@@ -11,20 +11,11 @@
 #include "log.h"
 #include "uxsocket.h"
 
-<<<<<<< HEAD
 static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe);
 static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
-
-=======
-//supposed to be static
-int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe);
-int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
-int handle_allocate_ebpf_res(struct proto_lib *p, struct queue_entry *qe);
->>>>>>> bd25eb4 (ca marche ou ca court?)
-
-/* Uploads an eBPF program to Chamelio and register it with the fast-path */
-int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
-int cham_free_ebpf(struct proto_lib *p, uint32_t size);   
+static int handle_allocate_ebpf_res(struct proto_lib *p, struct queue_entry *qe);
+static int handle_free_ebpf_res(struct proto_lib *p, struct queue_entry *qe);
+static int handle_upload_ebpf_res(struct proto_lib *p, struct queue_entry *qe);
 
 struct guest_lib *cham_connect_guest()
 {
@@ -263,6 +254,7 @@ struct proto_map_lib *cham_new_map(struct proto_lib *p,
   struct equeue *q;
   struct queue_entry *qe;
   struct queue_new_map_req *req;
+  struct proto_map_lib *m;
  
   nmaps = p->nmaps;
   q = p->guest_ctl_q;
@@ -355,7 +347,7 @@ int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
 
   return 0;
 }
-
+//TODO: remove ebpf bytecode arg => put it in upload only
 struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
 {
   struct equeue *q = p->guest_ctl_q;
@@ -368,6 +360,8 @@ struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, void *ebpf_byteco
   struct queue_allocate_ebpf_req *req = &qe->data.alloc_ebpf_req;
   req->size = size;
   req->opaque = (uint64_t)&p->ebpf_program;
+  p->ebpf_program.flag = 0; //reset flag to 0 before sending request
+
   int ret = queue_enqueue(q, QUEUE_ALLOCATE_EBPF_REQ);
   if (ret != 0)
   {
@@ -376,16 +370,89 @@ struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, void *ebpf_byteco
   }
 
   //TODO: Make THIS asynchron. instead of blocking here
-  while(cham_poll_control(p) != QUEUE_ALLOCATE_EBPF_RES)
-  {
-  }
+  while(p->ebpf_program.flag == 0)
+    cham_poll_control(p);
   return &p->ebpf_program;
 }
 
-int cham_free_ebpf(struct proto_lib *p, uint32_t size)
+int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode)
 {
+  //TODO: this check necessary?
+  if (p->ebpf_program.size == 0) 
+  {
+    LOG_ERROR("tried to upload eBPF program before allocating it");
+    return -1;
+  }
   
-  return 0;
+  //copy ebpf bytecode to shared memory
+  void *shm_addr = (uint8_t *)p->shm_base + p->ebpf_program.off;
+  memcpy(shm_addr, ebpf_bytecode, p->ebpf_program.size);
+
+  struct equeue *q = p->guest_ctl_q;
+  struct queue_entry *qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+  struct queue_free_up_ebpf_req *req = &qe->data.free_up_ebpf_req;
+  req->size = p->ebpf_program.size;
+  req->off = p->ebpf_program.off; // offset in shared memory where the ebpf program is stored
+  p->ebpf_program.flag = 0; //reset flag to 0 before sending request
+
+  int ret = queue_enqueue(q, QUEUE_UPLOAD_EBPF_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue request to upload eBPF program");
+    return ret;
+  }
+
+  while (p->ebpf_program.flag == 0)
+    cham_poll_control(p);
+  
+  if (p->ebpf_program.flag < 0){
+    LOG_ERROR("failed to upload eBPF program in control plane");
+    return -1;
+  } // upload failed in control plane
+  
+  return ret;
+}
+
+int cham_free_ebpf(struct proto_lib *p)
+{
+  if (p->ebpf_program.size == 0) 
+    return 0;
+  
+  struct equeue *q = p->guest_ctl_q;
+  struct queue_entry *qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+  struct queue_free_up_ebpf_req *req = &qe->data.free_up_ebpf_req;
+  req->size = p->ebpf_program.size;
+  req->off = p->ebpf_program.off;
+  p->ebpf_program.flag = 0; //reset flag to 0 before sending request
+
+  int ret = queue_enqueue(q, QUEUE_FREE_EBPF_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue request to free eBPF program");
+    return ret;
+  }
+
+  while (p->ebpf_program.flag == 0)
+    cham_poll_control(p);
+  
+  if (p->ebpf_program.flag < 0) // free failed in control plane
+    return -1;
+  
+  p->ebpf_program.size = 0;
+  p->ebpf_program.off = 0;
+  p->ebpf_program.flag = 0;
+
+  return ret;
 }
 
 int cham_poll_control(struct proto_lib *p)
@@ -410,6 +477,18 @@ int cham_poll_control(struct proto_lib *p)
     handle_new_map_res(p, qe);
     queue_dequeue(q);
     return QUEUE_NEW_MAP_RES;
+  case QUEUE_ALLOCATE_EBPF_RES:
+    handle_allocate_ebpf_res(p, qe);
+    queue_dequeue(q);
+    return QUEUE_ALLOCATE_EBPF_RES;
+  case QUEUE_FREE_EBPF_RES:
+    handle_free_ebpf_res(p, qe);
+    queue_dequeue(q);
+    return QUEUE_FREE_EBPF_RES;
+  case QUEUE_UPLOAD_EBPF_RES:
+    handle_upload_ebpf_res(p, qe);
+    queue_dequeue(q);
+    return QUEUE_UPLOAD_EBPF_RES;
   default:
     LOG_ERROR("unknown queue entry type from "
               "guest to control-path type=%d",
@@ -420,17 +499,40 @@ int cham_poll_control(struct proto_lib *p)
   return 0;
 }
 
-//modify here!
-int handle_allocate_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
+static int handle_free_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
+{
+  struct queue_free_up_ebpf_res *res = &qe->data.free_up_ebpf_res;
+
+  if (res->success != 0){
+    LOG_ERROR("failed to free eBPF program in control plane");
+    p->ebpf_program.flag = -1;
+  }
+  else p->ebpf_program.flag = 1; // set flag to 1 to indicate free is complete
+  return 0;
+}
+
+static int handle_upload_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
+{
+  struct queue_free_up_ebpf_res *res = &qe->data.free_up_ebpf_res;
+
+  if (res->success != 0){
+    LOG_ERROR("failed to upload eBPF program in control plane");
+    p->ebpf_program.flag = -1;
+  }
+  else p->ebpf_program.flag = 1; // set flag to 1 to indicate upload is complete
+  return 0;
+}
+
+static int handle_allocate_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
 {
   struct queue_allocate_ebpf_res *res;
   struct proto_ebpf_lib *e;
 
   res = &qe->data.alloc_ebpf_res;
-  e = &p->ebpf_program;
+  e = (struct proto_ebpf_lib *) res->opaque;  //placeholder cookie
   e->size = res->size;
   e->off = res->off;
-  p->nqueues++;
+  e->flag = 1; // set flag to 1 to indicate allocation is complete
 
   return 0;
 }

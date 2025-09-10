@@ -25,13 +25,13 @@ struct proto_queue_lib {
   struct proto_lib *proto;
 };
 
-//TO ASK: Question for u (u means Mat/Matheus S.): would the struct below even be useful at some point? (doesn't seem very useful to Sru.)
-
 struct proto_ebpf_lib{
-/* Size of the queue */
+/* Size of the ebpf program */
   uint32_t size;
   /* Offset in shared memory to start of queue */
   uint64_t off;
+  /* flag indicating arrival of response from the control plane */
+  int flag; 
 };
 
 struct proto_map_lib {
