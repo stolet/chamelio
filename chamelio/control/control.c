@@ -11,6 +11,9 @@
 #include "log.h"
 #include "queue.h"
 
+//#include "llvmbpf.hpp"
+//using namespace bpftime;
+
 static int poll_fast(struct control_context *ctx);
 static int poll_guests(struct control_context *ctx);
 static int handle_new_queue_req(struct control_context *ctx,
@@ -482,7 +485,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
   int ret;
-  struct queue_upload_ebpf_req *req;
+  struct queue_free_up_ebpf_req *req;
   struct queue_entry *qe_res;
   struct queue_free_up_ebpf_res *res;
   void *ebpf_bytecode;
@@ -530,5 +533,27 @@ static int handle_free_ebpf_req(struct control_context *ctx,
   res->success = 0; //indicating free was successful
   ret = queue_enqueue(g->cham_guest_q, QUEUE_FREE_EBPF_RES);
   assert(ret == 0);
+  return 0;
+}
+
+static int verify_ebpf(void *ebpf_bytecode, size_t size)
+{ 
+  return 0;
+}
+
+static int jit_ebpf(void *ebpf_bytecode, size_t size)
+{ 
+  uint64_t res = 0;
+  llvmbpf_vm vm;  
+  res = vm.load(ebpf_bytecode, size);
+  if (res != 0) {
+    LOG_ERROR("failed to load ebpf bytecode");
+    return res;
+  }
+  auto fn = vm.compile();                 // LLVM JIT
+    if (!fn) {
+      LOG_ERROR("failed to JIT ebpf bytecode");
+        return -1;
+    }
   return 0;
 }
