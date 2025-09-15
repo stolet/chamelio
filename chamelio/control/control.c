@@ -516,6 +516,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   assert(qe_res != NULL);
   res = (struct queue_upload_ebpf_res *)&qe_res->data;
 
+  //send response back to guest
   res->success = 0; // indicating upload was successful
   ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
   assert(ret == 0);
