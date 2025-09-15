@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include "bpf/libbpf.h"
 
 #ifdef __cplusplus
 extern "C"
