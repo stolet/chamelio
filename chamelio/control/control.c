@@ -29,6 +29,7 @@ static int handle_free_ebpf_req(struct control_context *ctx,
                                 struct guest_control *g, struct queue_entry *qe_req);
 static int handle_upload_ebpf_req(struct control_context *ctx,
                                   struct guest_control *g, struct queue_entry *qe_req);
+static int jit_ebpf(void *ebpf_bytecode, size_t size);
 
 int control_context_init(struct control_context *ctx, struct configuration *config,
                          struct shm_handle **fc_handles, struct shm_handle **cf_handles)
@@ -514,7 +515,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
 
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
-  res = (struct queue_upload_ebpf_res *)&qe_res->data;
+  res = (struct queue_free_up_ebpf_res *)&qe_res->data;
 
   //send response back to guest
   res->success = 0; // indicating upload was successful
@@ -561,7 +562,7 @@ static int verify_ebpf(void *ebpf_bytecode, size_t size)
 static int jit_ebpf(void *ebpf_bytecode, size_t size)
 {
   uint64_t res = 0;
-  llvmbpf_vm_c vm;
+  struct llvmbpf_vm_c vm;
   res = llvmbpf_vm_load_code(&vm, ebpf_bytecode, size);
   if (res != 0)
   {
