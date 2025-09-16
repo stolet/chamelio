@@ -49,7 +49,7 @@ This repo has some examples of different slow-path protocol implementations in t
 `protos/` directory. For example, you can run the UDP slow-path after starting Chamelio.
 
 ```
-sudo code/build/protos/udp/slow/slow
+sudo code/build/protos/udp/slow/udp_slow
 ```
 
 This registers a slow-path and creates a shared memory region to be
