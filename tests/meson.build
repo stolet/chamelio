@@ -1,5 +1,6 @@
 test_cham_lib_srcs = files('test_cham_lib.c','test_utils.c')
 test_cham_scheduler_srcs = files('test_cham_scheduler.c', 'test_utils.c')
+test_cham_queue_srcs = files('test_cham_queue.c', 'test_utils.c')
 
 deps = [
   dependency('cham_lib'),
@@ -20,3 +21,11 @@ test_cham_scheduler = executable(
 )
 
 test('cham-scheduler-test', test_cham_scheduler)
+
+test_cham_queue = executable(
+  'test_cham_queue',
+  test_cham_queue_srcs,
+  dependencies: deps,
+)
+
+test('cham-qeueue-test', test_cham_queue)
