@@ -8,7 +8,7 @@
 
 /* Test configurations */
 #define TEST_CHAM_IP "192.168.10.14/24"
-#define TEST_NIC_ID "d8:00.0"
+#define TEST_NIC_ID "86:00.0"
 #define TEST_SHM_SIZE 1024 * 1024 * 1024
 #define TEST_QUEUE_NELEMS 16
 #define TEST_QUEUE_ELSIZE 64
