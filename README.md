@@ -72,5 +72,5 @@ Note that some tests need to start Chamelio, which needs sudo access.
 To run an invididual test suite execute `meson test -C build test-name -v`
 
 Chamelio tests
-- `test_cham_lib`: Tests the chamelio library function
-- `test_cham_scheduler`: Tests Chamelio scheduler that implements a priority list
+- `cham-lib-test`: Tests the chamelio library functions
+- `cham-scheduler-test`: Tests Chamelio scheduler that implements a priority list
