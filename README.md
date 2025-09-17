@@ -68,7 +68,7 @@ Example applications that use these libraries can be found in `code/examples`.
 
 Chamelio tests are located in the `tests/` directory. To run all the tests
 execute the command `meson test -C build -v` from the Chamelio directory.
-Note that some tests need to start Chamelio, which needs sudo access.
+Note that some tests start Chamelio, which needs sudo access.
 To run an invididual test suite execute `meson test -C build test-name -v`
 
 Chamelio tests
