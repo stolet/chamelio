@@ -23,8 +23,7 @@ static int handle_enableq_req(struct control_context *ctx,
                               struct guest_control *g, struct queue_entry *qe);
 static int handle_disableq_req(struct control_context *ctx,
                                struct guest_control *g, struct queue_entry *qe);
-static int handle_allocate_ebpf_req(struct control_context *ctx,
-                                    struct guest_control *g, struct queue_entry *qe_req);
+static int handle_allocate_ebpf_req(struct guest_control *g, struct queue_entry *qe_req);
 static int handle_free_ebpf_req(struct control_context *ctx,
                                 struct guest_control *g, struct queue_entry *qe_req);
 static int handle_upload_ebpf_req(struct control_context *ctx,
@@ -206,7 +205,7 @@ static int poll_guests(struct control_context *ctx)
       queue_dequeue(q);
       break;
     case QUEUE_ALLOCATE_EBPF_REQ:
-      handle_allocate_ebpf_req(ctx, g, qe);
+      handle_allocate_ebpf_req(g, qe);
       queue_dequeue(q);
       break;
     case QUEUE_FREE_EBPF_REQ:
@@ -452,8 +451,8 @@ static int handle_disableq_req(struct control_context *ctx,
 }
 
 // TODO: do I actually need these ctx?
-static int handle_allocate_ebpf_req(struct control_context *ctx,
-                                    struct guest_control *g, struct queue_entry *qe_req)
+
+static int handle_allocate_ebpf_req(struct guest_control *g, struct queue_entry *qe_req)
 {
   int ret;
   struct queue_allocate_ebpf_req *req;
@@ -486,13 +485,17 @@ static int handle_allocate_ebpf_req(struct control_context *ctx,
 static int handle_upload_ebpf_req(struct control_context *ctx,
                                   struct guest_control *g, struct queue_entry *qe_req)
 {
-  int ret;
-  struct queue_free_up_ebpf_req *req;
+  int ret, i;
+  struct queue_free_up_ebpf_req *req, *f_req;
   struct queue_entry *qe_res;
   struct queue_free_up_ebpf_res *res;
   void *ebpf_bytecode;
   req = &qe_req->data.free_up_ebpf_req;
 
+  qe_res = queue_tail(g->cham_guest_q);
+  assert(qe_res != NULL);
+  res = (struct queue_free_up_ebpf_res *)&qe_res->data;
+  
   ebpf_bytecode = (uint8_t *)g->shm_base + req->off;
 
   ret = jit_ebpf(ebpf_bytecode, req->size);
@@ -512,11 +515,19 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   Load it to fast path through function pointers
   Return success or failure
   */
+  for (i = 0; i < ctx->config->fp_cores_max; i++)
+  {
+    qe_req = queue_tail(ctx->ctl_fast_qs[i]);
+    assert(qe_req != NULL);
+    f_req = &qe_req->data.free_up_ebpf_req;
+    f_req->size = req->size;
+    f_req->off = req->off;
 
-  qe_res = queue_tail(g->cham_guest_q);
-  assert(qe_res != NULL);
+    ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_UPLOAD_EBPF_REQ);
+    assert(ret == 0);
+  }
+
   res = (struct queue_free_up_ebpf_res *)&qe_res->data;
-
   //send response back to guest
   res->success = 0; // indicating upload was successful
   ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
@@ -534,9 +545,11 @@ static int handle_free_ebpf_req(struct control_context *ctx,
   req = &qe_req->data.free_up_ebpf_req;
   struct queue_entry *qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
-  struct queue_free_up_ebpf_res *res = (struct queue_free_up_ebpf_res *)&qe_res->data;
-  sh->off = req->off;
-  sh->len = req->size;
+  struct queue_free_up_ebpf_res *res = 
+      
+  (struct queue_free_up_ebpf_res *)&qe_res->data;
+  //sh->off = req->off;
+  //sh->len = req->size;
 
   // TODO: modify this to use handler
   // shmalloc_free(g->alloc, &sh);
@@ -546,7 +559,7 @@ static int handle_free_ebpf_req(struct control_context *ctx,
   // TODO: modify the ebpf struct to include the handle instead of off and size
 
   // return success for now without freeing
-
+  //TODO: unload the vm code and destroy it 
   res->success = 0; // indicating free was successful
   ret = queue_enqueue(g->cham_guest_q, QUEUE_FREE_EBPF_RES);
   assert(ret == 0);
@@ -558,18 +571,37 @@ static int verify_ebpf(void *ebpf_bytecode, size_t size)
   return 0;
 }
 
+static uint64_t nop_helper(uint64_t r1, uint64_t r2, uint64_t r3,
+                           uint64_t r4, uint64_t r5) {
+  (void)r1; (void)r2; (void)r3; (void)r4; (void)r5;
+  return 0;
+}
+
 //pointer to the memory with the jitted code inside the llvmbpf_vm_c struct: llvmbpf_jitted_fn
 static int jit_ebpf(void *ebpf_bytecode, size_t size)
 {
   uint64_t res = 0;
-  struct llvmbpf_vm_c vm;
-  res = llvmbpf_vm_load_code(&vm, ebpf_bytecode, size);
+  struct llvmbpf_vm_c *vm = llvmbpf_vm_create();
+  if (vm == NULL)
+  {
+    LOG_ERROR("failed to create llvmbpf vm");
+    return -1;
+  }
+  res = llvmbpf_vm_load_code(vm, ebpf_bytecode, size);
   if (res != 0)
   {
     LOG_ERROR("failed to load ebpf bytecode");
     return res;
   }
-  res = llvmbpf_vm_compile(&vm); // LLVM JIT
+  // Register helper functions here
+  res = llvmbpf_register_helper(vm, 2, nop_helper, "nop_helper");
+  if (res != 0)
+  {
+    LOG_ERROR("failed to register helper function");
+    return res;
+  }
+
+  res = llvmbpf_vm_compile(vm); // LLVM JIT
   if (res != 0)
   {
     LOG_ERROR("failed to JIT ebpf bytecode");

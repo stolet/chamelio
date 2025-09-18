@@ -1,7 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
-#include "bpf/libbpf.h"
+//#include "bpf/libbpf.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -19,6 +19,7 @@ extern "C"
 
     int llvmbpf_vm_load_code(llvmbpf_vm_c *h, const void *code, size_t code_len);
     void llvmbpf_vm_unload_code(llvmbpf_vm_c *h);
+    int llvmbpf_register_helper(llvmbpf_vm_c *h, uint32_t id, void *fn, char *name);
 
     int llvmbpf_vm_compile(llvmbpf_vm_c *h); // 0=ok
 

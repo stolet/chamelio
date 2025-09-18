@@ -51,6 +51,15 @@ extern "C"
     h->jitted_fn = nullptr;
   }
 
+  int llvmbpf_vm_register_helper(llvmbpf_vm_c *h, uint32_t id, void *fn, char *name)
+  {
+    int res; 
+    if (!h || !fn)
+      return -1;
+    res = h->vm.register_external_function(id, name, fn);
+    return res;
+  }
+
   // return NULLPTR on error and function pointer to the jitted code on success
   int llvmbpf_vm_compile(llvmbpf_vm_c *h)
   {
