@@ -56,6 +56,8 @@ struct proto_lib {
   struct guest_lib *guest;
   /* Number of Chamelio fast-path cores */
   uint32_t n_fp_cores;
+  /* Local IP address */
+  uint32_t local_ip;
   
   /* Guest->control queue */
   struct equeue *guest_ctl_q;

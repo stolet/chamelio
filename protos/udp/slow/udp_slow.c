@@ -14,32 +14,6 @@ int handle_new_sock(struct udp_slow_context *ctx,
   struct udp_app_context_slow *actx, struct udp_queue_entry *qe);
 int handle_bind(struct udp_slow_context *ctx, 
     struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req);
-  
-int main(int argc, char **argv)
-{
-  int ret;
-  struct udp_slow_context ctx;
-  
-  ret = init_udp_slow_context(&ctx);
-  if (ret != 0)
-  {
-    LOG_ERROR("failed to initialise udp slow context");
-    abort();
-  }
-  
-  ret = appif_init(&ctx);
-  if (ret != 0)
-  {
-    LOG_ERROR("failed to initialise appiff");
-    abort();
-  }
-  
-  while (1)
-  {
-    appif_poll(&ctx);
-    poll_apps(&ctx);
-  }
-}
 
 int init_udp_slow_context(struct udp_slow_context *ctx)
 {
@@ -152,6 +126,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
   sock->id = res->sock_id;
   sock->next_id = ID_INVALID;
   sock->core = 0;
+  sock->src_ip = ctx->proto->local_ip;
   sock->app_bump_qid = actx->app_bump_qs[0]->id;
   sock->opaque = req->opaque;
 
@@ -216,4 +191,30 @@ int handle_bind(struct udp_slow_context *ctx,
   sock->src_port = req->src_port;
 
   return 0;
+}
+
+int main(int argc, char **argv)
+{
+  int ret;
+  struct udp_slow_context ctx;
+  
+  ret = init_udp_slow_context(&ctx);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to initialise udp slow context");
+    abort();
+  }
+  
+  ret = appif_init(&ctx);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to initialise appiff");
+    abort();
+  }
+  
+  while (1)
+  {
+    appif_poll(&ctx);
+    poll_apps(&ctx);
+  }
 }

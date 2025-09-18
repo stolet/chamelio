@@ -416,6 +416,7 @@ static void uxsocket_receive(struct control_context *ctx, struct guest_event *ge
   /* Initialise response */
   gev->proto_res.n_fp_cores = ctx->config->fp_cores_max;
   gev->proto_res.shm_len = ctx->config->shm_len;
+  gev->proto_res.local_ip = ctx->config->ip;
   gev->proto_res.guestq_nelems = ctx->config->agt_queue_len;
   gev->proto_res.guestq_elsize = sizeof(struct queue_entry);
 

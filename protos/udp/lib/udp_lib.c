@@ -24,7 +24,8 @@ static struct udp_lib *udp = NULL;
 static __thread struct udp_context_lib *udp_ctx = NULL;
 
 static int handle_new_sock_res(struct udp_queue_entry *qe);
-static int handle_bump(struct udp_queue_entry *qe);
+static int handle_tx_bump(struct udp_queue_bump_entry *qe);
+static int handle_rx_bump(struct udp_queue_bump_entry *qe);
 
 int udp_connect_slow()
 {
@@ -194,7 +195,8 @@ int udp_ctx_new()
   ctx->app_slow_q = eq;
   
   /* Set queue from slow-path to app */
-  dq = dqueue_new(res->sa_nelems, res->sa_elsize,udp->shm_base + res->sa_off, res->sa_off);
+  dq = dqueue_new(res->sa_nelems, 
+      res->sa_elsize,udp->shm_base + res->sa_off, res->sa_off);
   if (dq == NULL)
   {
     LOG_ERROR("failed to create queue from slow-path to app");
@@ -219,7 +221,7 @@ int udp_ctx_new()
   }
   udp_ctx->fast_app_qs = dq_list;
 
-  /* Create each queue between app and fast-path */
+  /* Create each queue between app and fast-path core */
   for (i = 0; i < res->n_fp_cores; i++)
   {
     eq = equeue_new(res->af_nelems, res->af_elsize,
@@ -333,8 +335,8 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
   uint32_t tail, n1, n2;
   struct udp_socket *sock;
   struct equeue *q;
-  struct udp_queue_entry *qe;
-  struct udp_queue_bump *bump;
+  struct udp_queue_bump_entry *qe;
+  struct udp_queue_bump_cham_tx *bump;
   struct sockaddr_in *sin = (struct sockaddr_in *) addr;
 
   sock = &udp->socks[sockfd];
@@ -346,8 +348,8 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
 
   n = len;
   if (len > sock->tx_len - sock->tx_avail)
-    n = sock->tx_len - sock->tx_avail;
-
+  n = sock->tx_len - sock->tx_avail;
+  
   /* No space available in tx buffer */
   if (n == 0)
   {
@@ -374,6 +376,8 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
   }
 
   sock->tx_avail = sock->tx_avail + n;
+  sock->tx_ip = (uint32_t) sin->sin_addr.s_addr;
+  sock->tx_port = (uint16_t) sin->sin_port;
     
   /* Send bump message to update TX available */
   q = udp_ctx->app_fast_qs[sock->core];
@@ -384,17 +388,13 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
     return -1;
   }
 
-  bump = &qe->data.bump;
+  bump = &qe->data.bump_cham_tx;
   bump->sock_id = sock->sock_id;
-  bump->dst_ip = sin->sin_addr.s_addr;
-  bump->dst_port = sin->sin_port;
-  bump->opaque = (uint64_t) sock;
-  bump->tx_head = 0;
-  bump->tx_avail = n;
-  bump->rx_head = 0;
-  bump->rx_avail = 0;
+  bump->tx_ip = sin->sin_addr.s_addr;
+  bump->tx_port = sin->sin_port;
+  bump->tx_avail = n;  
 
-  ret = queue_enqueue(q, UDP_QUEUE_BUMP);
+  ret = queue_enqueue(q, UDP_QUEUE_BUMP_CHAM_TX);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue bump");
@@ -410,8 +410,8 @@ int udp_recvfrom(int sockfd, void *buf, size_t len,
   int n, ret;
   uint32_t n1, n2, new_head;
   struct equeue *q;
-  struct udp_queue_entry *qe;
-  struct udp_queue_bump *bump; 
+  struct udp_queue_bump_entry *qe;
+  struct udp_queue_bump_cham_rx *bump; 
   struct udp_socket *sock;
   struct sockaddr_in *sin = (struct sockaddr_in *) addr;
 
@@ -454,6 +454,8 @@ int udp_recvfrom(int sockfd, void *buf, size_t len,
   if (new_head > sock->rx_len)
     new_head -= sock->rx_len;
   sock->rx_head = new_head;
+  sin->sin_addr.s_addr = htonl(sock->rx_ip);
+  sin->sin_port = htons(sock->rx_port);
 
   /* Send bump message to update RX head */
   q = udp_ctx->app_fast_qs[sock->core];
@@ -464,20 +466,11 @@ int udp_recvfrom(int sockfd, void *buf, size_t len,
     return -1;
   }
 
-  bump = &qe->data.bump;
+  bump = &qe->data.bump_cham_rx;
   bump->sock_id = sock->sock_id;
-  bump->opaque = (uint64_t) sock;
   bump->rx_head = n;
-  bump->rx_avail = 0;
-  bump->tx_avail = 0;
-  bump->tx_head = 0;
-  if (addr != NULL)
-  {
-    bump->dst_ip = sin->sin_addr.s_addr;
-    bump->dst_port = sin->sin_port; 
-  }
   
-  ret = queue_enqueue(q, UDP_QUEUE_BUMP);
+  ret = queue_enqueue(q, UDP_QUEUE_BUMP_CHAM_RX);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue bump");
@@ -491,7 +484,7 @@ int udp_poll_fast()
 {
   int i, n;
   struct dqueue *q;
-  struct udp_queue_entry *qe;
+  struct udp_queue_bump_entry *qe;
 
   /* Poll for messages from each fast-path core */
   n = 0;
@@ -510,8 +503,12 @@ int udp_poll_fast()
     
       switch (qe->type)
       {
-        case UDP_QUEUE_BUMP:
-          handle_bump(qe);
+        case UDP_QUEUE_BUMP_APP_TX:
+          handle_tx_bump(qe);
+          queue_dequeue(q);
+          break;
+        case UDP_QUEUE_BUMP_APP_RX:
+          handle_rx_bump(qe);
           queue_dequeue(q);
           break;
         default:
@@ -551,10 +548,6 @@ int udp_poll_slow()
         handle_new_sock_res(qe);
         queue_dequeue(q);
         break;
-      case UDP_QUEUE_BUMP:
-        handle_bump(qe);
-        queue_dequeue(q);
-        break;
       default:
         LOG_ERROR("unknown queue entry type from "
             "slow-path to app type=%d", qe->type);
@@ -584,21 +577,34 @@ static int handle_new_sock_res(struct udp_queue_entry *qe)
   return 0;  
 }
 
-static int handle_bump(struct udp_queue_entry *qe)
+static int handle_tx_bump(struct udp_queue_bump_entry *qe)
 {
   uint32_t new_head;
-  struct udp_queue_bump *bump;
+  struct udp_queue_bump_app_tx *bump;
   struct udp_socket *sock;
 
-  bump = &qe->data.bump;
+  bump = &qe->data.bump_app_tx;
   sock = (struct udp_socket *) bump->opaque;
 
-  sock->rx_avail += bump->rx_avail;
   new_head = sock->tx_head + bump->tx_head;
   if (new_head > sock->tx_len)
     new_head -= sock->tx_len;
   sock->tx_head = new_head;
   sock->tx_avail -= bump->tx_head;
+
+  return 0;  
+}
+
+static int handle_rx_bump(struct udp_queue_bump_entry *qe)
+{
+  struct udp_queue_bump_app_rx *bump;
+  struct udp_socket *sock;
+
+  bump = &qe->data.bump_app_rx;
+  sock = (struct udp_socket *) bump->opaque;
+  sock->rx_avail += bump->rx_avail;
+  sock->rx_port = bump->rx_port;
+  sock->rx_ip = bump->rx_ip;
 
   return 0;  
 }

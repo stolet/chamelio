@@ -31,7 +31,10 @@
 
 int main(int argc, char **argv)
 {
-  int ret, fd;
+  int i, ret, fd, port;
+  size_t buf_size;
+  struct sockaddr_in src_addr, dst_addr;
+  socklen_t dstlen;
   
   if (argc < 3)
   {
@@ -40,16 +43,16 @@ int main(int argc, char **argv)
   }
 
   const char *bind_ip = argv[1];
-  int port = atoi(argv[2]);
+  port = atoi(argv[2]);
   if (port <= 0 || port > 65535)
   {
     fprintf(stderr, "Invalid port\n");
     return EXIT_FAILURE;
   }
 
-  size_t buf_size = 65536;
+  buf_size = 65536;
 
-  for (int i = 3; i < argc; i++)
+  for (i = 3; i < argc; i++)
   {
     if (strcmp(argv[i], "--buf-size") == 0 && i + 1 < argc)
     {
@@ -74,17 +77,16 @@ int main(int argc, char **argv)
   if (fd < 0)
     abort();
     
-  struct sockaddr_in addr;
-  memset(&addr, 0, sizeof(addr));
-  addr.sin_family = AF_INET;
-  addr.sin_port   = htons((uint16_t)port);
-  if (inet_pton(AF_INET, bind_ip, &addr.sin_addr) != 1)
+  memset(&src_addr, 0, sizeof(src_addr));
+  src_addr.sin_family = AF_INET;
+  src_addr.sin_port   = htons((uint16_t)port);
+  if (inet_pton(AF_INET, bind_ip, &src_addr.sin_addr) != 1)
   {
     fprintf(stderr, "Invalid bind_ip\n");
     return EXIT_FAILURE;
   }
 
-  if (udp_bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+  if (udp_bind(fd, (struct sockaddr *)&src_addr, sizeof(src_addr)) < 0)
   {
     perror("bind");
     return EXIT_FAILURE;
@@ -103,11 +105,10 @@ int main(int argc, char **argv)
   
   while(1)
   {
-    struct sockaddr_in src;
-    socklen_t srclen = sizeof(src);
+    dstlen = sizeof(dst_addr);
     
     udp_poll_fast();
-    ssize_t n = udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&src, srclen);
+    ssize_t n = udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&dst_addr, dstlen);
     if (n < 0)
     {
       if (errno == EINTR || errno == EAGAIN) continue;
@@ -117,7 +118,7 @@ int main(int argc, char **argv)
     }
 
     udp_poll_fast();
-    ssize_t m = udp_sendto(fd, buf, (size_t)n, (struct sockaddr *)&src, srclen);
+    ssize_t m = udp_sendto(fd, buf, (size_t)n, (struct sockaddr *)&dst_addr, dstlen);
     if (m < 0 && errno != EAGAIN)
     {
       if (errno == EINTR) 

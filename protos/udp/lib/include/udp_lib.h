@@ -19,6 +19,15 @@ struct udp_socket {
     /* Fast-path core of this socket */
     uint16_t core;
 
+    /* RX port */
+    uint16_t rx_port;
+    /* RX IP address */
+    uint32_t rx_ip;
+    /* TX port */
+    uint16_t tx_port;
+    /* TX IP address */
+    uint32_t tx_ip;
+
     /* Queue ID used for RX buffer */
     uint16_t rx_qid;
     /* Length of RX buffer */

@@ -60,6 +60,8 @@ struct queue_new_proto_req {
 struct queue_new_proto_res {
   /* Number of fast-path cores */
   uint32_t n_fp_cores;
+  /* Local IP address */
+  uint32_t local_ip;
   /* Size of shm region */
   uint32_t shm_len;
   /* Number of elements in Guest <-> Control queues */

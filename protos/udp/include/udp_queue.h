@@ -23,8 +23,14 @@ enum udp_queue_type {
   UDP_QUEUE_NEW_SOCK_RES,
   /* Bind message for a socket */
   UDP_QUEUE_BIND,
-  /* Bump message to update buffer available or head */
-  UDP_QUEUE_BUMP,
+  /* Bumps Chamelio when app calls send */
+  UDP_QUEUE_BUMP_CHAM_TX,
+  /* Bump Chamelio when app calls recv */
+  UDP_QUEUE_BUMP_CHAM_RX,
+  /* Bump app when Chamelio sends a packet */
+  UDP_QUEUE_BUMP_APP_TX,
+  /* Bump app when Chamelio receives a packet */
+  UDP_QUEUE_BUMP_APP_RX,
 };
 
 /* Request to create new socket in slow-path */
@@ -103,24 +109,44 @@ struct udp_queue_bind {
   uint32_t src_ip;
 } __attribute__((packed));
 
-/* Message that bumps the RX and TX avail or head */
-struct udp_queue_bump {
+/* Message that bumps the Chamelio TX avail */
+struct udp_queue_bump_cham_tx {
   /* Socket ID used by slow-path */
   uint32_t sock_id;
-  /* Opaque pointer to struct in app library */
-  uint64_t opaque;
-  /* Destination port for this bump */
-  uint16_t dst_port;
-  /* Destination Ip for this bump */
-  uint32_t dst_ip;
-  /* Bump for RX available */
-  uint32_t rx_avail;
-  /* Bump for RX head */
-  uint32_t rx_head;
+  /* TX port for this bump */
+  uint16_t tx_port;
+  /* TX IP for this bump */
+  uint32_t tx_ip;
   /* Bump for TX available */
   uint32_t tx_avail;
+} __attribute__((packed));
+
+/* Message that bumps the Chamelio RX head */
+struct udp_queue_bump_cham_rx {
+  /* Socket ID used by slow-path */
+  uint32_t sock_id;
+  /* Bump for RX head */
+  uint32_t rx_head;
+} __attribute__((packed));
+
+/* Message that bumps the app TX head */
+struct udp_queue_bump_app_tx {
+  /* Opaque pointer to struct in app library */
+  uint64_t opaque;
   /* Bump for TX head */
   uint32_t tx_head;
+} __attribute__((packed));
+
+/* Message that bumps the app RX available */
+struct udp_queue_bump_app_rx {
+  /* Opaque pointer to struct in app library */
+  uint64_t opaque;
+  /* RX port for this bump */
+  uint16_t rx_port;
+  /* RX IP for this bump */
+  uint32_t rx_ip;
+  /* Bump for RX available */
+  uint32_t rx_avail;
 } __attribute__((packed));
 
 struct udp_queue_entry {
@@ -133,15 +159,29 @@ struct udp_queue_entry {
     struct udp_queue_new_sock_req new_sock_req;
     struct udp_queue_new_sock_res new_sock_res;
     struct udp_queue_bind bind;
-    struct udp_queue_bump bump;
-    /* Keeps queue entry the size of a cache line */
+    /* Keeps queue entry the size of half a cache line */
     uint8_t raw[511];
   } __attribute__((packed)) data;
 } __attribute__((packed));
 
-/* TODO: Make this cache-lined again. The udp_queue_new_actx_res
+struct udp_queue_bump_entry {
+  /* Type of queue entry. Don't upadete outside of enqueue or dequeue */
+  volatile uint8_t type;
+  /* Data section of queue entry */
+  union {
+    struct udp_queue_bump_app_tx bump_app_tx;
+    struct udp_queue_bump_app_rx bump_app_rx;
+    struct udp_queue_bump_cham_tx bump_cham_tx;
+    struct udp_queue_bump_cham_rx bump_cham_rx;
+    /* Keeps queue entry the size of a cache line */
+    uint8_t raw[31];
+  } __attribute__((packed)) data;
+} __attribute__((packed));
+
+/* TODO: Make this cache-aligned again. The udp_queue_new_actx_res
    probably doesn't have to be in udp_queue.h */
 /* We want queue entries to be cache line sized for faster retrieval */
 STATIC_ASSERT(sizeof(struct udp_queue_entry) == 512, udp_queue_entry_size);
+STATIC_ASSERT(sizeof(struct udp_queue_bump_entry) == 32, udp_bump_queue_entry_size);
 
 #endif

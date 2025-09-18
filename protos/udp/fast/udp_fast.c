@@ -11,6 +11,10 @@
 #define SOCK_MAP_IDX 0
 
 int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN]);
+int handle_bump_tx(struct udp_queue_bump_entry *qe, 
+    struct cham_proto_handle *handle);
+int handle_bump_rx(struct udp_queue_bump_entry *qe, 
+    struct cham_proto_handle *handle);
 
 struct udp_sock * udp_sock_find(struct cham_proto_handle *handle,
     uint32_t remote_ip_be, uint16_t remote_port_be);
@@ -55,8 +59,8 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
 
   struct udp_sock *sock;
   struct equeue *q;
-  struct udp_queue_entry *qe;
-  struct udp_queue_bump *bump;
+  struct udp_queue_bump_entry *qe;
+  struct udp_queue_bump_app_rx *bump;
 
   uint8_t *rx_base;
   uint32_t free_bytes;
@@ -172,11 +176,7 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
   free_bytes = sock->rx_len - sock->rx_avail;
 
   if (payload_len > free_bytes)
-  {
-    /* Drop whole datagram if it doesn’t fit */
-    // LOG_ERROR("rx drop: ring full (need=%u free=%u)", payload_len, free_bytes);
     return -1;
-  }
   
   tail = sock->rx_head + sock->rx_avail;
   if (tail >= sock->rx_len)
@@ -205,14 +205,13 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
     return -1;
   }
 
-  bump = &qe->data.bump;
+  bump = &qe->data.bump_app_rx;
   bump->opaque   = sock->opaque;
   bump->rx_avail = payload_len;
-  bump->rx_head  = 0;
-  bump->tx_avail = 0;
-  bump->tx_head  = 0;
+  bump->rx_port = f_beui16(udp->src);
+  bump->rx_ip = f_beui32(ip->src);
 
-  ret = queue_enqueue(q, UDP_QUEUE_BUMP);
+  ret = queue_enqueue(q, UDP_QUEUE_BUMP_APP_RX);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue bump message");
@@ -236,8 +235,8 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   void *payload;
   struct udp_sock *sock;
   struct equeue *q;
-  struct udp_queue_entry *qe;
-  struct udp_queue_bump *bump;
+  struct udp_queue_bump_entry *qe;
+  struct udp_queue_bump_app_tx *bump;
   struct cham_scheduler *sched;
   struct cham_sched_entry *se;
   uint16_t opt_len, payload_len;
@@ -245,7 +244,6 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   uint32_t new_head;
   uint64_t mac_src_val, mac_dst_val, part;
   struct eth_addr mac_src, mac_dst;
-  struct in_addr ip_src, ip_dst;
   uint32_t ip_src_be, ip_dst_be;
   struct udp_pkt *p = (struct udp_pkt *) pkt;
   
@@ -269,8 +267,8 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
     + sizeof(struct udp_hdr) + opt_len;
 
   /* Set ETH header */
-  mac_from_text("b8:59:9f:c4:af:e6", mac_src.addr);
-  mac_from_text("b8:59:9f:c4:af:66", mac_dst.addr);
+  mac_from_text("b8:59:9f:c4:af:66", mac_src.addr);
+  mac_from_text("b8:59:9f:c4:af:e6", mac_dst.addr);
 
   p->eth.src = mac_src;
   p->eth.dst = mac_dst;
@@ -279,14 +277,8 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   memcpy(&mac_dst_val, &p->eth.dst, ETH_ADDR_LEN);
 
   /* Set IP header */
-  // ip_dst_be = sock->dst_ip;
-  // /* TODO: set actual IP*/
-  // inet_pton(AF_INET, "192.168.10.14", &ip_src);
-  // // ip_src_be = (uint32_t) ip_src.s_addr;
-  inet_pton(AF_INET, "192.168.10.13", &ip_src);
-  inet_pton(AF_INET, "192.168.10.14", &ip_dst);
-  ip_src_be = (uint32_t) ip_src.s_addr;
-  ip_dst_be = (uint32_t ) ip_dst.s_addr;
+  ip_dst_be = sock->dst_ip;
+  ip_src_be = sock->src_ip;
 
   IPH_VHL_SET(&p->ip, 4, 5);
   p->ip._tos = 0;
@@ -300,11 +292,8 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   p->ip.chksum = 0;
 
   /* Set UDP header */
-  // p->udp.dst = t_beui16(sock->dst_port);
-  // /* TODO: Add actual port */
-  // p->udp.src = t_beui16(1234);
-  p->udp.src = t_beui16(1234);
-  p->udp.dst = t_beui16(1234);
+  p->udp.dst = t_beui16(sock->dst_port);
+  p->udp.src = t_beui16(sock->src_port);
   p->udp.len = t_beui16(udp_hdrs_len + payload_len);
   p->udp.chksum = 0; /* UDP checksum has to be 0 before we compute it */
   
@@ -362,14 +351,11 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
     return -1;
   }
 
-  bump = &qe->data.bump;
+  bump = &qe->data.bump_app_tx;
   bump->opaque = sock->opaque;
-  bump->rx_avail = 0;
-  bump->rx_head = 0;
-  bump->tx_avail = 0;
   bump->tx_head = payload_len;
 
-  ret = queue_enqueue(q, UDP_QUEUE_BUMP);
+  ret = queue_enqueue(q, UDP_QUEUE_BUMP_APP_TX);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue bump message");
@@ -377,9 +363,9 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   }
 
   // LOG_DEBUG("tx udp: src_port=%d dst_port=%d",
-  //     f_beui16(p->udp.src), f_beui16(p->udp.dst));
+      // f_beui16(p->udp.src), f_beui16(p->udp.dst));
   // LOG_DEBUG("tx ip: dst_ip=%08x src_ip=%08x",
-  //     f_beui32(p->ip.dst), f_beui32(p->ip.src));
+      // f_beui32(p->ip.dst), f_beui32(p->ip.src));
   // LOG_DEBUG("tx eth: src_mac=%012" PRIx64 " dst_mac=%012" PRIx64,
   //         (uint64_t)(be64toh(mac_src_val)),
   //         (uint64_t)(be64toh(mac_dst_val)));
@@ -391,31 +377,45 @@ int udp_event_deq(int qid, struct queue_entry *qe,
   struct cham_proto_handle *handle)
 {
   int ret;
-  uint32_t new_head;
-  struct udp_sock *sock;
-  struct udp_sock *sock_map;
+  struct udp_queue_bump_entry *udp_qe;
+
+  udp_qe = (struct udp_queue_bump_entry *) qe;
+  
+  switch (qe->type)
+  {
+    case UDP_QUEUE_BUMP_CHAM_TX:
+      ret = handle_bump_tx(udp_qe, handle);
+      break;
+    case UDP_QUEUE_BUMP_CHAM_RX:
+      ret = handle_bump_rx(udp_qe, handle);
+      break;
+    default:
+      LOG_ERROR("unknown bump queue entry");
+      ret = -1;
+  }
+
+  return ret;
+}
+
+int handle_bump_tx(struct udp_queue_bump_entry *qe, 
+    struct cham_proto_handle *handle)
+{
+  int ret;
+  struct udp_sock *sock, *sock_map;
   struct cham_scheduler *sched;
   struct cham_sched_entry *se;
-  struct udp_queue_entry *udp_qe;
-  struct udp_queue_bump *bump;
+  struct udp_queue_bump_cham_tx *bump;
   
   sock_map = handle->maps[SOCK_MAP_IDX].addr;
-  udp_qe = (struct udp_queue_entry *) qe;
-  bump = &udp_qe->data.bump;
+  bump = &qe->data.bump_cham_tx;
   sock = &sock_map[bump->sock_id];
   sock->tx_avail += bump->tx_avail;
-  
-  new_head = sock->rx_head + bump->rx_head;
-  if (new_head >= sock->rx_len)
-    new_head -= sock->rx_len;
-  sock->rx_head = new_head;
-  sock->rx_avail -= bump->rx_head;
 
   /* TODO: We want to keep a list of out-of-order bumps so
-     we can appropriately send each bump to the correct address */
+    we can appropriately send each bump to the correct address */
   /* Set IP address and port to socket */
-  sock->dst_ip = bump->dst_ip;
-  sock->dst_port = bump->dst_port;
+  sock->dst_ip = bump->tx_ip;
+  sock->dst_port = bump->tx_port;
   
   sched = &handle->sched;
   se = &sched->entries[sock->id];
@@ -433,6 +433,26 @@ int udp_event_deq(int qid, struct queue_entry *qe,
       return -1;
     }
   }
+
+  return 0;
+}
+
+int handle_bump_rx(struct udp_queue_bump_entry *qe,
+    struct cham_proto_handle *handle)
+{
+  uint32_t new_head;
+  struct udp_sock *sock, *sock_map;
+  struct udp_queue_bump_cham_rx *bump;
+  
+  sock_map = handle->maps[SOCK_MAP_IDX].addr;
+  bump = &qe->data.bump_cham_rx;
+  sock = &sock_map[bump->sock_id];
+  
+  new_head = sock->rx_head + bump->rx_head;
+  if (new_head >= sock->rx_len)
+    new_head -= sock->rx_len;
+  sock->rx_head = new_head;
+  sock->rx_avail -= bump->rx_head;
 
   return 0;
 }

@@ -146,6 +146,7 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   p->nmaps = 0;
   p->guest = g;
   p->n_fp_cores = res->n_fp_cores;
+  p->local_ip = res->local_ip;
 
   /* Create allocator that manages shared memory */
   alloc = shmalloc_init(g->shm_fd, shm_base, res->shm_len);
@@ -305,7 +306,7 @@ int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
   req = &qe->data.enableq_req;
   req->qid = qid;
   req->core = core;
-
+  
   ret = queue_enqueue(q, QUEUE_ENABLEQ_REQ);
   if (ret != 0)
   {
