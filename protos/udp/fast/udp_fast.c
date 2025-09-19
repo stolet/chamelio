@@ -243,7 +243,6 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   uint16_t udp_hdrs_len, ip_hdrs_len, pkt_hdrs_len;
   uint32_t new_head;
   uint64_t mac_src_val, mac_dst_val, part;
-  struct eth_addr mac_src, mac_dst;
   uint32_t ip_src_be, ip_dst_be;
   struct udp_pkt *p = (struct udp_pkt *) pkt;
   
@@ -267,11 +266,22 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
     + sizeof(struct udp_hdr) + opt_len;
 
   /* Set ETH header */
-  mac_from_text("b8:59:9f:c4:af:66", mac_src.addr);
-  mac_from_text("b8:59:9f:c4:af:e6", mac_dst.addr);
+  // mac_from_text("b8:59:9f:c4:af:66", mac_src.addr);
+  p->eth.src.addr[0] = 184;
+  p->eth.src.addr[1] = 89;
+  p->eth.src.addr[2] = 159;
+  p->eth.src.addr[3] = 196;
+  p->eth.src.addr[4] = 175;
+  p->eth.src.addr[5] = 102;
+  
+  // mac_from_text("b8:59:9f:c4:af:e6", mac_dst.addr);
+  p->eth.dst.addr[0] = 184;
+  p->eth.dst.addr[1] = 89;
+  p->eth.dst.addr[2] = 159;
+  p->eth.dst.addr[3] = 196;
+  p->eth.dst.addr[4] = 175;
+  p->eth.dst.addr[5] = 230;
 
-  p->eth.src = mac_src;
-  p->eth.dst = mac_dst;
   p->eth.type = t_beui16(ETH_TYPE_IP);
   memcpy(&mac_src_val, &p->eth.src, ETH_ADDR_LEN);
   memcpy(&mac_dst_val, &p->eth.dst, ETH_ADDR_LEN);
