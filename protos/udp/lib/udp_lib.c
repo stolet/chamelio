@@ -454,8 +454,12 @@ int udp_recvfrom(int sockfd, void *buf, size_t len,
   if (new_head > sock->rx_len)
     new_head -= sock->rx_len;
   sock->rx_head = new_head;
-  sin->sin_addr.s_addr = htonl(sock->rx_ip);
-  sin->sin_port = htons(sock->rx_port);
+  
+  if (addr != NULL)
+  {
+    sin->sin_addr.s_addr = htonl(sock->rx_ip);
+    sin->sin_port = htons(sock->rx_port);
+  }
 
   /* Send bump message to update RX head */
   q = udp_ctx->app_fast_qs[sock->core];
