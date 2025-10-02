@@ -20,27 +20,21 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
-struct out_entry {
-  uint64_t seq;
-  uint64_t tsc_send;
-};
-
 struct payload_hdr {
-  uint64_t seq;
-  uint64_t tsc_send;
-  uint32_t magic;
+  uint64_t tsc;
 }__attribute__((packed));
 
 /* Default arg values */
 size_t msg_size = 64; // Total payload bytes: includes payload_hdr
 int duration_sec = 30;
-int max_pending = 256;
+int max_pending = 1;
 const char *server_ip;
 int port;
 
@@ -58,15 +52,6 @@ static double tsc_per_us = 0.0;
 #define MAX_RTT_US 1000000u  
 static uint64_t *rtt_hist = NULL;
 static uint64_t rtt_samples = 0;
-
-/* Magic used to quickly match packets */
-static const uint32_t PAYLOAD_MAGIC = 0xC0DEFACEu;
-
-/* Outstanding ring used to match packets to calculate RTT */
-#define OUT_RING_BITS 24
-#define OUT_RING_SIZE (1u << OUT_RING_BITS)
-#define OUT_RING_MASK (OUT_RING_SIZE - 1u)
-static struct out_entry *out_ring = NULL;
 
 static inline uint64_t util_rdtsc(void)
 {
@@ -253,25 +238,6 @@ static int parse_args(int argc, char **argv)
   return 0;
 }
 
-static int init_out_ring()
-{
-  out_ring = (struct out_entry *) calloc(OUT_RING_SIZE, sizeof(*out_ring));
-  
-  if (!out_ring)
-  {
-    perror("calloc out_ring");
-    return -1;
-  }
-  
-  for (size_t i = 0; i < OUT_RING_SIZE; i++)
-  {
-    out_ring[i].seq = UINT64_MAX;
-    out_ring[i].tsc_send = 0;
-  }
-  
-  return 0;
-}
-
 static int init_hist()
 {
   rtt_hist = (uint64_t *) calloc((size_t) MAX_RTT_US + 1, sizeof(uint64_t));
@@ -329,12 +295,11 @@ static void print_stats(uint64_t now)
 
 int main(int argc, char **argv)
 {
-  int ret;
+  int ret, burst;
   ssize_t s;
   struct sockaddr_in dst;
   uint8_t *txbuf, *rxbuf;
-  uint64_t now, rseq, idx;
-  struct out_entry *e;
+  uint64_t now, rtt_us;
   struct payload_hdr *ph;
   
   uint64_t seq = 1;
@@ -355,13 +320,6 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
   
-  ret = init_out_ring();
-  if (ret != 0)
-  {
-    fprintf(stderr, "failed to init out ring\n");
-    return EXIT_FAILURE;
-  }
-
   ret = init_hist();
   if (ret != 0)
   {
@@ -401,6 +359,7 @@ int main(int argc, char **argv)
    */
   calibrate_tsc();
 
+  burst = 0;
   while (true)
   {
     now = now_ns();
@@ -408,16 +367,10 @@ int main(int argc, char **argv)
       break;
 
     /* Send bursts */
-    for (int burst = 0; burst < max_pending; burst++)
+    for (; burst < max_pending; burst++)
     {
       ph = (struct payload_hdr *) txbuf;
-      ph->seq      = seq;
-      ph->tsc_send = util_rdtsc();
-      ph->magic    = PAYLOAD_MAGIC;
-
-      idx = seq & OUT_RING_MASK;
-      out_ring[idx].seq = seq;
-      out_ring[idx].tsc_send = ph->tsc_send;
+      ph->tsc = util_rdtsc();
 
       s = sendto(fd, txbuf, msg_size, 0, (struct sockaddr *) &dst, dstlen);
       if (s < 0)
@@ -449,20 +402,11 @@ int main(int argc, char **argv)
       if ((size_t) r < sizeof(struct payload_hdr))
         continue;
       
-      struct payload_hdr *ph = (struct payload_hdr *)rxbuf;
-      if (ph->magic != PAYLOAD_MAGIC)
-        continue;
-      
-      rseq = ph->seq;
-      idx = rseq & OUT_RING_MASK;
-      e = &out_ring[idx];
-      if (e->seq == rseq && e->tsc_send != 0)
-      {
-        uint64_t rtt_us = us_since_tsc(e->tsc_send);
-        hist_add(rtt_us);
-        e->seq = UINT64_MAX;
-        e->tsc_send = 0;
-      }
+      ph = (struct payload_hdr *)rxbuf;
+      rtt_us = us_since_tsc(ph->tsc);
+      hist_add(rtt_us);
+      burst--;
+      assert(burst >= 0);
     }
 
     /* Once per elapsed second */

@@ -277,7 +277,7 @@ static void print_stats(uint64_t now)
 
 int main(int argc, char **argv)
 {
-  int ret;
+  int ret, burst;
   ssize_t s;
   struct sockaddr_in dst;
   uint8_t *txbuf, *rxbuf;
@@ -359,6 +359,7 @@ int main(int argc, char **argv)
    */
   calibrate_tsc();
 
+  burst = 0;
   while (true)
   {
     now = now_ns();
@@ -367,7 +368,7 @@ int main(int argc, char **argv)
 
     /* Send bursts */
     udp_poll_fast();
-    for (int burst = 0; burst < max_pending; burst++)
+    for (; burst < max_pending; burst++)
     {
       ph = (struct payload_hdr *) txbuf;
       ph->tsc = util_rdtsc();
@@ -386,7 +387,6 @@ int main(int argc, char **argv)
       total_sent_pkts   += 1;
       seq++;
     }
-    
       
     /* Drain replies */
     while(1)
@@ -408,6 +408,8 @@ int main(int argc, char **argv)
       ph = (struct payload_hdr *)rxbuf;
       rtt_us = us_since_tsc(ph->tsc);
       hist_add(rtt_us);
+      burst--;
+      assert(burst >= 0);
     }
 
     /* Once per elapsed second */
