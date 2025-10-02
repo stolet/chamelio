@@ -19,6 +19,8 @@
 /* We want the TXBUF_SIZE to be double the BATCH_SIZE so we can 
    fit packets from the TX phase and ACKs sent in the receive phase */
 #define TXBUF_SIZE 2 * BATCH_SIZE
+/* Size of cache for preallocated mbufs used for transmission */
+#define TX_CACHE_SIZE 128
 
 /* Types of protocols supported by Chamelio */
 enum protocol_type {
@@ -74,6 +76,14 @@ struct fast_context {
   uint16_t tx_n;
   /* List of mbuf pointers that are processed and ready to be transmitted */
   struct rte_mbuf *tx_mbs[TXBUF_SIZE];
+
+  /* Number of preallocated mbufs for transmission */
+  uint16_t tx_cache_n;
+  /* Head of tx cache head */
+  uint16_t tx_cache_head;
+  /* Pointers to preallocated mbufs */
+  struct rte_mbuf *tx_cache_mbs[TX_CACHE_SIZE];
+
 
   /* Queue from fast-path core to control-path */
   struct equeue *fast_ctl_q;

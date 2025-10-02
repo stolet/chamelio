@@ -19,6 +19,10 @@
 struct guest_fast * init_guest(uint8_t id, uint64_t shm_len);
 struct guest_fast *find_guest(struct fast_context *ctx, struct rte_mbuf *mbuf);
 
+static inline void tx_cache_alloc(struct fast_context *ctx, 
+    struct rte_mbuf ***mbs, uint16_t num);
+static inline void tx_cache_free(struct fast_context *ctx, struct rte_mbuf *mb);
+
 int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
 int poll_tx(struct fast_context *ctx);
@@ -29,7 +33,7 @@ int fast_context_init(struct fast_context *f_ctx,
     struct shm_handle *fc_handle, struct shm_handle *cf_handle,
     struct configuration *config, int shm_fd_internal, void *shm_base_internal)
 {
-  int i, j;
+  int i, j, ret;
   struct dqueue *cfq;
   struct equeue *fcq;
   struct guest_fast *guests;
@@ -75,6 +79,17 @@ int fast_context_init(struct fast_context *f_ctx,
       f_ctx->guests[i].proto.handle.sched.entries[j].id = SCHED_ID_INVALID;
     }
   }
+
+  /* Preallocate mbufs so we don't have to do that in the critical path */
+  ret = rte_pktmbuf_alloc_bulk(f_ctx->nic_ctx.pool, 
+      f_ctx->tx_cache_mbs, TX_CACHE_SIZE);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to preallocate tx cache");
+    return -1;
+  }
+  f_ctx->tx_cache_n = TX_CACHE_SIZE;
+  f_ctx->tx_cache_head = 0;
 
   return 0;
 }
@@ -196,7 +211,7 @@ int poll_tx(struct fast_context *ctx)
   unsigned n;
   int i, ret, n_used;
   struct guest_fast *guest;
-  struct rte_mbuf *mbs[BATCH_SIZE];
+  struct rte_mbuf **mbs;
   uint8_t n_guests = ctx->n_guests;
   
   if (ctx->guests == NULL)
@@ -206,16 +221,8 @@ int poll_tx(struct fast_context *ctx)
   if (TXBUF_SIZE - ctx->tx_n < n)
     n = TXBUF_SIZE - ctx->tx_n;
 
-  /* Allocate mbufs to use for transmission */
-  /* TODO: Have a cache for the mempool, 
-     free only what we used and don't allocate every loop */
-  ret = rte_pktmbuf_alloc_bulk(ctx->nic_ctx.pool, mbs, n);
-  if (ret < 0)
-  {
-    LOG_ERROR("not enough entries in the mempool");
-    abort();
-    return -1;
-  }
+  /* Allocate mbufs to use for transmission from mempool cache */
+  tx_cache_alloc(ctx, &mbs, n);
 
   guest = ctx->guests;
   n_used = 0;
@@ -226,6 +233,7 @@ int poll_tx(struct fast_context *ctx)
       mbs[n_used]->data_off = 0;
       ret = guest->proto.event_tx(rte_pktmbuf_mtod(mbs[n_used], uint8_t *), 
           &guest->proto.handle);
+
       if (ret >= 0)
       {
         mbs[n_used]->pkt_len = mbs[n_used]->data_len = ret;
@@ -243,10 +251,9 @@ int poll_tx(struct fast_context *ctx)
   /* Push packets to the NIC */
   ret = nic_fast_tx(&ctx->nic_ctx, ctx->tx_n, ctx->tx_mbs);
   
-  if (n_used < n) 
-  {
-    rte_pktmbuf_free_bulk(&mbs[n_used], n - n_used);
-  }
+  /* Free buffers that were not used */
+  for (i = n_used; i < n; i++)
+    tx_cache_free(ctx, mbs[i]);
 
   if (ret == ctx->tx_n)
   {
@@ -275,3 +282,59 @@ struct guest_fast *find_guest(struct fast_context *ctx, struct rte_mbuf *mbuf)
   /* TODO: Use GRE headers to identify guest and protocol */
   return &ctx->guests[0];
 }
+
+static inline void tx_cache_alloc(struct fast_context *ctx, 
+    struct rte_mbuf ***mbs, uint16_t num)
+{
+  uint16_t grow, tail, g;
+
+  /* We don't have enough mbufs in the cache so allocate more */
+  if (ctx->tx_cache_n < num)
+  {
+    grow = TX_CACHE_SIZE - ctx->tx_cache_n;
+    tail = (ctx->tx_cache_head + ctx->tx_cache_n) & (TX_CACHE_SIZE - 1);
+
+    if (tail + grow <= TX_CACHE_SIZE)
+    {
+      assert(rte_pktmbuf_alloc_bulk(ctx->nic_ctx.pool, 
+          ctx->tx_cache_mbs + tail , grow) == 0);
+    }
+    else
+    {
+      g = TX_CACHE_SIZE - tail;
+      assert(rte_pktmbuf_alloc_bulk(ctx->nic_ctx.pool, 
+          ctx->tx_cache_mbs + tail, g) == 0);
+      assert(rte_pktmbuf_alloc_bulk(ctx->nic_ctx.pool, 
+          ctx->tx_cache_mbs, grow - g) == 0);
+    }
+
+    ctx->tx_cache_n += grow;
+  }
+
+  *mbs = ctx->tx_cache_mbs + ctx->tx_cache_head;
+
+  ctx->tx_cache_head = (ctx->tx_cache_head + num) & (TX_CACHE_SIZE - 1);
+  ctx->tx_cache_n -= num;
+}
+
+static inline void tx_cache_free(struct fast_context *ctx, struct rte_mbuf *mb)
+{
+  uint16_t n, head;
+
+  n = ctx->tx_cache_n;
+  if (n < TX_CACHE_SIZE)
+  {
+    /* Return mbuf to the cache */
+    head = (ctx->tx_cache_head + n) & (TX_CACHE_SIZE - 1);
+    ctx->tx_cache_mbs[head] = mb;
+    ctx->tx_cache_n = n + 1;
+    mb->ol_flags = 0;
+  }
+  else
+  {
+    /* The cache is full so return to the DPDK mempool */
+    rte_pktmbuf_free(mb);
+    mb->ol_flags = 0;
+  }
+}
+

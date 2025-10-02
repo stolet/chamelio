@@ -376,8 +376,8 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
   }
 
   sock->tx_avail = sock->tx_avail + n;
-  sock->tx_ip = (uint32_t) sin->sin_addr.s_addr;
-  sock->tx_port = (uint16_t) sin->sin_port;
+  sock->tx_ip = ntohl(sin->sin_addr.s_addr);
+  sock->tx_port = ntohs(sin->sin_port);
     
   /* Send bump message to update TX available */
   q = udp_ctx->app_fast_qs[sock->core];
@@ -390,8 +390,8 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
 
   bump = &qe->data.bump_cham_tx;
   bump->sock_id = sock->sock_id;
-  bump->tx_ip = sin->sin_addr.s_addr;
-  bump->tx_port = sin->sin_port;
+  bump->tx_ip = ntohl(sin->sin_addr.s_addr);
+  bump->tx_port = ntohs(sin->sin_port);
   bump->tx_avail = n;  
 
   ret = queue_enqueue(q, UDP_QUEUE_BUMP_CHAM_TX);

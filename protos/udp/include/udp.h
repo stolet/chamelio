@@ -28,13 +28,13 @@ struct udp_sock {
   uint16_t core;
   /* Queue ID to bump app */
   uint16_t app_bump_qid;
-  /* Destinatio IP stored in network byte order */
+  /* Destination IP */
   uint32_t dst_ip;
-  /* Destination port stored in network byte order */
+  /* Destination port */
   uint16_t dst_port;
-  /* Source IP stored in network byte order */
+  /* Source IP */
   uint32_t src_ip;
-  /* Source port stored in network byte order */
+  /* Source port */
   uint16_t src_port;
 
   /* Queue ID used for RX buffer */

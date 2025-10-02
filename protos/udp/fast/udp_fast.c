@@ -243,7 +243,6 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   uint16_t udp_hdrs_len, ip_hdrs_len, pkt_hdrs_len;
   uint32_t new_head;
   uint64_t mac_src_val, mac_dst_val, part;
-  uint32_t ip_src_be, ip_dst_be;
   struct udp_pkt *p = (struct udp_pkt *) pkt;
   
   /* If there is nothing scheduled return */
@@ -266,30 +265,27 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
     + sizeof(struct udp_hdr) + opt_len;
 
   /* Set ETH header */
-  // mac_from_text("b8:59:9f:c4:af:66", mac_src.addr);
+  // mac_from_text("b8:59:9f:c4:af:e6", mac_src.addr);
   p->eth.src.addr[0] = 184;
   p->eth.src.addr[1] = 89;
   p->eth.src.addr[2] = 159;
   p->eth.src.addr[3] = 196;
   p->eth.src.addr[4] = 175;
-  p->eth.src.addr[5] = 102;
+  p->eth.src.addr[5] = 230;
   
-  // mac_from_text("b8:59:9f:c4:af:e6", mac_dst.addr);
+  // mac_from_text("b8:59:9f:c4:af:66", mac_dst.addr);
   p->eth.dst.addr[0] = 184;
   p->eth.dst.addr[1] = 89;
   p->eth.dst.addr[2] = 159;
   p->eth.dst.addr[3] = 196;
   p->eth.dst.addr[4] = 175;
-  p->eth.dst.addr[5] = 230;
+  p->eth.dst.addr[5] = 102;
 
   p->eth.type = t_beui16(ETH_TYPE_IP);
-  memcpy(&mac_src_val, &p->eth.src, ETH_ADDR_LEN);
-  memcpy(&mac_dst_val, &p->eth.dst, ETH_ADDR_LEN);
+  // memcpy(&mac_src_val, &p->eth.src, ETH_ADDR_LEN);
+  // memcpy(&mac_dst_val, &p->eth.dst, ETH_ADDR_LEN);
 
   /* Set IP header */
-  ip_dst_be = sock->dst_ip;
-  ip_src_be = sock->src_ip;
-
   IPH_VHL_SET(&p->ip, 4, 5);
   p->ip._tos = 0;
   p->ip.len = t_beui16(ip_hdrs_len + udp_hdrs_len + payload_len);
@@ -297,8 +293,8 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   p->ip.offset = t_beui16(0);
   p->ip.ttl = 0xff;
   p->ip.proto = IP_PROTO_UDP;
-  p->ip.src = t_beui32(ntohl(ip_src_be));
-  p->ip.dst = t_beui32(ntohl(ip_dst_be));
+  p->ip.src = t_beui32(sock->src_ip);
+  p->ip.dst = t_beui32(sock->dst_ip);
   p->ip.chksum = 0;
 
   /* Set UDP header */
