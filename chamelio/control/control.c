@@ -490,6 +490,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   struct queue_entry *qe_res;
   struct queue_free_up_ebpf_res *res;
   void *ebpf_bytecode;
+
   req = &qe_req->data.free_up_ebpf_req;
 
   qe_res = queue_tail(g->cham_guest_q);
@@ -543,13 +544,13 @@ static int handle_free_ebpf_req(struct control_context *ctx,
   struct queue_free_up_ebpf_req *req;
   struct shm_handle *sh;
   req = &qe_req->data.free_up_ebpf_req;
-  struct queue_entry *qe_res = queue_tail(g->cham_guest_q);
+  struct queue_free_up_ebpf_res *res;
+
+  struct queue_entry *qe_res; 
+  qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
-  struct queue_free_up_ebpf_res *res = 
-      
-  (struct queue_free_up_ebpf_res *)&qe_res->data;
-  //sh->off = req->off;
-  //sh->len = req->size;
+  
+  res = (struct queue_free_up_ebpf_res *)&qe_res->data;
 
   // TODO: modify this to use handler
   // shmalloc_free(g->alloc, &sh);
@@ -560,6 +561,7 @@ static int handle_free_ebpf_req(struct control_context *ctx,
 
   // return success for now without freeing
   //TODO: unload the vm code and destroy it 
+
   res->success = 0; // indicating free was successful
   ret = queue_enqueue(g->cham_guest_q, QUEUE_FREE_EBPF_RES);
   assert(ret == 0);
@@ -580,8 +582,9 @@ static uint64_t nop_helper(uint64_t r1, uint64_t r2, uint64_t r3,
 //pointer to the memory with the jitted code inside the llvmbpf_vm_c struct: llvmbpf_jitted_fn
 static int jit_ebpf(void *ebpf_bytecode, size_t size)
 {
-  uint64_t res = 0;
-  struct llvmbpf_vm_c *vm = llvmbpf_vm_create();
+  uint64_t res;
+  struct llvmbpf_vm_c *vm;
+  vm = llvmbpf_vm_create();
   if (vm == NULL)
   {
     LOG_ERROR("failed to create llvmbpf vm");
@@ -594,7 +597,7 @@ static int jit_ebpf(void *ebpf_bytecode, size_t size)
     return res;
   }
   // Register helper functions here
-  res = llvmbpf_register_helper(vm, 2, nop_helper, "nop_helper");
+  res = llvmbpf_vm_register_helper(vm, 2, nop_helper, "nop_helper");
   if (res != 0)
   {
     LOG_ERROR("failed to register helper function");
