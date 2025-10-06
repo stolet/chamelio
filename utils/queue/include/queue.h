@@ -13,27 +13,28 @@
 #define MAX_PROTO_MAPS 8
 
 /* Type of queue entries */
-enum queue_type {
+enum queue_type
+{
   /* Signals that the queue is empty */
   QUEUE_EMPTY = 0,
   /* Reqiest for new guest registration */
   QUEUE_NEW_GUEST_REQ,
-  
+
   /* Request for new protocol registration */
   QUEUE_PROTO_REQ,
   /* Response for new protocol registration */
   QUEUE_PROTO_RES,
-  
+
   /* Request for creating protocol queues */
   QUEUE_NEW_QUEUE_REQ,
   /* Response from protocol queue creation */
   QUEUE_NEW_QUEUE_RES,
-  
+
   /* Request for creating a protocol map */
   QUEUE_NEW_MAP_REQ,
   /* Response from protocol map creation */
   QUEUE_NEW_MAP_RES,
-  
+
   /* Request to enable queue in fast-path */
   QUEUE_ENABLEQ_REQ,
   /* Request to disable queue in fast-path */
@@ -53,7 +54,8 @@ enum queue_type {
 };
 
 /* Request for registering new guest */
-struct queue_new_guest_req {
+struct queue_new_guest_req
+{
   /* Guest ID */
   uint8_t id;
   /* Base pointer to shared memory region for this guest */
@@ -63,13 +65,15 @@ struct queue_new_guest_req {
 } __attribute__((packed));
 
 /* Request for registering new protocol */
-struct queue_new_proto_req {
+struct queue_new_proto_req
+{
   /* Protocol type to register for this context */
-  uint8_t proto_type; 
+  uint8_t proto_type;
 } __attribute__((packed));
 
 /* Response for registering new protocol */
-struct queue_new_proto_res {
+struct queue_new_proto_res
+{
   /* Number of fast-path cores */
   uint32_t n_fp_cores;
   /* Size of shm region */
@@ -81,7 +85,8 @@ struct queue_new_proto_res {
 } __attribute__((packed));
 
 /* Request to create queues for the protocol */
-struct queue_new_queue_req {
+struct queue_new_queue_req
+{
   /* Guest ID for this protocol */
   uint8_t gid;
   /* Queue ID */
@@ -97,7 +102,8 @@ struct queue_new_queue_req {
 } __attribute__((packed));
 
 /* Response to protocol queue creation */
-struct queue_new_queue_res {
+struct queue_new_queue_res
+{
   /* ID of the queue */
   uint32_t qid;
   /* Number of elements in the queue */
@@ -111,7 +117,8 @@ struct queue_new_queue_res {
 } __attribute__((packed));
 
 /* Request to create a new protocol map */
-struct queue_new_map_req {
+struct queue_new_map_req
+{
   /* Guest ID for this protocol */
   uint8_t gid;
   /* Map ID */
@@ -127,7 +134,8 @@ struct queue_new_map_req {
 } __attribute__((packed));
 
 /* Response to protocol map creation */
-struct queue_new_map_res {
+struct queue_new_map_res
+{
   /* Map ID */
   uint16_t id;
   /* Offset in shared memory for the map */
@@ -141,7 +149,8 @@ struct queue_new_map_res {
 } __attribute__((packed));
 
 /* Request to enable queue in fast-path */
-struct queue_enableq_req {
+struct queue_enableq_req
+{
   /* Queue ID */
   uint16_t qid;
   /* Guest ID */
@@ -157,7 +166,8 @@ struct queue_enableq_req {
 } __attribute__((packed));
 
 /* Request to disable queue in fast-path */
-struct queue_disableq_req {
+struct queue_disableq_req
+{
   /* Queue ID */
   uint16_t qid;
   /* Guest ID */
@@ -167,7 +177,8 @@ struct queue_disableq_req {
 } __attribute__((packed));
 
 /* Request to allocate memory for eBPF program snippet */
-struct queue_allocate_ebpf_req {
+struct queue_allocate_ebpf_req
+{
   /* Size of eBPF program snippet */
   uint32_t size;
   /* Pointer to eBPF struct in library */
@@ -175,7 +186,8 @@ struct queue_allocate_ebpf_req {
 } __attribute__((packed));
 
 /* Response to allocate memory for eBPF program snippet */
-struct queue_allocate_ebpf_res {
+struct queue_allocate_ebpf_res
+{
   /* Size of eBPF program snippet allocated */
   uint32_t size;
   /* Offset in shared memory for eBPF program snippet */
@@ -185,23 +197,29 @@ struct queue_allocate_ebpf_res {
 } __attribute__((packed));
 
 /* Request to free or upload an EBPF snippet*/
-struct queue_free_up_ebpf_req {
+struct queue_free_up_ebpf_req
+{
   /* Size of eBPF program snippet */
   uint32_t size;
   /* Offset in shared memory for eBPF program snippet */
   uint64_t off;
+  /* Pointer to the jitted function pointer */
+  struct sllvmbpf_jitted_fn *jitted_fn;
 } __attribute__((packed));
 
-struct queue_free_up_ebpf_res {
+struct queue_free_up_ebpf_res
+{
   /* indicating whether the operation was successful: return 0 if free or upload succesful */
   int success;
 } __attribute__((packed));
 
-struct queue_entry {
+struct queue_entry
+{
   /* Type of queue entry. Don't update outside of enqueue or dequeue */
   volatile uint8_t type;
   /* Data section of queue entry */
-  union {
+  union
+  {
     struct queue_new_guest_req new_guest_req;
     struct queue_new_proto_req new_proto_req;
     struct queue_new_proto_res new_proto_res;
@@ -224,7 +242,8 @@ struct queue_entry {
 STATIC_ASSERT(sizeof(struct queue_entry) == 64, queue_entry_size);
 
 /* This queue is only used for enqueuing */
-struct equeue {
+struct equeue
+{
   /* Only the side that enqueues updates the tail */
   uint32_t tail;
   /* Number of elements in the queue */
@@ -238,7 +257,8 @@ struct equeue {
 };
 
 /* This queue is only used for dequeueing */
-struct dqueue {
+struct dqueue
+{
   /* Only the side that dequeues updates the head */
   uint32_t head;
   /* Number of elements in the queue */
@@ -251,27 +271,27 @@ struct dqueue {
   void *entries;
 };
 
-/* Allocates a new queue that can only enqueue entries. 
+/* Allocates a new queue that can only enqueue entries.
    Prevents race conditions */
-struct equeue * equeue_new(uint32_t nelems, size_t elsize, 
-    void *addr, uint64_t off);
-/* Allocates a new queue that can only dequeue entries. 
+struct equeue *equeue_new(uint32_t nelems, size_t elsize,
+                          void *addr, uint64_t off);
+/* Allocates a new queue that can only dequeue entries.
    Prevents race conditions */
-struct dqueue * dqueue_new(uint32_t nelems, size_t elsize, 
-    void *addr, uint64_t off);
+struct dqueue *dqueue_new(uint32_t nelems, size_t elsize,
+                          void *addr, uint64_t off);
 /* Initialises the struct for a new equeue */
 int equeue_init(struct equeue *q, uint32_t nelems, size_t elsize,
-    void *addr, uint64_t off);
+                void *addr, uint64_t off);
 /* Initialises the struct for a new dqueue */
 int dqueue_init(struct dqueue *q, uint32_t nelems, size_t elsize,
-    void *addr, uint64_t off);
+                void *addr, uint64_t off);
 /* Advances the tail pointer for the queue */
 int queue_enqueue(struct equeue *q, uint8_t type);
 /* Advances the head pointer for the queue */
 int queue_dequeue(struct dqueue *q);
 /* Returns a pointer to the queue entry at the head of the queue */
-void * queue_head(struct dqueue *q);
+void *queue_head(struct dqueue *q);
 /* Returns a pointer to the next empty queue entry at the tail of the queue */
-void * queue_tail(struct equeue *q);
+void *queue_tail(struct equeue *q);
 
 #endif

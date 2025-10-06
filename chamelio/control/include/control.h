@@ -31,6 +31,7 @@ struct proto_control {
 
   /* Number of maps created */
   uint16_t nmaps;
+
 };
 
 struct guest_control {

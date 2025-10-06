@@ -1,10 +1,7 @@
-// llvmbpf_shim.cpp
-#include <cstdint>
-#include <cstddef>
-#include <new>
-
 #include <llvmbpf/llvmbpf.hpp>
 #include "ebpfif.h"
+
+
 using namespace bpftime; // llvmbpf_vm lives here in the project
 
 extern "C"
@@ -71,5 +68,11 @@ extern "C"
     h->jitted_fn = f.value();
     return 0;
   }
+  llvmbpf_jitted_fn llvmbpf_vm_get_jitted_function(llvmbpf_vm_c *h)
+  {
+    if (!h)
+      return nullptr;
+    return h->jitted_fn;
+  }
 
-} // extern "C"
+} 

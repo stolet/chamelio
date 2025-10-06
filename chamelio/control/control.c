@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include "control.h"
 #include "shmalloc.h"
@@ -12,6 +13,7 @@
 #include "queue.h"
 
 #include "ebpfif.h"
+#include "verifierif.h"
 
 static int poll_fast(struct control_context *ctx);
 static int poll_guests(struct control_context *ctx);
@@ -28,7 +30,8 @@ static int handle_free_ebpf_req(struct control_context *ctx,
                                 struct guest_control *g, struct queue_entry *qe_req);
 static int handle_upload_ebpf_req(struct control_context *ctx,
                                   struct guest_control *g, struct queue_entry *qe_req);
-static int jit_ebpf(void *ebpf_bytecode, size_t size);
+static int jit_ebpf(llvmbpf_vm_c *vm, void *ebpf_bytecode, size_t size);
+static int verify_ebpf(void *ebpf_bytecode, size_t size);
 
 int control_context_init(struct control_context *ctx, struct configuration *config,
                          struct shm_handle **fc_handles, struct shm_handle **cf_handles)
@@ -483,7 +486,7 @@ static int handle_allocate_ebpf_req(struct guest_control *g, struct queue_entry 
 }
 
 static int handle_upload_ebpf_req(struct control_context *ctx,
-                                  struct guest_control *g, struct queue_entry *qe_req)
+                        struct guest_control *g, struct queue_entry *qe_req)
 {
   int ret, i;
   struct queue_free_up_ebpf_req *req, *f_req;
@@ -495,26 +498,43 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
   res = (struct queue_free_up_ebpf_res *)&qe_res->data;
-  
+
   ebpf_bytecode = (uint8_t *)g->shm_base + req->off;
 
-  ret = jit_ebpf(ebpf_bytecode, req->size);
+  // uint64_t res = 0;
+  struct llvmbpf_vm_c *vm = llvmbpf_vm_create();
+  if (vm == NULL)
+  {
+    LOG_ERROR("failed to create llvmbpf vm");
+    res->success = -1; // indicating upload failed
+    ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
+    assert(ret == 0);
+    return -1;
+  }
+
+  //TODO: enclose the failing logic in a separate function to avoid code duplication
+
+  ret = verify_ebpf(ebpf_bytecode, req->size);
+  if (ret != 0)
+  {
+    LOG_ERROR("eBPF verification failed");
+    res->success = -1; // indicating upload failed
+    ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
+    assert(ret == 0);
+    return -1;
+  }
+
+  ret = jit_ebpf(vm, ebpf_bytecode, req->size);
 
   if (ret != 0)
   {
     LOG_ERROR("failed to JIT eBPF program");
-    res->success = -1; // indicating upload failed 
+    res->success = -1; // indicating upload failed
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
     return -1;
   }
   
-  /*
-  Verify the EBPF bytecode
-  JIT it (done)
-  Load it to fast path through function pointers
-  Return success or failure
-  */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
     qe_req = queue_tail(ctx->ctl_fast_qs[i]);
@@ -522,13 +542,14 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     f_req = &qe_req->data.free_up_ebpf_req;
     f_req->size = req->size;
     f_req->off = req->off;
+    f_req->jitted_fn = llvmbpf_vm_get_jitted_function(vm); // to be used in the fast path
 
     ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_UPLOAD_EBPF_REQ);
     assert(ret == 0);
   }
 
   res = (struct queue_free_up_ebpf_res *)&qe_res->data;
-  //send response back to guest
+  // send response back to guest
   res->success = 0; // indicating upload was successful
   ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
   assert(ret == 0);
@@ -545,11 +566,11 @@ static int handle_free_ebpf_req(struct control_context *ctx,
   req = &qe_req->data.free_up_ebpf_req;
   struct queue_entry *qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
-  struct queue_free_up_ebpf_res *res = 
-      
-  (struct queue_free_up_ebpf_res *)&qe_res->data;
-  //sh->off = req->off;
-  //sh->len = req->size;
+  struct queue_free_up_ebpf_res *res =
+
+      (struct queue_free_up_ebpf_res *)&qe_res->data;
+  // sh->off = req->off;
+  // sh->len = req->size;
 
   // TODO: modify this to use handler
   // shmalloc_free(g->alloc, &sh);
@@ -559,7 +580,8 @@ static int handle_free_ebpf_req(struct control_context *ctx,
   // TODO: modify the ebpf struct to include the handle instead of off and size
 
   // return success for now without freeing
-  //TODO: unload the vm code and destroy it 
+  // TODO: unload the vm code and destroy it
+
   res->success = 0; // indicating free was successful
   ret = queue_enqueue(g->cham_guest_q, QUEUE_FREE_EBPF_RES);
   assert(ret == 0);
@@ -568,25 +590,34 @@ static int handle_free_ebpf_req(struct control_context *ctx,
 
 static int verify_ebpf(void *ebpf_bytecode, size_t size)
 { 
-  return 0;
-}
-
-static uint64_t nop_helper(uint64_t r1, uint64_t r2, uint64_t r3,
-                           uint64_t r4, uint64_t r5) {
-  (void)r1; (void)r2; (void)r3; (void)r4; (void)r5;
-  return 0;
-}
-
-//pointer to the memory with the jitted code inside the llvmbpf_vm_c struct: llvmbpf_jitted_fn
-static int jit_ebpf(void *ebpf_bytecode, size_t size)
-{
-  uint64_t res = 0;
-  struct llvmbpf_vm_c *vm = llvmbpf_vm_create();
-  if (vm == NULL)
+  bool res;
+  res = verify_ebpf_cham(ebpf_bytecode, size);
+  if (!res)
   {
-    LOG_ERROR("failed to create llvmbpf vm");
+    LOG_ERROR("eBPF verification failed");
     return -1;
   }
+  return 0;
+}
+
+// change to whatever you like in the future
+static uint64_t nop_helper(uint64_t r1, uint64_t r2, uint64_t r3,
+                           uint64_t r4, uint64_t r5)
+{
+  (void)r1;
+  (void)r2;
+  (void)r3;
+  (void)r4;
+  (void)r5;
+  return 0;
+}
+
+// pointer to the memory with the jitted code inside the llvmbpf_vm_c struct: llvmbpf_jitted_fn
+// TODO: add the jitted code pointer to the ebpf_struct so that it can be used in the fast path
+static int jit_ebpf(llvmbpf_vm_c *vm, void *ebpf_bytecode, size_t size)
+{
+  int res;
+
   res = llvmbpf_vm_load_code(vm, ebpf_bytecode, size);
   if (res != 0)
   {
@@ -594,7 +625,7 @@ static int jit_ebpf(void *ebpf_bytecode, size_t size)
     return res;
   }
   // Register helper functions here
-  res = llvmbpf_register_helper(vm, 2, nop_helper, "nop_helper");
+  res = llvmbpf_vm_register_helper(vm, 2, nop_helper, "nop_helper");
   if (res != 0)
   {
     LOG_ERROR("failed to register helper function");
