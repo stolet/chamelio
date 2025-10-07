@@ -6,15 +6,18 @@
 #include <sys/socket.h>
 #include <sys/mman.h>
 
-#include "cham_lib.h"
+#include "include/cham_lib.h"
 #include "queue.h"
 #include "log.h"
 #include "uxsocket.h"
 
 static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe);
 static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
+static int handle_allocate_ebpf_res(struct proto_lib *p, struct queue_entry *qe);
+static int handle_free_ebpf_res(struct proto_lib *p, struct queue_entry *qe);
+static int handle_upload_ebpf_res(struct proto_lib *p, struct queue_entry *qe);
 
-struct guest_lib * cham_connect_guest()
+struct guest_lib *cham_connect_guest()
 {
   struct guest_lib *g;
   struct sockaddr_un s_un;
@@ -22,22 +25,22 @@ struct guest_lib * cham_connect_guest()
   int64_t tmp;
 
   sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (sock_fd < 0) 
+  if (sock_fd < 0)
   {
     LOG_ERROR("failed to create socket");
     return NULL;
   }
 
   s_un.sun_family = AF_UNIX;
-  ret = snprintf(s_un.sun_path, sizeof(s_un.sun_path), 
-      "%s", GUEST_SOCKET_PATH);
-  if (ret < 0 || ret >= sizeof(s_un.sun_path)) 
+  ret = snprintf(s_un.sun_path, sizeof(s_un.sun_path),
+                 "%s", GUEST_SOCKET_PATH);
+  if (ret < 0 || ret >= sizeof(s_un.sun_path))
   {
     LOG_ERROR("could not copy unix socket path");
     goto close_sockfd;
   }
 
-  if (connect(sock_fd, (struct sockaddr *)&s_un, sizeof(s_un)) < 0) 
+  if (connect(sock_fd, (struct sockaddr *)&s_un, sizeof(s_un)) < 0)
   {
     LOG_ERROR("cannot connect to chamelio, %s", GUEST_SOCKET_PATH);
     perror("");
@@ -45,11 +48,11 @@ struct guest_lib * cham_connect_guest()
   }
 
   /* Get shared mem fd */
-  if (uxsocket_read_one_msg(sock_fd, &tmp, &shm_fd) < 0 || tmp != -1 || shm_fd < 0) 
+  if (uxsocket_read_one_msg(sock_fd, &tmp, &shm_fd) < 0 || tmp != -1 || shm_fd < 0)
   {
-    if (shm_fd >= 0) 
+    if (shm_fd >= 0)
       close(shm_fd);
-    
+
     LOG_ERROR("cannot read shared memory fd from chamelio");
     goto close_sockfd;
   }
@@ -71,7 +74,7 @@ close_sockfd:
   return NULL;
 }
 
-struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
+struct proto_lib *cham_new_proto(struct guest_lib *g, uint32_t shmsize)
 {
   int ret;
   ssize_t sz, off;
@@ -84,23 +87,23 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   struct shm_handle *sh;
   uint8_t resp_buf[sizeof(*res)];
   struct queue_new_proto_req req = {
-    .proto_type = 1,
+      .proto_type = 1,
   };
 
   /* Send request on kernel socket */
   struct iovec iov = {
-    .iov_base = &req,
-    .iov_len = sizeof(req),
+      .iov_base = &req,
+      .iov_len = sizeof(req),
   };
 
   struct msghdr msg = {
-    .msg_name = NULL,
-    .msg_namelen = 0,
-    .msg_iov = &iov,
-    .msg_iovlen = 1,
-    .msg_control = NULL,
-    .msg_controllen = 0,
-    .msg_flags = 0,
+      .msg_name = NULL,
+      .msg_namelen = 0,
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = NULL,
+      .msg_controllen = 0,
+      .msg_flags = 0,
   };
 
   sz = sendmsg(g->uxsocket_fd, &msg, 0);
@@ -112,12 +115,12 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   }
 
   /* Receive response on kernel socket */
-  res = (struct queue_new_proto_res *) resp_buf;
+  res = (struct queue_new_proto_res *)resp_buf;
   off = 0;
-  while (off < sizeof(*res)) 
+  while (off < sizeof(*res))
   {
-    sz = read(g->uxsocket_fd, (uint8_t *) res + off, sizeof(*res) - off);
-    if (sz < 0) 
+    sz = read(g->uxsocket_fd, (uint8_t *)res + off, sizeof(*res) - off);
+    if (sz < 0)
     {
       LOG_ERROR("read failed");
       perror("");
@@ -126,9 +129,9 @@ struct proto_lib * cham_new_proto(struct guest_lib *g, uint32_t shmsize)
     off += sz;
   }
 
-  shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE, 
-      MAP_SHARED | MAP_POPULATE, g->shm_fd, 0);
-  if (shm_base == (void *) -1) 
+  shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE,
+                  MAP_SHARED | MAP_POPULATE, g->shm_fd, 0);
+  if (shm_base == (void *)-1)
   {
     LOG_ERROR("failed to map shm region");
     return NULL;
@@ -244,8 +247,8 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p,
   return &p->queues[nqueues];
 }
 
-struct proto_map_lib * cham_new_map(struct proto_lib *p, 
-    uint32_t nelems, uint32_t elsize)
+struct proto_map_lib *cham_new_map(struct proto_lib *p,
+                                   uint32_t nelems, uint32_t elsize)
 {
   int ret;
   uint16_t nmaps;
@@ -253,7 +256,7 @@ struct proto_map_lib * cham_new_map(struct proto_lib *p,
   struct queue_entry *qe;
   struct queue_new_map_req *req;
   struct proto_map_lib *m;
-
+ 
   nmaps = p->nmaps;
   q = p->guest_ctl_q;
   qe = queue_tail(q);
@@ -279,7 +282,7 @@ struct proto_map_lib * cham_new_map(struct proto_lib *p,
     return NULL;
   }
   p->nmaps++;
-  
+
   /* Poll waiting for response */
   /* TODO: Make this async instead of blocking here */
   while (m->nelems == 0)
@@ -345,6 +348,114 @@ int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
 
   return 0;
 }
+//TODO: remove ebpf bytecode arg => put it in upload only
+struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
+{
+  struct equeue *q = p->guest_ctl_q;
+  struct queue_entry *qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return NULL;
+  }
+  struct queue_allocate_ebpf_req *req = &qe->data.alloc_ebpf_req;
+  req->size = size;
+  req->opaque = (uint64_t)&p->ebpf_program;
+  p->ebpf_program.flag = 0; //reset flag to 0 before sending request
+
+  int ret = queue_enqueue(q, QUEUE_ALLOCATE_EBPF_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue request to allocate eBPF program");
+    return NULL;
+  }
+
+  //TODO: Make THIS asynchron. instead of blocking here
+  while(p->ebpf_program.flag == 0)
+    cham_poll_control(p);
+  return &p->ebpf_program;
+}
+
+//TODO: do we really need the size of the program here? Ask lil Mat
+int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
+{
+  //TODO: this check necessary?
+  if (p->ebpf_program.size == 0) 
+  {
+    LOG_ERROR("tried to upload eBPF program before allocating it");
+    return -1;
+  }
+  
+  //copy ebpf bytecode to shared memory
+  void *shm_addr = (uint8_t *)p->shm_base + p->ebpf_program.off;
+  memcpy(shm_addr, ebpf_bytecode, p->ebpf_program.size);
+
+  struct equeue *q = p->guest_ctl_q;
+  struct queue_entry *qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+  struct queue_free_up_ebpf_req *req = &qe->data.free_up_ebpf_req;
+  req->size = p->ebpf_program.size;
+  req->off = p->ebpf_program.off; // offset in shared memory where the ebpf program is stored
+  p->ebpf_program.flag = 0; //reset flag to 0 before sending request
+
+  int ret = queue_enqueue(q, QUEUE_UPLOAD_EBPF_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue request to upload eBPF program");
+    return ret;
+  }
+
+  while (p->ebpf_program.flag == 0)
+    cham_poll_control(p);
+  
+  if (p->ebpf_program.flag < 0){
+    LOG_ERROR("failed to upload eBPF program in control plane");
+    return -1;
+  } // upload failed in control plane
+  
+  return ret;
+}
+
+int cham_free_ebpf(struct proto_lib *p)
+{
+  if (p->ebpf_program.size == 0) 
+    return 0;
+  
+  struct equeue *q = p->guest_ctl_q;
+  struct queue_entry *qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    return -1;
+  }
+  struct queue_free_up_ebpf_req *req = &qe->data.free_up_ebpf_req;
+  req->size = p->ebpf_program.size;
+  req->off = p->ebpf_program.off;
+  p->ebpf_program.flag = 0; //reset flag to 0 before sending request
+
+  int ret = queue_enqueue(q, QUEUE_FREE_EBPF_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue request to free eBPF program");
+    return ret;
+  }
+
+  while (p->ebpf_program.flag == 0)
+    cham_poll_control(p);
+  
+  if (p->ebpf_program.flag < 0) // free failed in control plane
+    return -1;
+  
+  p->ebpf_program.size = 0;
+  p->ebpf_program.off = 0;
+  p->ebpf_program.flag = 0;
+
+  return ret;
+}
 
 int cham_poll_control(struct proto_lib *p)
 {
@@ -360,21 +471,72 @@ int cham_poll_control(struct proto_lib *p)
 
   switch (qe->type)
   {
-    case QUEUE_NEW_QUEUE_RES:
-      handle_new_queue_res(p, qe);
-      queue_dequeue(q);
-      return QUEUE_NEW_QUEUE_RES;
-    case QUEUE_NEW_MAP_RES:
-      handle_new_map_res(p, qe);
-      queue_dequeue(q);
-      return QUEUE_NEW_MAP_RES;
-    default:
-      LOG_ERROR("unknown queue entry type from "
-          "guest to control-path type=%d", qe->type);
-      abort();
+  case QUEUE_NEW_QUEUE_RES:
+    handle_new_queue_res(p, qe);
+    queue_dequeue(q);
+    return QUEUE_NEW_QUEUE_RES;
+  case QUEUE_NEW_MAP_RES:
+    handle_new_map_res(p, qe);
+    queue_dequeue(q);
+    return QUEUE_NEW_MAP_RES;
+  case QUEUE_ALLOCATE_EBPF_RES:
+    handle_allocate_ebpf_res(p, qe);
+    queue_dequeue(q);
+    return QUEUE_ALLOCATE_EBPF_RES;
+  case QUEUE_FREE_EBPF_RES:
+    handle_free_ebpf_res(p, qe);
+    queue_dequeue(q);
+    return QUEUE_FREE_EBPF_RES;
+  case QUEUE_UPLOAD_EBPF_RES:
+    handle_upload_ebpf_res(p, qe);
+    queue_dequeue(q);
+    return QUEUE_UPLOAD_EBPF_RES;
+  default:
+    LOG_ERROR("unknown queue entry type from "
+              "guest to control-path type=%d",
+              qe->type);
+    abort();
   }
 
-  return 0;  
+  return 0;
+}
+
+static int handle_free_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
+{
+  struct queue_free_up_ebpf_res *res = &qe->data.free_up_ebpf_res;
+
+  if (res->success != 0){
+    LOG_ERROR("failed to free eBPF program in control plane");
+    p->ebpf_program.flag = -1;
+  }
+  else p->ebpf_program.flag = 1; // set flag to 1 to indicate free is complete
+  return 0;
+}
+
+static int handle_upload_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
+{
+  struct queue_free_up_ebpf_res *res = &qe->data.free_up_ebpf_res;
+
+  if (res->success != 0){
+    LOG_ERROR("failed to upload eBPF program in control plane");
+    p->ebpf_program.flag = -1;
+  }
+  else p->ebpf_program.flag = 1; // set flag to 1 to indicate upload is complete
+  return 0;
+}
+
+static int handle_allocate_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
+{
+  struct queue_allocate_ebpf_res *res;
+  struct proto_ebpf_lib *e;
+
+  res = &qe->data.alloc_ebpf_res;
+  e = (struct proto_ebpf_lib *) res->opaque;  //placeholder cookie
+  e->size = res->size;
+  e->off = res->off;
+  e->flag = 1; // set flag to 1 to indicate allocation is complete
+
+  return 0;
 }
 
 static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
@@ -391,7 +553,7 @@ static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe)
   q->proto = p;
   p->nqueues++;
 
-  return 0;  
+  return 0;
 }
 
 static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe)
@@ -409,5 +571,4 @@ static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe)
   p->nmaps++;
 
   return 0;
-  
 }

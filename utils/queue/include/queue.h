@@ -38,6 +38,18 @@ enum queue_type {
   QUEUE_ENABLEQ_REQ,
   /* Request to disable queue in fast-path */
   QUEUE_DISABLEQ_REQ,
+
+  /* Request/Response for allocating memory for eBPF program snippet */
+  QUEUE_ALLOCATE_EBPF_REQ,
+  QUEUE_ALLOCATE_EBPF_RES,
+
+  /* Request/Response for uploading eBPF program snippet */
+  QUEUE_UPLOAD_EBPF_REQ,
+  QUEUE_UPLOAD_EBPF_RES,
+
+  /* Request/Response for freeing eBPF program snippet */
+  QUEUE_FREE_EBPF_REQ,
+  QUEUE_FREE_EBPF_RES
 };
 
 /* Request for registering new guest */
@@ -156,6 +168,37 @@ struct queue_disableq_req {
   uint16_t core;
 } __attribute__((packed));
 
+/* Request to allocate memory for eBPF program snippet */
+struct queue_allocate_ebpf_req {
+  /* Size of eBPF program snippet */
+  uint32_t size;
+  /* Pointer to eBPF struct in library */
+  uint64_t opaque;
+} __attribute__((packed));
+
+/* Response to allocate memory for eBPF program snippet */
+struct queue_allocate_ebpf_res {
+  /* Size of eBPF program snippet allocated */
+  uint32_t size;
+  /* Offset in shared memory for eBPF program snippet */
+  uint64_t off;
+  /* Pointer to eBPF struct in library */
+  uint64_t opaque;
+} __attribute__((packed));
+
+/* Request to free or upload an EBPF snippet*/
+struct queue_free_up_ebpf_req {
+  /* Size of eBPF program snippet */
+  uint32_t size;
+  /* Offset in shared memory for eBPF program snippet */
+  uint64_t off;
+} __attribute__((packed));
+
+struct queue_free_up_ebpf_res {
+  /* indicating whether the operation was successful: return 0 if free or upload succesful */
+  int success;
+} __attribute__((packed));
+
 struct queue_entry {
   /* Type of queue entry. Don't update outside of enqueue or dequeue */
   volatile uint8_t type;
@@ -170,6 +213,10 @@ struct queue_entry {
     struct queue_new_map_res new_map_res;
     struct queue_enableq_req enableq_req;
     struct queue_disableq_req disableq_req;
+    struct queue_allocate_ebpf_req alloc_ebpf_req;
+    struct queue_allocate_ebpf_res alloc_ebpf_res;
+    struct queue_free_up_ebpf_req free_up_ebpf_req;
+    struct queue_free_up_ebpf_res free_up_ebpf_res;
     /* Keeps queue entry the size of a cache line */
     uint8_t raw[63];
   } __attribute__((packed)) data;

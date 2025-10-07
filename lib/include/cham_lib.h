@@ -25,6 +25,15 @@ struct proto_queue_lib {
   struct proto_lib *proto;
 };
 
+struct proto_ebpf_lib{
+/* Size of the ebpf program */
+  uint32_t size;
+  /* Offset in shared memory to start of queue */
+  uint64_t off;
+  /* flag indicating arrival of response from the control plane */
+  int flag; 
+};
+
 struct proto_map_lib {
   /* ID of this map */
   uint16_t id;
@@ -73,6 +82,9 @@ struct proto_lib {
   uint16_t nmaps;
   /* Maps created with Chamelio */
   struct proto_map_lib maps[MAX_PROTO_MAPS];
+
+  /* One eBPF program per protocol for now */
+  struct proto_ebpf_lib ebpf_program;
 };
 
 /* Mocks a QEMU ivshmem client */
@@ -95,8 +107,12 @@ int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
 /* Disables the queue in the fast-path */
 int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
 
+/* Allocates space for an eBPF program in shared memory and registers it with the control plane */
+struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
 /* Uploads an eBPF program to Chamelio and register it with the fast-path */
 int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
+/* Frees the allocated eBPF program in shared memory and unregisters it from the control plane */
+int cham_free_ebpf(struct proto_lib *p);
 
 /* Polls the queue with the control plane */
 int cham_poll_control(struct proto_lib *p);
