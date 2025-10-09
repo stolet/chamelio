@@ -541,9 +541,6 @@ static int handle_free_ebpf_req(struct control_context *ctx,
                                 struct guest_control *g, struct queue_entry *qe_req)
 {
   int ret;
-  struct queue_free_up_ebpf_req *req;
-  struct shm_handle *sh;
-  req = &qe_req->data.free_up_ebpf_req;
   struct queue_free_up_ebpf_res *res;
 
   struct queue_entry *qe_res; 

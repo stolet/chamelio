@@ -1,0 +1,32 @@
+{
+  "name": "Chamelio",
+
+  "build": {
+    "dockerfile": "Dockerfile",
+    "ssh": ["default"],
+    "context": "../",
+  },
+
+  "runArgs": [
+    "--privileged",
+    "--network=host",
+  ],
+
+  "customizations": {
+    "vscode": {
+      "settings": {},
+      "extensions": [
+        "streetsidesoftware.code-spell-checker",
+        "ms-vscode.cpptools",
+        "mesonbuild.mesonbuild",
+      ]
+    }
+  },
+
+  // Mount hugepages for DPDK
+  "mounts": [
+        "source=/dev/hugepages,target=/dev/hugepages,type=bind"
+  ],
+
+  "remoteUser": "root",
+}
