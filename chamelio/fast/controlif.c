@@ -11,46 +11,50 @@ static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe);
 
 int controlif_poll(struct fast_context *ctx)
 {
+  int i;
   uint8_t type;
   struct dqueue *q;
   struct queue_entry *qe;
  
-  /* TODO: Poll up to batch size */
   q = ctx->ctl_fast_q;
-  qe = queue_head(q);
 
-  if (qe == NULL)
-    return 0;
-  
-  type = qe->type;
-  switch (type)
+  for (i = 0; i < BATCH_SIZE; i++)
   {
-    case QUEUE_EMPTY:
-      break;
-    case QUEUE_NEW_GUEST_REQ:
-      handle_new_guest(ctx, qe);
-      queue_dequeue(q);
-      break;
-    case QUEUE_NEW_MAP_REQ:
-      handle_new_map(ctx, qe);
-      queue_dequeue(q);
-      break;
-    case QUEUE_NEW_QUEUE_REQ:
-      handle_new_queue(ctx, qe);
-      queue_dequeue(q);
-      break;
-    case QUEUE_ENABLEQ_REQ:
-      handle_enableq(ctx, qe);
-      queue_dequeue(q);
-      break;
-    case QUEUE_DISABLEQ_REQ:
-      handle_disableq(ctx, qe);
-      queue_dequeue(q);
-      break;
-    default:
-      LOG_WARN("unknown queue tryt type from control path" 
-          "to fast path type=%d", type);
-      break;
+    qe = queue_head(q);
+
+    if (qe == NULL)
+      return 0;
+    
+    type = qe->type;
+    switch (type)
+    {
+      case QUEUE_EMPTY:
+        break;
+      case QUEUE_NEW_GUEST_REQ:
+        handle_new_guest(ctx, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_NEW_MAP_REQ:
+        handle_new_map(ctx, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_NEW_QUEUE_REQ:
+        handle_new_queue(ctx, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_ENABLEQ_REQ:
+        handle_enableq(ctx, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_DISABLEQ_REQ:
+        handle_disableq(ctx, qe);
+        queue_dequeue(q);
+        break;
+      default:
+        LOG_WARN("unknown queue tryt type from control path" 
+            "to fast path type=%d", type);
+        break;
+    }
   }
 
   return 0;

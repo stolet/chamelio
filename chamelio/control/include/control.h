@@ -6,6 +6,7 @@
 #include "shmalloc.h"
 
 #define CORE_INVALID UINT16_MAX
+#define BATCH_SIZE 16
 
 struct proto_queue_control {
   /* Queue ID */
@@ -56,6 +57,8 @@ struct guest_control {
 struct control_context {
   /* Configuration parameters */
   struct configuration *config;
+  /* Next fast-path core to poll */
+  uint16_t next_core;
   /* Queues from the fast-path to control-path. One per core. */
   struct dqueue **fast_ctl_qs;
   /* Queues from the control-path to the fast-path. One per core */
@@ -78,6 +81,8 @@ struct control_context {
 
   /* Number of registered guests */
   uint8_t n_guests;
+  /* Next guest to poll */
+  uint16_t next_guest;
   /* Guests that have registered with chamelio */
   struct guest_control *guests;
 };

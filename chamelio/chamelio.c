@@ -245,16 +245,13 @@ static int fast_thread(void *arg)
   if (ret != 0) 
   {
     LOG_ERROR("failed to initialize fast path context");
-    goto error_dpctx;
+    goto error_alloc;
   }
 
   fast_loop(f_ctx);
-  fast_context_destroy(f_ctx);
 
   return 0;
 
-error_dpctx:
-  fast_context_destroy(f_ctx);
 error_alloc:
   abort();
   return -1;

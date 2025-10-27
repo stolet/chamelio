@@ -370,7 +370,7 @@ struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, void *ebpf_byteco
     return NULL;
   }
 
-  //TODO: Make THIS asynchron. instead of blocking here
+  //TODO: Make THIS asynchronous instead of blocking here
   while(p->ebpf_program.flag == 0)
     cham_poll_control(p);
   return &p->ebpf_program;

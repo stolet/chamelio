@@ -138,13 +138,14 @@ static int poll_fast(struct control_context *ctx)
 {
   struct dqueue *q;
   struct queue_entry *qe;
-  int i;
+  int i, cores_polled, core;
 
-  for (i = 0; i < ctx->config->fp_cores_max; i++)
+  i = 0;
+  for (cores_polled = 0; cores_polled < ctx->config->fp_cores_max && 
+      i < BATCH_SIZE; cores_polled++)
   {
-    /* TODO: Dequeue in batches to improve performance and prevent us
-       from spending too much time in one core */
-    q = ctx->fast_ctl_qs[i];
+    core = (ctx->next_core + cores_polled) % ctx->config->fp_cores_max;
+    q = ctx->fast_ctl_qs[core];
     qe = queue_head(q);
 
     /* Queue is empty */
@@ -153,15 +154,19 @@ static int poll_fast(struct control_context *ctx)
 
     switch (qe->type)
     {
-    case QUEUE_EMPTY:
-      break;
-    default:
-      LOG_ERROR("unknown queue entry type from "
-                "fast path to control path type=%d",
-                qe->type);
-      abort();
+      case QUEUE_EMPTY:
+        break;
+      default:
+        LOG_ERROR("unknown queue entry type from "
+                  "fast path to control path type=%d",
+                  qe->type);
+        abort();
     }
+
+    i++;
   }
+
+  ctx->next_core = (ctx->next_core + cores_polled) % ctx->config->fp_cores_max;
 
   return 0;
 }
@@ -172,13 +177,14 @@ static int poll_guests(struct control_context *ctx)
   struct dqueue *q;
   struct queue_entry *qe;
   struct guest_control *g;
-  int i;
+  int i, guests_polled, gid;
 
-  for (i = 0; i < ctx->n_guests; i++)
+  i = 0;
+  for (guests_polled = 0; guests_polled < ctx->n_guests 
+        && i < BATCH_SIZE; guests_polled++)
   {
-    /* TODO: Dequeue in batches to improve performance and prevent us
-       from spending too much time in one core */
-    g = &ctx->guests[i];
+    gid = (ctx->next_guest + guests_polled) % ctx->n_guests;
+    g = &ctx->guests[gid];
     q = g->guest_cham_q;
     qe = queue_head(q);
 
@@ -222,6 +228,8 @@ static int poll_guests(struct control_context *ctx)
                 qe->type);
       abort();
     }
+
+    i++;
   }
 
   return 0;

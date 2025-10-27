@@ -94,11 +94,6 @@ int fast_context_init(struct fast_context *f_ctx,
   return 0;
 }
 
-void fast_context_destroy()
-{
-  /* TODO: cleanup fast path context */
-}
-
 int fast_loop(struct fast_context *ctx)
 {
   int ret;
