@@ -4,7 +4,6 @@
 #include <rte_malloc.h>
 
 #include "nic_fast.h"
-#include "fast_process.h"
 #include "fast.h"
 #include "nic.h"
 #include "nic_fast.h"

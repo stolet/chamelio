@@ -481,8 +481,6 @@ static int handle_disableq_req(struct control_context *ctx,
   return 0;
 }
 
-// TODO: do I actually need these ctx?
-
 static int handle_allocate_ebpf_req(struct guest_control *g, struct queue_entry *qe_req)
 {
   int ret;
