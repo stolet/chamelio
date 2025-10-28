@@ -242,7 +242,7 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   uint16_t opt_len, payload_len;
   uint16_t udp_hdrs_len, ip_hdrs_len, pkt_hdrs_len;
   uint32_t new_head;
-  uint64_t mac_src_val, mac_dst_val, part;
+  uint64_t part;
   struct udp_pkt *p = (struct udp_pkt *) pkt;
   
   /* If there is nothing scheduled return */
@@ -271,7 +271,7 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   p->eth.src.addr[2] = 159;
   p->eth.src.addr[3] = 196;
   p->eth.src.addr[4] = 175;
-  p->eth.src.addr[5] = 230;
+  p->eth.src.addr[5] = 102;
   
   // mac_from_text("b8:59:9f:c4:af:66", mac_dst.addr);
   p->eth.dst.addr[0] = 184;
@@ -279,7 +279,7 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   p->eth.dst.addr[2] = 159;
   p->eth.dst.addr[3] = 196;
   p->eth.dst.addr[4] = 175;
-  p->eth.dst.addr[5] = 102;
+  p->eth.dst.addr[5] = 230;
 
   p->eth.type = t_beui16(ETH_TYPE_IP);
   // memcpy(&mac_src_val, &p->eth.src, ETH_ADDR_LEN);

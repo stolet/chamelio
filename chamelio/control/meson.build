@@ -22,6 +22,7 @@ deps = [
   dependency('shm_dep'),
   dependency('queue_dep'),
   dependency('uxsocket_dep'),
+  dependency('cham_lib'),
   llvm_dep,
   llvmbpf_dep,
   spdlog_dep,

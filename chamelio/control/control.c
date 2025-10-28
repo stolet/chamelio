@@ -56,6 +56,7 @@ int control_context_init(struct control_context *ctx, struct configuration *conf
     return -1;
   }
   ctx->fast_ctl_qs = fast_ctl_qs;
+  ctx->next_core = 0;
 
   ctl_fast_qs = malloc(sizeof(struct equeue *) * config->fp_cores_max);
   if (ctl_fast_qs == NULL)
@@ -96,6 +97,7 @@ int control_context_init(struct control_context *ctx, struct configuration *conf
   }
   ctx->guests = guests;
   ctx->n_guests = 0;
+  ctx->next_guest = 0;
 
   return 0;
 
@@ -136,22 +138,32 @@ int control_loop(struct control_context *ctx)
 /* Polls for messages from fast-path */
 static int poll_fast(struct control_context *ctx)
 {
+  int i, cores_polled, increment_core;
   struct dqueue *q;
   struct queue_entry *qe;
-  int i, cores_polled, core;
 
   i = 0;
-  for (cores_polled = 0; cores_polled < ctx->config->fp_cores_max && 
-      i < BATCH_SIZE; cores_polled++)
+  cores_polled = 0;
+  increment_core = 0;
+  while (i < BATCH_SIZE)
   {
-    core = (ctx->next_core + cores_polled) % ctx->config->fp_cores_max;
-    q = ctx->fast_ctl_qs[core];
+    if (cores_polled >= ctx->config->fp_cores_max)
+      break;
+
+    q = ctx->fast_ctl_qs[ctx->next_core];
     qe = queue_head(q);
 
     /* Queue is empty */
     if (qe == NULL)
+    {
+      cores_polled++;
+      increment_core = 0;
+      ctx->next_core = (ctx->next_core + 1) % ctx->config->fp_cores_max;
       continue;
+    }
 
+    increment_core = 1;
+    i++;
     switch (qe->type)
     {
       case QUEUE_EMPTY:
@@ -162,11 +174,11 @@ static int poll_fast(struct control_context *ctx)
                   qe->type);
         abort();
     }
-
-    i++;
   }
 
-  ctx->next_core = (ctx->next_core + cores_polled) % ctx->config->fp_cores_max;
+  /* Don't double increment core when last iteration had empty queue */
+  if (increment_core)
+    ctx->next_core = (ctx->next_core + 1) % ctx->config->fp_cores_max;
 
   return 0;
 }
@@ -177,60 +189,71 @@ static int poll_guests(struct control_context *ctx)
   struct dqueue *q;
   struct queue_entry *qe;
   struct guest_control *g;
-  int i, guests_polled, gid;
+  int i, guests_polled, increment_guest;
 
   i = 0;
-  for (guests_polled = 0; guests_polled < ctx->n_guests 
-        && i < BATCH_SIZE; guests_polled++)
+  guests_polled = 0;
+  increment_guest = 0;
+  while (i < BATCH_SIZE)
   {
-    gid = (ctx->next_guest + guests_polled) % ctx->n_guests;
-    g = &ctx->guests[gid];
+    if (guests_polled >= ctx->n_guests)
+      break;
+
+    g = &ctx->guests[ctx->next_guest];
     q = g->guest_cham_q;
     qe = queue_head(q);
 
     /* Queue is empty */
     if (qe == NULL)
-      continue;
-
-    switch (qe->type)
     {
-    case QUEUE_NEW_QUEUE_REQ:
-      handle_new_queue_req(ctx, g, qe);
-      queue_dequeue(q);
-      break;
-    case QUEUE_NEW_MAP_REQ:
-      handle_new_map_req(ctx, g, qe);
-      queue_dequeue(q);
-      break;
-    case QUEUE_ENABLEQ_REQ:
-      handle_enableq_req(ctx, g, qe);
-      queue_dequeue(q);
-      break;
-    case QUEUE_DISABLEQ_REQ:
-      handle_disableq_req(ctx, g, qe);
-      queue_dequeue(q);
-      break;
-    case QUEUE_ALLOCATE_EBPF_REQ:
-      handle_allocate_ebpf_req(g, qe);
-      queue_dequeue(q);
-      break;
-    case QUEUE_FREE_EBPF_REQ:
-      handle_free_ebpf_req(ctx, g, qe);
-      queue_dequeue(q);
-      break;
-    case QUEUE_UPLOAD_EBPF_REQ:
-      handle_upload_ebpf_req(ctx, g, qe);
-      queue_dequeue(q);
-      break;
-    default:
-      LOG_ERROR("unknown queue entry type from "
-                "guest to control path type=%d",
-                qe->type);
-      abort();
+      guests_polled++;
+      increment_guest = 0;
+      ctx->next_guest = (ctx->next_guest + 1) % ctx->n_guests;
+      continue;
     }
 
-    i++;
+    increment_guest = 1;
+    switch (qe->type)
+    {
+      case QUEUE_NEW_QUEUE_REQ:
+        handle_new_queue_req(ctx, g, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_NEW_MAP_REQ:
+        handle_new_map_req(ctx, g, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_ENABLEQ_REQ:
+        handle_enableq_req(ctx, g, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_DISABLEQ_REQ:
+        handle_disableq_req(ctx, g, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_ALLOCATE_EBPF_REQ:
+        handle_allocate_ebpf_req(g, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_FREE_EBPF_REQ:
+        handle_free_ebpf_req(ctx, g, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_UPLOAD_EBPF_REQ:
+        handle_upload_ebpf_req(ctx, g, qe);
+        queue_dequeue(q);
+        break;
+      default:
+        LOG_ERROR("unknown queue entry type from "
+                  "guest to control path type=%d",
+                  qe->type);
+        abort();
+    }
   }
+
+  /* Don't double increment guest when last iteration had empty queue */
+  if (increment_guest)
+    ctx->next_guest = (ctx->next_guest + 1) % ctx->n_guests;
 
   return 0;
 }

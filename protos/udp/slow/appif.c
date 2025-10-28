@@ -211,6 +211,7 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   a->id = ctx->n_apps;
   a->n_ctxs = 0;
   a->n_socks = 0;
+  a->next_ctx = 0;
 
   /* Create map used to hold sockets */
   socks_map = cham_new_map(ctx->proto, MAX_SOCKETS, 

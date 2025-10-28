@@ -3,11 +3,11 @@
 
 #include <stdint.h>
 
+#include <cham_lib.h>
+
 #include "queue.h"
 #include "udp_queue.h"
 #include "udp_slow.h"
-
-#define APP_SOCKET_PATH "app_socket"
 
 struct app_event {
   int type;

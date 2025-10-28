@@ -39,47 +39,64 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   ctx->guest = g;
   ctx->proto = p;
   ctx->n_apps = 0;
+  ctx->next_app = 0;
 
   return 0;
 }
 
 int poll_apps(struct udp_slow_context *ctx)
 {
-  int i, j;
+  int msgs_i, apps_polled, ctxs_polled;
   uint8_t type;
   struct dqueue *q;
   struct udp_queue_entry *qe;
-
-  
-  /* TODO: Poll up to batch size */
-  for (i = 0; i < ctx->n_apps; i++)
-  {
-    for (j = 0; j < ctx->apps[i].n_ctxs; j++)
+  struct udp_app_slow *a;
+  struct udp_app_context_slow *actx;
+ 
+  msgs_i = 0;
+  apps_polled = 0;
+  ctxs_polled = 0;
+  while (msgs_i < BATCH_SIZE && ctx->n_apps != 0)
+  {     
+    a = &ctx->apps[ctx->next_app];
+    if (ctxs_polled >= a->n_ctxs)
     {
-      q = ctx->apps[i].ctxs[j].app_slow_q;
-      qe = queue_head(q);
-
-      if (qe == NULL)
-        return 0;
-      
-      type = qe->type;
-      switch (type)
-      {
-        case UDP_QUEUE_EMPTY:
-          break;
-        case UDP_QUEUE_NEW_SOCK_REQ:
-          handle_new_sock(ctx, &ctx->apps[i].ctxs[j], qe);
-          queue_dequeue(q);
-          break;
-        case UDP_QUEUE_BIND:
-          handle_bind(ctx, &ctx->apps[i].ctxs[j], qe);
-          queue_dequeue(q);
-          break;
-        default:
-          LOG_WARN("unknown queue tryt type from app" 
-              "to udp slow-path type=%d", type);
-          break;
-      }
+      apps_polled++;
+      ctx->next_app = (ctx->next_app + 1) % ctx->n_apps;
+    }
+  
+    if (apps_polled >= ctx->n_apps)
+      break;
+    
+    actx = &a->ctxs[a->next_ctx];
+    q = actx->app_slow_q;
+    qe = queue_head(q);
+    
+    if (qe == NULL)
+    {
+      ctxs_polled++;
+      a->next_ctx = (a->next_ctx + 1) % a->n_ctxs;
+      continue;
+    }
+    
+    msgs_i++;
+    type = qe->type;
+    switch (type)
+    {
+      case UDP_QUEUE_EMPTY:
+        break;
+      case UDP_QUEUE_NEW_SOCK_REQ:
+        handle_new_sock(ctx, actx, qe);
+        queue_dequeue(q);
+        break;
+      case UDP_QUEUE_BIND:
+        handle_bind(ctx, actx, qe);
+        queue_dequeue(q);
+        break;
+      default:
+        LOG_WARN("unknown queue tryt type from app" 
+            "to udp slow-path type=%d", type);
+        break;
     }
   }
 

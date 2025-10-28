@@ -5,8 +5,13 @@
 
 #include "queue.h"
 
-/* TODO: Don't duplicate this */
 #define APP_SOCKET_PATH "app_socket"
+
+/* This socket is only used by apps running on the
+   bare machine to connect to Chamelio. They are 
+   treated as a new guest and also assigned a new
+   shared memory region. Regular guests use the
+   guest socket to connect */
 #define GUEST_SOCKET_PATH "guest_socket"
 
 #define IVSHMEM_PROTOCOL_VERSION 0

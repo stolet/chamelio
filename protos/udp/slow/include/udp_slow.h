@@ -6,6 +6,8 @@
 
 #include "udp.h"
 
+#define BATCH_SIZE 16
+
 struct udp_app_context_slow {
   /* ID for application context */
   uint8_t id;
@@ -26,6 +28,8 @@ struct udp_app_slow {
   uint8_t id;
   /* Number of registered application contexts */
   uint8_t n_ctxs;
+  /* Next context to poll */
+  uint8_t next_ctx;
   /* List of application contexts */
   struct udp_app_context_slow ctxs[MAX_CTXS];
   /* Number of sockets registered */
@@ -47,6 +51,8 @@ struct udp_slow_context {
 
   /* Number of registered applications */
   uint8_t n_apps;
+  /* Next app to poll */
+  uint8_t next_app;
   /* Apps that have registered with chamelio */
   struct udp_app_slow apps[MAX_APPS];
 };

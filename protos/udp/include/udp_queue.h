@@ -178,8 +178,6 @@ struct udp_queue_bump_entry {
   } __attribute__((packed)) data;
 } __attribute__((packed));
 
-/* TODO: Make this cache-aligned again. The udp_queue_new_actx_res
-   probably doesn't have to be in udp_queue.h */
 /* We want queue entries to be cache line sized for faster retrieval */
 STATIC_ASSERT(sizeof(struct udp_queue_entry) == 512, udp_queue_entry_size);
 STATIC_ASSERT(sizeof(struct udp_queue_bump_entry) == 32, udp_bump_queue_entry_size);

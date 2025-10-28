@@ -3,16 +3,11 @@
 
 #include <stdint.h>
 
+#include <cham_lib.h>
+
 #include "control.h"
 #include "queue.h"
 #include "shmalloc.h"
-
-/* This socket is only used by apps running on the
-   bare machine to connect to Chamelio. They are 
-   treated as a new guest and also assigned a new
-   shared memory region. Regular guests use the
-   guest socket to connect */
-#define GUEST_SOCKET_PATH "guest_socket"
 
 struct guest_event {
   int type;
