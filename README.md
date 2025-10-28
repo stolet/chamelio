@@ -12,11 +12,23 @@ to send and receive data.
 
 ## Building
 
-Requirements
-  * [DPDK](https://www.dpdk.org/) v25
-  * [Meson](https://mesonbuild.com/) > v1.0.0
+Use the provided [Dev Container](https://code.visualstudio.com/docs/devcontainers/containers) 
+in this repo to setup your environment. Dev Containers set up a namespace and let you use
+the provided container with all the dependencies built as a development environment.
+To use Dev Containers you need to install [Docker](https://www.docker.com/) 
+and then install the Dev Containers VSCode
+extension. After installation add your user to the docker group. 
 
-To build Chamelio run the following commands
+```
+sudo groupadd docker
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+To open the repository folder in a container select "Dev Containers: Open Folder in Container""
+from the VSCode quick action status bar item.
+
+After the container finished building build Chamelio inside the container
 ```
 meson setup build
 cd build
