@@ -1,0 +1,33 @@
+{
+	"name": "Chamelio",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"context": "../"
+	},
+	"remoteUser": "root",
+	//mount hugepages for dpdk
+	"mounts": [
+		"source=/dev/hugepages,target=/dev/hugepages,type=bind"
+	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-vscode.cpptools",
+				"mesonbuild.mesonbuild"
+			]
+		}
+	},
+	//set the priviledged flag for ebpf, setting the remoteUser to root is not enough. 
+	"runArgs": [
+		"--privileged",
+		"--network=host"
+		//"--dns",
+		//"8.8.8.8",
+		//"-p",
+		//"64499:9999/udp", // publish host UDP 64499 -> container 9999
+		//"--ulimit",
+		//"memlock=-1" // allow BPF maps/programs
+		//"--cap-add=NET_ADMIN", // (redundant with --privileged, but explicit)
+		//"--cap-add=BPF" 
+	]
+}

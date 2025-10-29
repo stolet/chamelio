@@ -4,21 +4,14 @@ control_inc = include_directories('include')
 
 bpftime_verif_inc = include_directories('/usr/local/include/bpftime-verifier')
 
-llvmbpf_inc = include_directories(
-  '/opt/llvmbpf/include',
-  '/usr/include/llvmbpf',
-  )
+llvmbpf_inc = include_directories('/usr/local/include/llvmbpf')
+#'/opt/llvmbpf/include')
 
 control_srcs = files('control.c', 'ivshmemif.c', 'guestif.c', 'ebpfif.cpp', 
   'verifierif.cpp')
 
-llvmbpf_libdirs = [
-  '/opt/llvmbpf/build',
-  '/opt/llvmbpf/build/lib',
-]
-
-llvmbpf_lib = cpp.find_library('llvmbpf', dirs: llvmbpf_libdirs, 
-  required: false)
+llvmbpf_lib = cpp.find_library('llvmbpf', dirs: ['/usr/local/lib'], 
+  required: true)
 
 bpftime_verifier_lib = cpp.find_library('bpftime-verifier', 
   dirs: ['/usr/local/lib'], required: true)
@@ -33,13 +26,7 @@ llvmbpf_dep = declare_dependency(
   include_directories: llvmbpf_inc,
 )
 
-prevail = '/bpftime/src/bpftime-verifier/ebpf-verifier'
-
-prevail_inc = include_directories(
-  prevail,             
-  prevail + '/src',      
-  prevail + '/src/crab'   
-)
+prevail_inc = include_directories('/usr/local/include/prevail')
 
 prevail_lib = cpp.find_library('ebpfverifier',
   dirs: ['/usr/local/lib'],    
@@ -51,15 +38,19 @@ prevail_dep = declare_dependency(
   dependencies: [prevail_lib]
 )
 
+spdlog_dep = cc.find_library('spdlog', dirs: ['/usr/local/lib'], required: true)
+
 deps = [
   dependency('config_dep'),
   dependency('log_dep'),
   dependency('shm_dep'),
   dependency('queue_dep'),
   dependency('uxsocket_dep'),
+  dependency('llvm'),
   llvmbpf_dep,
   prevail_dep,
-  bpftime_verif_dep
+  bpftime_verif_dep,
+  spdlog_dep
 ]
 
 control_lib = static_library(

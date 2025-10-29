@@ -3,9 +3,13 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <string.h>
+#include <unistd.h> // getcwd
+#include <sys/stat.h>
+#include <errno.h>
 
 #include "cham_lib.h"
 #include "test_utils.h"
+#include "xdp_bytes.h"
 
 /* Test configurations */
 #define TEST_CHAM_IP "192.168.10.14/24"
@@ -58,6 +62,91 @@ static pid_t start_chamelio()
   sleep(3);
   printf("Chamelio started with PID %d\n", pid);
   return pid;
+}
+
+static void debug_fopen(const char *path, const char *mode)
+{
+  char cwd[4096];
+  if (getcwd(cwd, sizeof(cwd)))
+  {
+    fprintf(stderr, "cwd: %s\n", cwd);
+  }
+
+  struct stat st;
+  if (stat(path, &st) == 0)
+  {
+    fprintf(stderr, "stat(%s): size=%lld bytes, perms=%o\n",
+            path, (long long)st.st_size, st.st_mode & 0777);
+  }
+  else
+  {
+    fprintf(stderr, "stat(%s) failed: %s\n", path, strerror(errno));
+  }
+
+  FILE *f = fopen(path, mode);
+  if (!f)
+  {
+    fprintf(stderr, "fopen(%s, %s) failed: %s\n", path, mode, strerror(errno));
+  }
+  else
+  {
+    fprintf(stderr, "fopen(%s) OK\n", path);
+    fclose(f);
+  }
+}
+
+static int read_bytes(const char *path, uint8_t **buf, size_t *len)
+{
+  printf("Reading eBPF bytecode from %s\n", path);
+  *buf = NULL;
+  *len = 0;
+  size_t total_read;
+
+  debug_fopen(path, "rb");
+  FILE *f = fopen(path, "rb");
+  printf("File pointer:\n");
+  if (!f)
+  {
+    printf("fopen failed\n");
+    return -1;
+  }
+  if (fseek(f, 0, SEEK_END) != 0)
+  {
+    printf("fseek failed\n");
+    fclose(f);
+    return -1;
+  }
+
+  long n = ftell(f);
+  if (n < 0)
+  {
+    fclose(f);
+    printf("ftell failed\n");
+    return -1;
+  }
+  printf("File size from ftell: %ld\n", n);
+  rewind(f);
+  printf("File size: %ld bytes\n", n);
+  uint8_t *b = malloc(n);
+  if (!b)
+  {
+    fclose(f);
+    printf("malloc failed\n");
+    return -1;
+  }
+
+  total_read = fread(b, 1, (size_t)n, f);
+  if (total_read != (size_t)n)
+  {
+    free(b);
+    fclose(f);
+    printf("fread failed\n");
+    return -1;
+  }
+  *buf = b;
+  *len = (size_t)n;
+  printf("Read %zu bytes\n", *len);
+  return 0;
 }
 
 static void test_connect_guest()
@@ -147,7 +236,6 @@ static void test_cham_upload_ebpf(struct proto_lib *proto)
           0x00, 0x00, 0x00, 0x00};
 
   memcpy(ebpf_bytecode, kMinimalEbpfProgram, proto->ebpf_program.size);
-
   int ret = cham_upload_ebpf(proto, ebpf_bytecode);
   TEST_ASSERT(ret == 0, "cham_upload_ebpf failed");
   TEST_ASSERT(proto->ebpf_program.flag > 0, "ebpf upload flag not set correctly");
@@ -160,6 +248,59 @@ static void test_cham_upload_ebpf(struct proto_lib *proto)
   free(ebpf_bytecode);
 
   printf(ANSI_COLOR_GREEN "cham_upload_ebpf test passed" ANSI_COLOR_RESET "\n");
+}
+
+static void test_upload_pkt_acc_ebpf(struct proto_lib *proto)
+{
+  printf(ANSI_COLOR_BLUE "Testing cham_upload_pkt_acc_ebpf..." ANSI_COLOR_RESET "\n");
+
+  uint8_t *ebpf_bytecode = NULL;
+  size_t ebpf_size = 0;
+
+  TEST_ASSERT(read_bytes("tests/test.raw", &ebpf_bytecode, &ebpf_size) == 0, "failed to read eBPF bytecode from file");
+
+  struct proto_ebpf_lib *ebpf = cham_allocate_ebpf(proto, ebpf_size);
+  TEST_ASSERT(ebpf != NULL, "ebpf is NULL");
+  TEST_ASSERT(ebpf->size == ebpf_size, "incorrect ebpf size");
+  TEST_ASSERT(ebpf->off > 0, "invalid ebpf offset");
+  printf(ANSI_COLOR_BLUE "cham_allocated_pkt_acc_ebpf test passed" ANSI_COLOR_RESET "\n");
+
+  TEST_ASSERT(proto->ebpf_program.size == ebpf_size, "ebpf program not the correct size");
+
+  printf(ANSI_COLOR_BLUE "Testing cham_upload_pkt_acc_ebpf..." ANSI_COLOR_RESET "\n");
+  printf("Uploading eBPF program of size %u bytes\n", proto->ebpf_program.size);
+  int ret = cham_upload_ebpf(proto, ebpf_bytecode);
+  printf("cham_upload_ebpf returned %d\n", ret);
+  TEST_ASSERT(ret == 0, "cham_upload_ebpf failed");
+  TEST_ASSERT(proto->ebpf_program.flag > 0, "ebpf upload flag not set correctly");
+  // verify contents in shared memory
+  uint8_t *shm_addr = (uint8_t *)proto->shm_base + proto->ebpf_program.off;
+
+  int cmp = memcmp(shm_addr, ebpf_bytecode, proto->ebpf_program.size);
+  TEST_ASSERT(cmp == 0, "cham_upload_ebpf not at the correct location in shared memory");
+  free(ebpf_bytecode);
+  printf(ANSI_COLOR_GREEN "cham_upload_pkt_acc_ebpf test passed" ANSI_COLOR_RESET "\n");
+}
+
+static void test_fail_verif_ebpf(struct proto_lib *proto)
+{
+  printf(ANSI_COLOR_BLUE "Testing cham_upload_ebpf with invalid eBPF program..." ANSI_COLOR_RESET "\n");
+
+  // Invalid eBPF program (just an array of zeros)
+  uint8_t *invalid_ebpf = NULL;
+  size_t invalid_size = 0;
+
+  TEST_ASSERT(read_bytes("tests/test_fail.raw", &invalid_ebpf, &invalid_size) == 0, "failed to read eBPF bytecode from file");
+
+  struct proto_ebpf_lib *ebpf = cham_allocate_ebpf(proto, sizeof(invalid_ebpf));
+  TEST_ASSERT(ebpf != NULL, "ebpf is NULL");
+  TEST_ASSERT(ebpf->size == sizeof(invalid_ebpf), "incorrect ebpf size");
+  TEST_ASSERT(ebpf->off > 0, "invalid ebpf offset");
+
+  int ret = cham_upload_ebpf(proto, invalid_ebpf);
+  TEST_ASSERT(ret == 0, "cham_upload_ebpf should have failed for invalid eBPF program");
+
+  printf(ANSI_COLOR_GREEN "cham_upload_ebpf with invalid eBPF program test passed" ANSI_COLOR_RESET "\n");
 }
 
 int main()
@@ -192,6 +333,8 @@ int main()
 
   test_cham_allocate_ebpf(proto);
   test_cham_upload_ebpf(proto);
+  test_upload_pkt_acc_ebpf(proto);
+  //test_fail_verif_ebpf(proto);
 
   printf("All tests passed!\n");
 

@@ -3,7 +3,9 @@
 #include "asm_unmarshal.hpp"
 #include "bpftime-verifier/platform-impl.hpp"
 #include "verifierif.h"
+#include "linux/bpf.h"
 
+/*
 static InstructionSeq convert_raw_instr(void *raw_instr, size_t size)
 {
   size_t num_instr, i;
@@ -35,19 +37,21 @@ static InstructionSeq convert_raw_instr(void *raw_instr, size_t size)
   }
   return std::get<InstructionSeq>(unmarshal_result);
 }
+*/
 
 bool verify_ebpf_cham(void *raw_instr, size_t size)
 {
   printf("Verifying eBPF program of size %zu bytes\n", size);
   InstructionSeq ins;
   ebpf_verifier_stats_t stats{};
+  /*
   ebpf_verifier_options_t options{};
   options.check_termination = true;
   options.no_simplify = true;
   options.assume_assertions = false;
   options.print_invariants = false;
   options.print_failures = true;
-
+*/
   // instrs = convert_raw_instr(raw_instr, size);
 
   size_t num_instr, i;
@@ -86,10 +90,10 @@ bool verify_ebpf_cham(void *raw_instr, size_t size)
   prog.info.map_descriptors = {};
 
   static const ebpf_context_descriptor_t ctx_descr = {
-      .size = 0,
-      .data = -1,
-      .end = -1,
-      .meta = -1,
+      .size = sizeof(xdp_md),
+      .data = offsetof(xdp_md, data),
+      .end = offsetof(xdp_md, data_end),
+      .meta = offsetof(xdp_md, data_meta),
   };
 
   // Using this as a generic type for now which should hopefully pass
