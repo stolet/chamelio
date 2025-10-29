@@ -1,7 +1,8 @@
-// llvmbpf_shim.cpp
 #include <cstdint>
 #include <cstddef>
 #include <new>
+#include <string.h>
+#include <iostream>
 
 #include <llvmbpf/llvmbpf.hpp>
 #include "ebpfif.h"
@@ -14,8 +15,9 @@ extern "C"
   struct llvmbpf_vm_c
   {
     llvmbpf_vm vm;
-    llvmbpf_jitted_fn jitted_fn = nullptr;
-   
+    llvmbpf_jitted_fn jitted_fn_rx = nullptr;
+    llvmbpf_jitted_fn jitted_fn_tx = nullptr;
+    llvmbpf_jitted_fn jitted_fn_deq = nullptr;
   };
 
   llvmbpf_vm_c *llvmbpf_vm_create(void)
@@ -49,7 +51,9 @@ extern "C"
     if (!h)
       return;
     h->vm.unload_code();
-    h->jitted_fn = nullptr;
+    h->jitted_fn_rx = nullptr;
+    h->jitted_fn_tx = nullptr;
+    h-> jitted_fn_deq = nullptr;
   }
 
   int llvmbpf_vm_register_helper(llvmbpf_vm_c *h, uint32_t id, void *fn, char *name)
@@ -61,15 +65,22 @@ extern "C"
     return res;
   }
 
-  // return NULLPTR on error and function pointer to the jitted code on success
-  int llvmbpf_vm_compile(llvmbpf_vm_c *h)
+  // return 0 upon successful compilation
+  int llvmbpf_vm_compile(llvmbpf_vm_c *h, const char *prog_name)
   {
     if (!h)
       return -1;
     auto f = h->vm.compile();
     if (!f.has_value())
       return -1;
-    h->jitted_fn = f.value();
+    if (strcmp(prog_name, "prog/udp_rx") == 0)
+      h->jitted_fn_rx = f.value();
+    else if (strcmp(prog_name, "prog/udp_tx") == 0)
+      h->jitted_fn_tx = f.value();
+    else if (strcmp(prog_name, "prog/udp_deq") == 0)
+      h->jitted_fn_deq = f.value();
+    else
+      printf("Unknown eBPF program name: %s\n", prog_name);
     return 0;
   }
 

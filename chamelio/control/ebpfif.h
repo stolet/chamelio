@@ -27,11 +27,11 @@ extern "C"
 
     /**
      * JIT compile loaded eBPF code
-     * Returns 0 on success, -1 on error
+     * Returns a function pointer to the jitted code in case of success and NULL on failure
      */
-    int llvmbpf_vm_compile(llvmbpf_vm_c *h); // 0=ok
+    int llvmbpf_vm_compile(llvmbpf_vm_c *h, const char *prog_name);
 
-    llvmbpf_jitted_fn   llvmbpf_vm_get_jitted_fn(llvmbpf_vm_c* h);              // NULL if none
+    //llvmbpf_jitted_fn   llvmbpf_vm_get_jitted_fn(llvmbpf_vm_c* h);              // NULL if none
 
 #ifdef __cplusplus
 }

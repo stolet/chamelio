@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
+#include <elf.h>
 
 #include "control.h"
 #include "shmalloc.h"
@@ -28,7 +29,7 @@ static int handle_free_ebpf_req(struct control_context *ctx,
                                 struct guest_control *g, struct queue_entry *qe_req);
 static int handle_upload_ebpf_req(struct control_context *ctx,
                                   struct guest_control *g, struct queue_entry *qe_req);
-static int jit_ebpf(void *ebpf_bytecode, size_t size);
+static int jit_ebpf(void *ebpf_bytecode, size_t size, const char *prog_name);
 
 int control_context_init(struct control_context *ctx, struct configuration *config,
                          struct shm_handle **fc_handles, struct shm_handle **cf_handles)
@@ -528,15 +529,31 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   
   ebpf_bytecode = (uint8_t *)g->shm_base + req->off;
 
-  ret = jit_ebpf(ebpf_bytecode, req->size);
-
-  if (ret != 0)
+  //Parse the ELF file
+  const Elf64_Ehdr *ehdr = (const Elf64_Ehdr *)ebpf_bytecode;
+  const Elf64_Shdr *shdr = (const Elf64_Shdr *)((const char *)ebpf_bytecode + ehdr->e_shoff);
+  const char *secdata = (const char *)ebpf_bytecode + shdr[ehdr->e_shstrndx].sh_offset;
+  
+  for (int i = 0; i < ehdr->e_shnum; i++)
   {
+    const char *secname = secdata + shdr[i].sh_name;
+
+    //each section hdr gives the offset of the section par rapport a original bytecode + size
+    const void *secbytecode = (const char *)ebpf_bytecode + shdr[i].sh_offset;
+    size_t s = shdr[i].sh_size;
+    LOG_INFO("eBPF section name: %s, size: %zu bytes", secname, s);
+
+    ret = jit_ebpf((void *)secbytecode, s, secname);
+
+    if (ret != 0)
+    {
     LOG_ERROR("failed to JIT eBPF program");
     res->success = -1; // indicating upload failed 
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
     return -1;
+    }
+
   }
   
   /*
@@ -605,8 +622,9 @@ static uint64_t nop_helper(uint64_t r1, uint64_t r2, uint64_t r3,
   return 0;
 }
 
+
 //pointer to the memory with the jitted code inside the llvmbpf_vm_c struct: llvmbpf_jitted_fn
-static int jit_ebpf(void *ebpf_bytecode, size_t size)
+static int jit_ebpf(void *ebpf_bytecode, size_t size, const char *prog_name)
 {
   uint64_t res;
   struct llvmbpf_vm_c *vm;
@@ -630,7 +648,7 @@ static int jit_ebpf(void *ebpf_bytecode, size_t size)
     return res;
   }
 
-  res = llvmbpf_vm_compile(vm); // LLVM JIT
+  res = llvmbpf_vm_compile(vm, prog_name); // LLVM JIT
   if (res != 0)
   {
     LOG_ERROR("failed to JIT ebpf bytecode");
