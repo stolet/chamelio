@@ -553,7 +553,6 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     assert(ret == 0);
     return -1;
     }
-
   }
   
   /*
