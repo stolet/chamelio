@@ -3,7 +3,7 @@
 
 
 //Use HASH_MAP_TYPE later on for the maps
-SEC("xdp") 
+SEC("prog/tx") 
 int ebpf_event_tx(struct xdp_md *ctx)
 {
     return XDP_PASS;
