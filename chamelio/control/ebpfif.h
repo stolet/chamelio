@@ -33,6 +33,9 @@ extern "C"
 
     llvmbpf_jitted_fn   llvmbpf_vm_get_jitted_fn(llvmbpf_vm_c* h);              // NULL if none
 
+    int llvmbpf_vm_exec(llvmbpf_vm_c *h, void *mem, 
+      size_t mem_len, uint64_t return_value);
+
 #ifdef __cplusplus
 }
 #endif

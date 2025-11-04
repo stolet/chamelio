@@ -11,18 +11,8 @@ struct configuration {
   uint64_t shm_internal_len;
   /* Size of queue between control and fast path in Chamelio */
   uint64_t cham_queue_len;
-  /* Size of queue between application and control path */
-  uint64_t app_queue_len;
-  /* Size of RX bump queue between application and control path */
-  uint64_t bump_rx_queue_len;
-  /* Size of TX bump queue between application and control path */
-  uint64_t bump_tx_queue_len;
   /* Size of queue between guest agent and chamelio */
   uint64_t agt_queue_len;
-  /* Size of application receive buffer */
-  uint64_t rxbuf_len;
-  /* Size of application transmit buffer */
-  uint64_t txbuf_len;
 
   /*** IP address configurations ***/
   /* IP address for this host */

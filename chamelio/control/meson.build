@@ -25,6 +25,7 @@ deps = [
   dependency('cham_lib'),
   llvm_dep,
   llvmbpf_dep,
+  libbpf_dep,
   spdlog_dep,
 ]
 

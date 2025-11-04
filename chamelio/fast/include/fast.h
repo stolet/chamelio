@@ -41,13 +41,21 @@ struct proto_fast {
   /* Handle containing protocol state passed to custom fast-path */  
   struct cham_proto_handle handle;
 
-  /* Processes one received packet */
+  /* These are used as baselines to the ebpf jitted functions */
+  /* Non-ebpf function to processes one received packet */
   int (*event_rx)(void *pkt, struct cham_proto_handle *handle);
-  /* Processes one scheduled packet for transmissiojn */
+  /* Non-ebpf function to process one scheduled packet for transmission */
   int (*event_tx)(void *pkt, struct cham_proto_handle *handle);
-  /* Dequeue and process entry from a queue */
+  /* Non-ebpf function to dequeue and process entry from a queue */
   int (*event_deq)(int qid, struct queue_entry *qe, 
       struct cham_proto_handle *handle);
+
+  /* Jitted LLVM VM to process one received packet */
+  struct llvmbpf_vm_c *event_rx_vm;
+  /* Jitted LLVM VM to process one scheduled packet for transmission */
+  struct llvmbpf_vm_c *event_tx_vm;
+  /* Jitted LLVM VM to dequeue and process entry from a queue */
+  struct llvmbpf_vm_c *event_deq_vm;
 };
 
 struct guest_fast {

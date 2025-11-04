@@ -322,7 +322,7 @@ static int uxsocket_accept(struct control_context *ctx)
     goto free_cham_agt_handle;
   }
   assert(cham_guest_q->entries == 
-      (alloc->shm_base + ctx->config->app_queue_len));
+      (alloc->shm_base + ctx->config->agt_queue_len));
   g->cham_guest_q = cham_guest_q;
 
   /* Add connection to epoll */

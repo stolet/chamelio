@@ -8,6 +8,7 @@ static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe);
+static void handle_upload_ebpf(struct fast_context *ctx, struct queue_entry *qe);
 
 int controlif_poll(struct fast_context *ctx)
 {
@@ -50,8 +51,12 @@ int controlif_poll(struct fast_context *ctx)
         handle_disableq(ctx, qe);
         queue_dequeue(q);
         break;
+      case QUEUE_UPLOAD_EBPF_REQ:
+        handle_upload_ebpf(ctx, qe);
+        queue_dequeue(q);
+        break;
       default:
-        LOG_WARN("unknown queue tryt type from control path" 
+        LOG_WARN("unknown queue entry type from control path " 
             "to fast path type=%d", type);
         break;
     }
@@ -188,4 +193,19 @@ static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe)
   q->next = PROTOQ_ID_INVALID;
   q->prev = PROTOQ_ID_INVALID;
   p->ndqueues--;
+}
+
+static void handle_upload_ebpf(struct fast_context *ctx, struct queue_entry *qe)
+{
+  struct guest_fast *g;
+  struct proto_fast *p;
+  struct queue_free_up_ebpf_req *req;
+
+  req = &qe->data.free_up_ebpf_req;
+  g = &ctx->guests[req->gid];
+  p = &g->proto;
+  
+  p->event_rx_vm = req->event_rx_vm;
+  p->event_tx_vm = req->event_tx_vm;
+  p->event_deq_vm = req->event_deq_vm;
 }

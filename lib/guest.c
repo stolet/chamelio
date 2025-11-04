@@ -5,6 +5,7 @@
 #include <sys/un.h>
 #include <sys/socket.h>
 #include <sys/mman.h>
+#include <string.h>
 
 #include "include/cham_lib.h"
 #include "queue.h"
@@ -348,8 +349,8 @@ int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
 
   return 0;
 }
-//TODO: remove ebpf bytecode arg => put it in upload only
-struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
+
+struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, uint32_t size)
 {
   struct equeue *q = p->guest_ctl_q;
   struct queue_entry *qe = queue_tail(q);
@@ -376,18 +377,16 @@ struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, void *ebpf_byteco
   return &p->ebpf_program;
 }
 
-//TODO: do we really need the size of the program here? Ask lil Mat
 int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
 {
-  //TODO: this check necessary?
   if (p->ebpf_program.size == 0) 
   {
     LOG_ERROR("tried to upload eBPF program before allocating it");
     return -1;
   }
   
-  //copy ebpf bytecode to shared memory
-  void *shm_addr = (uint8_t *)p->shm_base + p->ebpf_program.off;
+  /* Copy ebpf bytecode to shared memory */
+  void *shm_addr = (uint8_t *) p->shm_base + p->ebpf_program.off;
   memcpy(shm_addr, ebpf_bytecode, p->ebpf_program.size);
 
   struct equeue *q = p->guest_ctl_q;
@@ -397,6 +396,7 @@ int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
     LOG_ERROR("failed to get queue tail");
     return -1;
   }
+
   struct queue_free_up_ebpf_req *req = &qe->data.free_up_ebpf_req;
   req->size = p->ebpf_program.size;
   req->off = p->ebpf_program.off; // offset in shared memory where the ebpf program is stored
@@ -412,8 +412,9 @@ int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
   while (p->ebpf_program.flag == 0)
     cham_poll_control(p);
   
-  if (p->ebpf_program.flag < 0){
-    LOG_ERROR("failed to upload eBPF program in control plane");
+  if (p->ebpf_program.flag < 0)
+  {
+    LOG_ERROR("eBPF upload failed");
     return -1;
   } // upload failed in control plane
   

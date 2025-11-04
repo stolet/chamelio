@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
+#include <bpf/libbpf.h>
+#include <bpf/bpf.h>
 
 #include "control.h"
 #include "shmalloc.h"
@@ -16,22 +18,24 @@
 static int poll_fast(struct control_context *ctx);
 static int poll_guests(struct control_context *ctx);
 static int handle_new_queue_req(struct control_context *ctx,
-                                struct guest_control *g, struct queue_entry *qe_req);
+    struct guest_control *g, struct queue_entry *qe_req);
 static int handle_new_map_req(struct control_context *ctx,
-                              struct guest_control *g, struct queue_entry *qe_req);
+    struct guest_control *g, struct queue_entry *qe_req);
 static int handle_enableq_req(struct control_context *ctx,
-                              struct guest_control *g, struct queue_entry *qe);
+    struct guest_control *g, struct queue_entry *qe);
 static int handle_disableq_req(struct control_context *ctx,
-                               struct guest_control *g, struct queue_entry *qe);
-static int handle_allocate_ebpf_req(struct guest_control *g, struct queue_entry *qe_req);
+    struct guest_control *g, struct queue_entry *qe);
+static int handle_allocate_ebpf_req(struct guest_control *g, 
+    struct queue_entry *qe_req);
 static int handle_free_ebpf_req(struct control_context *ctx,
-                                struct guest_control *g, struct queue_entry *qe_req);
+    struct guest_control *g, struct queue_entry *qe_req);
 static int handle_upload_ebpf_req(struct control_context *ctx,
-                                  struct guest_control *g, struct queue_entry *qe_req);
-static int jit_ebpf(void *ebpf_bytecode, size_t size);
+    struct guest_control *g, struct queue_entry *qe_req);
+static struct llvmbpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size);
 
-int control_context_init(struct control_context *ctx, struct configuration *config,
-                         struct shm_handle **fc_handles, struct shm_handle **cf_handles)
+int control_context_init(struct control_context *ctx, 
+    struct configuration *config, struct shm_handle **fc_handles,
+    struct shm_handle **cf_handles)
 {
   int i;
   struct guest_control *guests;
@@ -259,7 +263,7 @@ static int poll_guests(struct control_context *ctx)
 }
 
 static int handle_new_queue_req(struct control_context *ctx,
-                                struct guest_control *g, struct queue_entry *qe_req)
+    struct guest_control *g, struct queue_entry *qe_req)
 {
   int i, ret;
   uint16_t nqueues;
@@ -334,7 +338,7 @@ static int handle_new_queue_req(struct control_context *ctx,
 }
 
 static int handle_new_map_req(struct control_context *ctx,
-                              struct guest_control *g, struct queue_entry *qe_req)
+    struct guest_control *g, struct queue_entry *qe_req)
 {
   int i, ret;
   struct queue_entry *qe_res;
@@ -400,7 +404,7 @@ static int handle_new_map_req(struct control_context *ctx,
 }
 
 static int handle_enableq_req(struct control_context *ctx,
-                              struct guest_control *g, struct queue_entry *qe)
+    struct guest_control *g, struct queue_entry *qe)
 {
   int ret;
   struct equeue *q;
@@ -443,7 +447,7 @@ static int handle_enableq_req(struct control_context *ctx,
 }
 
 static int handle_disableq_req(struct control_context *ctx,
-                               struct guest_control *g, struct queue_entry *qe)
+    struct guest_control *g, struct queue_entry *qe)
 {
   int ret;
   struct equeue *q;
@@ -481,15 +485,19 @@ static int handle_disableq_req(struct control_context *ctx,
   return 0;
 }
 
-static int handle_allocate_ebpf_req(struct guest_control *g, struct queue_entry *qe_req)
+static int handle_allocate_ebpf_req(struct guest_control *g, 
+    struct queue_entry *qe_req)
 {
   int ret;
   struct queue_allocate_ebpf_req *req;
   struct shm_handle *sh;
+  struct queue_entry *qe_res;
+  struct queue_allocate_ebpf_res *res;
+  
   req = &qe_req->data.alloc_ebpf_req;
-  struct queue_entry *qe_res = queue_tail(g->cham_guest_q);
+  qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
-  struct queue_allocate_ebpf_res *res = (struct queue_allocate_ebpf_res *)&qe_res->data;
+  res = (struct queue_allocate_ebpf_res *)&qe_res->data;
 
   ret = shmalloc_alloc(g->alloc, req->size, &sh);
   if (ret != 0)
@@ -502,23 +510,29 @@ static int handle_allocate_ebpf_req(struct guest_control *g, struct queue_entry 
     assert(ret == 0); // to ensure queue-enqueue succeeds
     return -1;
   }
+  
   memset(sh->addr, 0, sh->len);
   res->size = req->size;
   res->off = sh->off;
   res->opaque = req->opaque;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_ALLOCATE_EBPF_RES);
   assert(ret == 0);
+  
   return 0;
 }
 
 static int handle_upload_ebpf_req(struct control_context *ctx,
-                                  struct guest_control *g, struct queue_entry *qe_req)
+    struct guest_control *g, struct queue_entry *qe_req)
 {
   int ret, i;
   struct queue_free_up_ebpf_req *req, *f_req;
   struct queue_entry *qe_res;
   struct queue_free_up_ebpf_res *res;
   void *ebpf_bytecode;
+  const void *event_rx_insns, *event_tx_insns, *event_deq_insns;
+  struct bpf_object *bpf_obj;
+  struct bpf_program *event_rx_prog, *event_tx_prog, *event_deq_prog;
+  struct llvmbpf_vm_c *event_rx_vm, *event_tx_vm, *event_deq_vm;
 
   req = &qe_req->data.free_up_ebpf_req;
 
@@ -527,52 +541,113 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   res = (struct queue_free_up_ebpf_res *)&qe_res->data;
   
   ebpf_bytecode = (uint8_t *)g->shm_base + req->off;
-
-  ret = jit_ebpf(ebpf_bytecode, req->size);
-
-  if (ret != 0)
+  bpf_obj = bpf_object__open_mem(ebpf_bytecode, req->size, NULL);
+  if (bpf_obj == NULL)
   {
-    LOG_ERROR("failed to JIT eBPF program");
-    res->success = -1; // indicating upload failed 
+    LOG_ERROR("failed to open bpf_obj from bytecode");
+    res->success = -1;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
     return -1;
   }
   
-  /*
-  Verify the EBPF bytecode
-  JIT it (done)
-  Load it to fast path through function pointers
-  Return success or failure
-  */
+  event_rx_prog = bpf_object__find_program_by_name(bpf_obj, "event_rx");
+  if (event_rx_prog == NULL)
+  {
+    LOG_ERROR("failed to get event_rx from bpf_obj");
+    res->success = -1;
+    ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
+    assert(ret == 0);
+    return -1;
+  }
+  
+  event_rx_insns = bpf_program__insns(event_rx_prog);
+  event_rx_vm = jit_ebpf(event_rx_insns, 
+      bpf_program__insn_cnt(event_rx_prog) * 8);
+  if (event_rx_vm == NULL)
+  {
+    LOG_ERROR("failed to jit event_rx");
+    res->success = -1;
+    ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
+    assert(ret == 0);
+    return -1;
+  }
+  
+  event_tx_prog = bpf_object__find_program_by_name(bpf_obj, "event_tx");
+  if (event_rx_prog == NULL)
+  {
+    LOG_ERROR("failed to get event_tx from bpf_obj");
+    res->success = -1;
+    ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
+    assert(ret == 0);
+    return -1;
+  }
+  
+  event_tx_insns = bpf_program__insns(event_tx_prog);
+  event_tx_vm = jit_ebpf(event_tx_insns, 
+      bpf_program__insn_cnt(event_tx_prog) * 8);
+  if (event_tx_vm == NULL)
+  {
+    LOG_ERROR("failed to jit event_tx");
+    res->success = -1;
+    ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
+    assert(ret == 0);
+    return -1;
+  }
+  
+  event_deq_prog = bpf_object__find_program_by_name(bpf_obj, "event_deq");
+  if (event_rx_prog == NULL)
+  {
+    LOG_ERROR("failed to get event_deq from bpf_obj");
+    res->success = -1;
+    ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
+    assert(ret == 0);
+    return -1;
+  }
+  
+  event_deq_insns = bpf_program__insns(event_deq_prog);
+  event_deq_vm = jit_ebpf(event_deq_insns, 
+      bpf_program__insn_cnt(event_deq_prog) * 8);
+  if (event_deq_vm == NULL)
+  {
+    LOG_ERROR("failed to jit event_deq");
+    res->success = -1;
+    ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
+    assert(ret == 0);
+    return -1;
+  }
+
+  /* Send jitted VMs for functions to fast-path  */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
     qe_req = queue_tail(ctx->ctl_fast_qs[i]);
     assert(qe_req != NULL);
     f_req = &qe_req->data.free_up_ebpf_req;
+    f_req->gid = g->id;
     f_req->size = req->size;
     f_req->off = req->off;
-
+    f_req->event_rx_vm = event_rx_vm;
+    f_req->event_tx_vm = event_tx_vm;
+    f_req->event_deq_vm = event_deq_vm;
     ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_UPLOAD_EBPF_REQ);
     assert(ret == 0);
   }
 
   res = (struct queue_free_up_ebpf_res *)&qe_res->data;
-  //send response back to guest
-  res->success = 0; // indicating upload was successful
+  res->success = 0;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
   assert(ret == 0);
-  return 0; // indicating success for now
+  return 0;
 }
 
 // TODO: do I actually need these ctx?
 static int handle_free_ebpf_req(struct control_context *ctx,
-                                struct guest_control *g, struct queue_entry *qe_req)
+    struct guest_control *g, struct queue_entry *qe_req)
 {
   int ret;
   struct queue_free_up_ebpf_res *res;
-
   struct queue_entry *qe_res; 
+
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
   
@@ -605,36 +680,41 @@ static uint64_t nop_helper(uint64_t r1, uint64_t r2, uint64_t r3,
   return 0;
 }
 
-//pointer to the memory with the jitted code inside the llvmbpf_vm_c struct: llvmbpf_jitted_fn
-static int jit_ebpf(void *ebpf_bytecode, size_t size)
+/* Pointer to the memory with the jitted code inside 
+   the llvmbpf_vm_c struct: llvmbpf_jitted_fn */
+static struct llvmbpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
 {
   uint64_t res;
   struct llvmbpf_vm_c *vm;
   vm = llvmbpf_vm_create();
+
   if (vm == NULL)
   {
     LOG_ERROR("failed to create llvmbpf vm");
-    return -1;
+    return NULL;
   }
-  res = llvmbpf_vm_load_code(vm, ebpf_bytecode, size);
+
+  res = llvmbpf_vm_load_code(vm, ebpf_instrs, size);
   if (res != 0)
   {
     LOG_ERROR("failed to load ebpf bytecode");
-    return res;
+    return NULL;
   }
+
   // Register helper functions here
-  res = llvmbpf_vm_register_helper(vm, 2, nop_helper, "nop_helper");
+  res = llvmbpf_vm_register_helper(vm, 2, (void*)nop_helper, "nop_helper");
   if (res != 0)
   {
     LOG_ERROR("failed to register helper function");
-    return res;
+    return NULL;
   }
 
   res = llvmbpf_vm_compile(vm); // LLVM JIT
   if (res != 0)
   {
     LOG_ERROR("failed to JIT ebpf bytecode");
-    return res;
+    return NULL;
   }
-  return res;
+
+  return vm;
 }

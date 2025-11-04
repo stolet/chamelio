@@ -13,12 +13,7 @@ enum cfg_params {
   CP_SHM_LEN,
   CP_SHM_INTERNAL_LEN,
   CP_CHAM_QUEUE_LEN,
-  CP_APP_QUEUE_LEN,
-  CP_BUMP_RX_QUEUE_LEN,
-  CP_BUMP_TX_QUEUE_LEN,
   CP_AGT_QUEUE_LEN,
-  CP_RXBUF_LEN,
-  CP_TXBUF_LEN,
   CP_IP_ADDR,
   CP_IP_ROUTE,
   CP_MAX_GUESTS,
@@ -40,24 +35,9 @@ static struct option opts[] = {
   { .name = "cham-queue-len",
     .has_arg = required_argument,
     .val = CP_CHAM_QUEUE_LEN },
-  { .name = "app-queue-len",
-    .has_arg = required_argument,
-    .val = CP_APP_QUEUE_LEN },
-  { .name = "bump-rx-queue-len",
-    .has_arg = required_argument,
-    .val = CP_BUMP_RX_QUEUE_LEN },
-  { .name = "bump-tx-queue-len",
-    .has_arg = required_argument,
-    .val = CP_BUMP_TX_QUEUE_LEN },
   { .name = "agt-queue-len",
     .has_arg = required_argument,
     .val = CP_AGT_QUEUE_LEN },
-  { .name = "rxbuf-len",
-    .has_arg = required_argument,
-    .val = CP_RXBUF_LEN },
-  { .name = "txbuf-len",
-    .has_arg = required_argument,
-    .val = CP_TXBUF_LEN },
   { .name = "ip-addr",
     .has_arg = required_argument,
     .val = CP_IP_ADDR },
@@ -130,39 +110,9 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
-      case CP_APP_QUEUE_LEN:
-        if (parse_int64(optarg, &c->app_queue_len) != 0) {
-          fprintf(stderr, "app queue len parsing failed\n");
-          goto failed;
-        }
-        break;
-      case CP_BUMP_RX_QUEUE_LEN:
-        if (parse_int64(optarg, &c->bump_rx_queue_len) != 0) {
-          fprintf(stderr, "app ctx rx queue len parsing failed\n");
-          goto failed;
-        }
-        break;
-      case CP_BUMP_TX_QUEUE_LEN:
-        if (parse_int64(optarg, &c->bump_tx_queue_len) != 0) {
-          fprintf(stderr, "app ctx tx queue len parsing failed\n");
-          goto failed;
-        }
-        break;
       case CP_AGT_QUEUE_LEN:
         if (parse_int64(optarg, &c->agt_queue_len) != 0) {
           fprintf(stderr, "agent queue len parsing failed\n");
-          goto failed;
-        }
-        break;
-      case CP_RXBUF_LEN:
-        if (parse_int64(optarg, &c->rxbuf_len) != 0) {
-          fprintf(stderr, "rx buffer len parsing failed\n");
-          goto failed;
-        }
-        break;
-      case CP_TXBUF_LEN:
-        if (parse_int64(optarg, &c->txbuf_len) != 0) {
-          fprintf(stderr, "tx buffer len parsing failed\n");
           goto failed;
         }
         break;
@@ -238,12 +188,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->shm_len = 1024 * 1024 * 1024;
   c->shm_internal_len = 1024 * 1024 * 32;
   c->cham_queue_len = 16 * 1024;
-  c->app_queue_len = 1024 * 1024;
-  c->bump_rx_queue_len = 64 * 32 * 1024;
-  c->bump_tx_queue_len = 64 * 8192;
   c->agt_queue_len = 16 * 1024;
-  c->rxbuf_len = 8192;
-  c->txbuf_len = 8192;
   c->ip = 0;
   c->max_guests = 128;
   c->max_apps = 32;
@@ -274,17 +219,7 @@ static void print_usage(struct configuration *c, char *progname)
            "[default: %"PRIu64"]\n"
       "  --cham-queue-len=LEN                    Chamelio Fast <-> Control queue len"
            "[default: %"PRIu64"]\n"
-      "  --app-queue-len=LEN                     Application <-> Chamelio queue len"
-           "[default: %"PRIu64"]\n"
-      "  --bump-rx-queue-len=LEN                 RX bump messages to app context queue len"
-           "[default: %"PRIu64"]\n"
-      "  --bump-tx-queue-len=LEN                 TX bump messages to app context queue len"
-           "[default: %"PRIu64"]\n"
       "  --agt-queue-len=LEN                     Guest agent <-> Chamelio queue len"
-           "[default: %"PRIu64"]\n"
-      "  --rxbuf-len=LEN                         Application RX buffer len"
-           "[default: %"PRIu64"]\n"
-      "  --txbuf-len=LEN                         Application TX buffer len len"
            "[default: %"PRIu64"]\n"
       "IP protocol parameters:\n"
       "  --ip-route=DEST[/PREFIX],NEXTHOP        Add route\n"
@@ -308,10 +243,7 @@ static void print_usage(struct configuration *c, char *progname)
       "\n"
       ,progname, 
       c->shm_len, c->shm_internal_len,
-      c->cham_queue_len, c->app_queue_len, 
-      c->bump_rx_queue_len, c->bump_tx_queue_len,
-      c->agt_queue_len,
-      c->rxbuf_len, c->txbuf_len,
+      c->cham_queue_len, c->agt_queue_len,
       c->max_guests, c->max_apps, c->max_app_ctxs, c->max_bufs,
       c->fp_cores_max);
 }

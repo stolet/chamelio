@@ -188,10 +188,18 @@ struct queue_allocate_ebpf_res {
 
 /* Request to free or upload an EBPF snippet*/
 struct queue_free_up_ebpf_req {
+  /* Guest ID */
+  uint16_t gid;
   /* Size of eBPF program snippet */
   uint32_t size;
   /* Offset in shared memory for eBPF program snippet */
   uint64_t off;
+  /* Function pointer to ebpf rx function */
+  struct llvmbpf_vm_c *event_rx_vm;
+  /* Function pointer to ebpf tx function */
+  struct llvmbpf_vm_c *event_tx_vm;
+  /* Function pointer to ebpf deq function */
+  struct llvmbpf_vm_c *event_deq_vm;
 } __attribute__((packed));
 
 struct queue_free_up_ebpf_res {

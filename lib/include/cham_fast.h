@@ -15,14 +15,6 @@
 /* Invalid ID used to represent end of queue list */
 #define PROTOQ_ID_INVALID UINT16_MAX
 
-/* Ready entry for data staged before transmission */
-struct cham_ready_entry {
-  /* ID used by protocol to identify what should send */
-  uint64_t id;
-  /* How much data should be sent */
-  uint32_t ready;
-};
-
 /* Queue structure used by fast-path for enqueue */
 struct cham_equeue {
   /* ID of this protocol queue */
@@ -82,6 +74,22 @@ struct cham_scheduler {
 };
 
 struct cham_proto_handle {
+  /* List of protocol queues use by fast-path to enqueue */
+  struct cham_equeue equeues[MAX_PROTO_QUEUES]; 
+  /* List of created protocol maps */
+  struct cham_map maps[MAX_PROTO_MAPS];
+  /* TX scheduler for this protocol */
+  struct cham_scheduler sched;
+  /* Shared memory base */
+  void *shm_base;
+};
+
+/* Context passed as a parameter to ebpf functions */
+struct cham_ebpf_ctx {
+  /* Pointer to packet buffer */
+  void *pkt;
+  /* Queue ID for used for event_deq */
+  int qid;
   /* List of protocol queues use by fast-path to enqueue */
   struct cham_equeue equeues[MAX_PROTO_QUEUES]; 
   /* List of created protocol maps */

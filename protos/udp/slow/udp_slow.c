@@ -94,7 +94,7 @@ int poll_apps(struct udp_slow_context *ctx)
         queue_dequeue(q);
         break;
       default:
-        LOG_WARN("unknown queue tryt type from app" 
+        LOG_WARN("unknown queue entry type from app " 
             "to udp slow-path type=%d", type);
         break;
     }
@@ -148,8 +148,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
   sock->opaque = req->opaque;
 
   /* Create queue for RX buffer */
-  /* TODO: Have size of buffer be a parameter */
-  protoq = cham_new_queue(ctx->proto, 512, 64);
+  protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
   if (protoq == NULL)
   {
     LOG_ERROR("failed to create new queue");
@@ -165,8 +164,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
   sock->rx_off = protoq->off;
 
   /* Create queue for TX buffer */
-  /* TODO: Have size of buffer be a parameter */
-  protoq = cham_new_queue(ctx->proto, 512, 64);
+  protoq = cham_new_queue(ctx->proto, TXBUF_SZ, 1);
   res->tx_qid = protoq->id;
   res->tx_len = protoq->nelems * protoq->elsize;
   res->tx_off = protoq->off;

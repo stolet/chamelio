@@ -113,7 +113,7 @@ int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
 int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
 
 /* Allocates space for an eBPF program in shared memory and registers it with the control plane */
-struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
+struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, uint32_t size);
 /* Uploads an eBPF program to Chamelio and register it with the fast-path */
 int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
 /* Frees the allocated eBPF program in shared memory and unregisters it from the control plane */

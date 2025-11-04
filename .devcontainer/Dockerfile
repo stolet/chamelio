@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Update apt and install basic packages
 RUN apt-get -y update
-RUN apt-get -y install build-essential wget xz-utils git vim gdb
+RUN apt-get -y install build-essential wget xz-utils git vim gdb clang
 
 # Install meson and ninja
 RUN apt-get -y install meson ninja-build python3-pip python3-pyelftools
@@ -32,7 +32,7 @@ RUN ldconfig
 
 # Install llvmbpf dependencies
 WORKDIR /workspaces/programs
-RUN apt-get -y install llvm-dev libzstd-dev cmake libspdlog-dev libfmt-dev
+RUN apt-get -y install llvm-dev libzstd-dev cmake libspdlog-dev libfmt-dev libbpf-dev
 
 # Install llvmbpf
 RUN git clone https://github.com/eunomia-bpf/llvmbpf.git
@@ -52,3 +52,9 @@ RUN install -m 0644 src/ebpf_inst.h /usr/local/include/llvmbpf/ebpf_inst.h
 # so that Chamelio can find it
 RUN install -m 0644 libllvmbpf_vm.a /usr/local/lib/libllvmbpf_vm.a
 RUN install -m 0644 build/_deps/spdlog-build/libspdlog.a /usr/local/lib/libspdlog.a
+
+# Install ecc tool to compile ebpf programs
+WORKDIR /workspaces/chamelio/tests
+RUN wget https://github.com/eunomia-bpf/eunomia-bpf/releases/latest/download/ecc && chmod +x ./ecc
+RUN install -m 0755 ecc /usr/local/bin/ecc
+RUN ecc sample.ebpf.c

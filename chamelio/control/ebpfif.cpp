@@ -15,7 +15,7 @@ extern "C"
   {
     llvmbpf_vm vm;
     llvmbpf_jitted_fn jitted_fn = nullptr;
-   
+    
   };
 
   llvmbpf_vm_c *llvmbpf_vm_create(void)
@@ -71,6 +71,12 @@ extern "C"
       return -1;
     h->jitted_fn = f.value();
     return 0;
+  }
+
+  int llvmbpf_vm_exec(llvmbpf_vm_c *h, void *mem, 
+      size_t mem_len, uint64_t return_value)
+  {
+    return h->vm.exec(mem, mem_len, return_value);
   }
 
 } 
