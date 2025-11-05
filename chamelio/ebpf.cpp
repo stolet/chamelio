@@ -11,18 +11,18 @@ extern "C"
 {
 
 
-  struct llvmbpf_vm_c
+  struct ebpf_vm_c
   {
     llvmbpf_vm vm;
-    llvmbpf_jitted_fn jitted_fn = nullptr;
+    ebpf_jitted_fn jitted_fn = nullptr;
     
   };
 
-  llvmbpf_vm_c *llvmbpf_vm_create(void)
+  ebpf_vm_c *ebpf_vm_create(void)
   {
     try
     {
-      return new llvmbpf_vm_c{};
+      return new ebpf_vm_c{};
     }
     catch (...)
     {
@@ -30,12 +30,12 @@ extern "C"
     }
   }
 
-  void llvmbpf_vm_destroy(llvmbpf_vm_c *h)
+  void ebpf_vm_destroy(ebpf_vm_c *h)
   {
     delete h;
   }
 
-  int llvmbpf_vm_load_code(llvmbpf_vm_c *h, const void *code, size_t code_len)
+  int ebpf_vm_load_code(ebpf_vm_c *h, const void *code, size_t code_len)
   {
     int rc;
     if (!h || !code)
@@ -44,7 +44,7 @@ extern "C"
     return rc == 0 ? 0 : rc;
   }
 
-  void llvmbpf_vm_unload_code(llvmbpf_vm_c *h)
+  void ebpf_vm_unload_code(ebpf_vm_c *h)
   {
     if (!h)
       return;
@@ -52,7 +52,7 @@ extern "C"
     h->jitted_fn = nullptr;
   }
 
-  int llvmbpf_vm_register_helper(llvmbpf_vm_c *h, uint32_t id, void *fn, char *name)
+  int ebpf_vm_register_helper(ebpf_vm_c *h, uint32_t id, void *fn, char *name)
   {
     int res; 
     if (!h || !fn)
@@ -62,7 +62,7 @@ extern "C"
   }
 
   // return NULLPTR on error and function pointer to the jitted code on success
-  int llvmbpf_vm_compile(llvmbpf_vm_c *h)
+  int ebpf_vm_compile(ebpf_vm_c *h)
   {
     if (!h)
       return -1;
@@ -73,10 +73,10 @@ extern "C"
     return 0;
   }
 
-  int llvmbpf_vm_exec(llvmbpf_vm_c *h, void *mem, 
-      size_t mem_len, uint64_t return_value)
+  int ebpf_vm_exec(ebpf_vm_c *h, void *arg, 
+      size_t arg_len, uint64_t return_value)
   {
-    return h->vm.exec(mem, mem_len, return_value);
+    return h->vm.exec(arg, arg_len, return_value);
   }
 
 } 

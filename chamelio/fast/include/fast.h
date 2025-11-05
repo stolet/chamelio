@@ -51,11 +51,11 @@ struct proto_fast {
       struct cham_proto_handle *handle);
 
   /* Jitted LLVM VM to process one received packet */
-  struct llvmbpf_vm_c *event_rx_vm;
+  struct ebpf_vm_c *event_rx_vm;
   /* Jitted LLVM VM to process one scheduled packet for transmission */
-  struct llvmbpf_vm_c *event_tx_vm;
+  struct ebpf_vm_c *event_tx_vm;
   /* Jitted LLVM VM to dequeue and process entry from a queue */
-  struct llvmbpf_vm_c *event_deq_vm;
+  struct ebpf_vm_c *event_deq_vm;
 };
 
 struct guest_fast {

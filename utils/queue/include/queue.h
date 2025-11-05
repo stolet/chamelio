@@ -195,11 +195,11 @@ struct queue_up_ebpf_req {
   /* Offset in shared memory for eBPF program snippet */
   uint64_t off;
   /* Function pointer to ebpf rx function */
-  struct llvmbpf_vm_c *event_rx_vm;
+  struct ebpf_vm_c *event_rx_vm;
   /* Function pointer to ebpf tx function */
-  struct llvmbpf_vm_c *event_tx_vm;
+  struct ebpf_vm_c *event_tx_vm;
   /* Function pointer to ebpf deq function */
-  struct llvmbpf_vm_c *event_deq_vm;
+  struct ebpf_vm_c *event_deq_vm;
 } __attribute__((packed));
 
 /* Request to free an EBPF snippet */

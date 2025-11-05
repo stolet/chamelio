@@ -31,7 +31,7 @@ static int handle_free_ebpf_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
 static int handle_upload_ebpf_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
-static struct llvmbpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size);
+static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size);
 
 int control_context_init(struct control_context *ctx, 
     struct configuration *config, struct shm_handle **fc_handles,
@@ -532,7 +532,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   struct bpf_object *bpf_obj;
   const void *event_rx_insns, *event_tx_insns, *event_deq_insns;
   struct bpf_program *event_rx_prog, *event_tx_prog, *event_deq_prog;
-  struct llvmbpf_vm_c *event_rx_vm, *event_tx_vm, *event_deq_vm;
+  struct ebpf_vm_c *event_rx_vm, *event_tx_vm, *event_deq_vm;
 
   req = &qe_req->data.up_ebpf_req;
 
@@ -681,12 +681,12 @@ static uint64_t nop_helper(uint64_t r1, uint64_t r2, uint64_t r3,
 }
 
 /* Pointer to the memory with the jitted code inside 
-   the llvmbpf_vm_c struct: llvmbpf_jitted_fn */
-static struct llvmbpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
+   the ebpf_vm_c struct: ebpf_jitted_fn */
+static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
 {
   uint64_t res;
-  struct llvmbpf_vm_c *vm;
-  vm = llvmbpf_vm_create();
+  struct ebpf_vm_c *vm;
+  vm = ebpf_vm_create();
 
   if (vm == NULL)
   {
@@ -694,7 +694,7 @@ static struct llvmbpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
     return NULL;
   }
 
-  res = llvmbpf_vm_load_code(vm, ebpf_instrs, size);
+  res = ebpf_vm_load_code(vm, ebpf_instrs, size);
   if (res != 0)
   {
     LOG_ERROR("failed to load ebpf bytecode");
@@ -702,14 +702,14 @@ static struct llvmbpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
   }
 
   // Register helper functions here
-  res = llvmbpf_vm_register_helper(vm, 2, (void*)nop_helper, "nop_helper");
+  res = ebpf_vm_register_helper(vm, 2, (void*)nop_helper, "nop_helper");
   if (res != 0)
   {
     LOG_ERROR("failed to register helper function");
     return NULL;
   }
 
-  res = llvmbpf_vm_compile(vm); // LLVM JIT
+  res = ebpf_vm_compile(vm); // LLVM JIT
   if (res != 0)
   {
     LOG_ERROR("failed to JIT ebpf bytecode");
