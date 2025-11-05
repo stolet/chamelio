@@ -397,7 +397,7 @@ int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
     return -1;
   }
 
-  struct queue_free_up_ebpf_req *req = &qe->data.free_up_ebpf_req;
+  struct queue_up_ebpf_req *req = &qe->data.up_ebpf_req;
   req->size = p->ebpf_program.size;
   req->off = p->ebpf_program.off; // offset in shared memory where the ebpf program is stored
   p->ebpf_program.flag = 0; //reset flag to 0 before sending request
@@ -423,22 +423,28 @@ int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
 
 int cham_free_ebpf(struct proto_lib *p)
 {
+  int ret;
+  struct equeue *q;
+  struct queue_entry *qe;
+  struct queue_free_ebpf_req *req;
+
   if (p->ebpf_program.size == 0) 
     return 0;
   
-  struct equeue *q = p->guest_ctl_q;
-  struct queue_entry *qe = queue_tail(q);
+  q = p->guest_ctl_q;
+  qe = queue_tail(q);
   if (qe == NULL)
   {
     LOG_ERROR("failed to get queue tail");
     return -1;
   }
-  struct queue_free_up_ebpf_req *req = &qe->data.free_up_ebpf_req;
+
+  req = &qe->data.free_ebpf_req;
   req->size = p->ebpf_program.size;
   req->off = p->ebpf_program.off;
   p->ebpf_program.flag = 0; //reset flag to 0 before sending request
 
-  int ret = queue_enqueue(q, QUEUE_FREE_EBPF_REQ);
+  ret = queue_enqueue(q, QUEUE_FREE_EBPF_REQ);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue request to free eBPF program");
@@ -504,7 +510,7 @@ int cham_poll_control(struct proto_lib *p)
 
 static int handle_free_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
 {
-  struct queue_free_up_ebpf_res *res = &qe->data.free_up_ebpf_res;
+  struct queue_free_ebpf_res *res = &qe->data.free_ebpf_res;
 
   if (res->success != 0){
     LOG_ERROR("failed to free eBPF program in control plane");
@@ -516,7 +522,7 @@ static int handle_free_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
 
 static int handle_upload_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
 {
-  struct queue_free_up_ebpf_res *res = &qe->data.free_up_ebpf_res;
+  struct queue_up_ebpf_res *res = &qe->data.up_ebpf_res;
 
   if (res->success != 0){
     LOG_ERROR("failed to upload eBPF program in control plane");

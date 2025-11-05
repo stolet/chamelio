@@ -1,6 +1,6 @@
 chamelio_inc = include_directories('include')
 
-chamelio_srcs = files('chamelio.c')
+chamelio_srcs = files('chamelio.c', 'ebpf.cpp')
 
 chamelio_dep = declare_dependency(
   include_directories: chamelio_inc

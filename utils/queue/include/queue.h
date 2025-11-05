@@ -186,8 +186,8 @@ struct queue_allocate_ebpf_res {
   uint64_t opaque;
 } __attribute__((packed));
 
-/* Request to free or upload an EBPF snippet*/
-struct queue_free_up_ebpf_req {
+/* Request to upload an EBPF snippet*/
+struct queue_up_ebpf_req {
   /* Guest ID */
   uint16_t gid;
   /* Size of eBPF program snippet */
@@ -202,8 +202,23 @@ struct queue_free_up_ebpf_req {
   struct llvmbpf_vm_c *event_deq_vm;
 } __attribute__((packed));
 
-struct queue_free_up_ebpf_res {
-  /* indicating whether the operation was successful: return 0 if free or upload succesful */
+/* Request to free an EBPF snippet */
+struct queue_free_ebpf_req {
+  /* Guest ID */
+  uint16_t gid;
+  /* Size of eBPF program snippet */
+  uint32_t size;
+  /* Offset in shared memory for eBPF program snippet */
+  uint64_t off;
+} __attribute__((packed));
+
+struct queue_up_ebpf_res {
+  /* indicating whether the operation was successful: return 0 if upload succesful */
+  int success;
+} __attribute__((packed));
+
+struct queue_free_ebpf_res {
+  /* indicating whether the operation was successful: return 0 if free succesful */
   int success;
 } __attribute__((packed));
 
@@ -223,8 +238,10 @@ struct queue_entry {
     struct queue_disableq_req disableq_req;
     struct queue_allocate_ebpf_req alloc_ebpf_req;
     struct queue_allocate_ebpf_res alloc_ebpf_res;
-    struct queue_free_up_ebpf_req free_up_ebpf_req;
-    struct queue_free_up_ebpf_res free_up_ebpf_res;
+    struct queue_up_ebpf_req up_ebpf_req;
+    struct queue_up_ebpf_res up_ebpf_res;
+    struct queue_free_ebpf_req free_ebpf_req;
+    struct queue_free_ebpf_res free_ebpf_res;
     /* Keeps queue entry the size of a cache line */
     uint8_t raw[63];
   } __attribute__((packed)) data;

@@ -13,7 +13,7 @@
 #include "log.h"
 #include "queue.h"
 
-#include "ebpfif.h"
+#include "ebpf.h"
 
 static int poll_fast(struct control_context *ctx);
 static int poll_guests(struct control_context *ctx);
@@ -525,20 +525,20 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
   int ret, i;
-  struct queue_free_up_ebpf_req *req, *f_req;
-  struct queue_entry *qe_res;
-  struct queue_free_up_ebpf_res *res;
   void *ebpf_bytecode;
-  const void *event_rx_insns, *event_tx_insns, *event_deq_insns;
+  struct queue_up_ebpf_req *req, *f_req;
+  struct queue_up_ebpf_res *res;
+  struct queue_entry *qe_res;
   struct bpf_object *bpf_obj;
+  const void *event_rx_insns, *event_tx_insns, *event_deq_insns;
   struct bpf_program *event_rx_prog, *event_tx_prog, *event_deq_prog;
   struct llvmbpf_vm_c *event_rx_vm, *event_tx_vm, *event_deq_vm;
 
-  req = &qe_req->data.free_up_ebpf_req;
+  req = &qe_req->data.up_ebpf_req;
 
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
-  res = (struct queue_free_up_ebpf_res *)&qe_res->data;
+  res = (struct queue_up_ebpf_res *)&qe_res->data;
   
   ebpf_bytecode = (uint8_t *)g->shm_base + req->off;
   bpf_obj = bpf_object__open_mem(ebpf_bytecode, req->size, NULL);
@@ -622,7 +622,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   {
     qe_req = queue_tail(ctx->ctl_fast_qs[i]);
     assert(qe_req != NULL);
-    f_req = &qe_req->data.free_up_ebpf_req;
+    f_req = &qe_req->data.up_ebpf_req;
     f_req->gid = g->id;
     f_req->size = req->size;
     f_req->off = req->off;
@@ -633,7 +633,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     assert(ret == 0);
   }
 
-  res = (struct queue_free_up_ebpf_res *)&qe_res->data;
+  res = (struct queue_up_ebpf_res *)&qe_res->data;
   res->success = 0;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
   assert(ret == 0);
@@ -645,13 +645,13 @@ static int handle_free_ebpf_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
   int ret;
-  struct queue_free_up_ebpf_res *res;
+  struct queue_free_ebpf_res *res;
   struct queue_entry *qe_res; 
 
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
   
-  res = (struct queue_free_up_ebpf_res *)&qe_res->data;
+  res = (struct queue_free_ebpf_res *)&qe_res->data;
 
   // TODO: modify this to use handler
   // shmalloc_free(g->alloc, &sh);

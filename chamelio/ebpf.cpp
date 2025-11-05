@@ -4,7 +4,7 @@
 #include <new>
 
 #include <llvmbpf/llvmbpf.hpp>
-#include "ebpfif.h"
+#include "ebpf.h"
 using namespace bpftime; 
 
 extern "C"

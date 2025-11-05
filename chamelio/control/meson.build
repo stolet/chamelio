@@ -1,7 +1,8 @@
 control_inc = include_directories('include')
+chamelio_inc = include_directories('../include')
 llvmbpf_inc = include_directories('/usr/local/include/llvmbpf')
 
-control_srcs = files('control.c', 'ivshmemif.c', 'guestif.c', 'ebpfif.cpp')
+control_srcs = files('control.c', 'ivshmemif.c', 'guestif.c')
 
 llvm_dep = dependency(
   'llvm',
@@ -32,7 +33,7 @@ deps = [
 control_lib = static_library(
   'control',
   control_srcs,
-  include_directories : [control_inc, llvmbpf_inc],
+  include_directories : [control_inc, llvmbpf_inc, chamelio_inc],
   dependencies : deps,
   install : false,
 )

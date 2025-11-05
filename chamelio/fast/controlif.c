@@ -199,9 +199,9 @@ static void handle_upload_ebpf(struct fast_context *ctx, struct queue_entry *qe)
 {
   struct guest_fast *g;
   struct proto_fast *p;
-  struct queue_free_up_ebpf_req *req;
+  struct queue_up_ebpf_req *req;
 
-  req = &qe->data.free_up_ebpf_req;
+  req = &qe->data.up_ebpf_req;
   g = &ctx->guests[req->gid];
   p = &g->proto;
   
