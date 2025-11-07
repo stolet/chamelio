@@ -86,3 +86,4 @@ To run an invididual test suite execute `meson test -C build test-name -v`
 Chamelio tests
 - `cham-lib-test`: Tests the chamelio library functions
 - `cham-scheduler-test`: Tests Chamelio scheduler that implements a priority list
+- `cham-queue-test`: Tests Chamelio shared memory queues
