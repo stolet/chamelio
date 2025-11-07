@@ -2,7 +2,8 @@
 #include <stdlib.h>
 
 #include "cham_fast.h"
-#include "cham_scheduler.h"
+#include "queue.h"
+#include "scheduler_fns.h"
 #include "test_utils.h"
 
 static void test_sched_init() 

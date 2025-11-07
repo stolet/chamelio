@@ -1,7 +1,7 @@
 #ifndef SHMALLOC_H_
 #define SHMALLOC_H_
 
-#include <stdint.h>
+#include <linux/types.h>
 #include <stddef.h>
 
 /* Handle used to access a shared memory region */
@@ -9,7 +9,7 @@ struct shm_handle {
   /* A pointer into an allocated shared memory region */
   void *addr;
   /* The offset into the shared memory region from the base */
-  uint64_t off;
+  __u64 off;
   /* Length of this allocation */
   size_t len;
   /* Next handle in list */
@@ -26,7 +26,7 @@ struct shm_allocator {
   struct shm_handle *freelist;
 };
 
-struct shm_allocator * shmalloc_init(int shm_fd, void *shm_base, uint64_t len);
+struct shm_allocator * shmalloc_init(int shm_fd, void *shm_base, __u64 len);
 int shmalloc_alloc(struct shm_allocator *alloc, size_t length, 
     struct shm_handle **handle);
 void shmalloc_free(struct shm_allocator *alloc, struct shm_handle *handle);

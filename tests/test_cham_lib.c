@@ -9,6 +9,7 @@
 
 #include "cham_lib.h"
 #include "test_utils.h"
+#include "queue.h"
 
 
 /* Test configurations */
@@ -147,7 +148,7 @@ static void test_cham_allocate_ebpf(struct proto_lib *proto)
 static void test_cham_upload_ebpf(struct proto_lib *proto)
 {
   int fd, ret, cmp;
-  uint8_t *ebpf_bytecode, *shm_addr;
+  __u8 *ebpf_bytecode, *shm_addr;
   printf(ANSI_COLOR_BLUE "Testing cham_upload_ebpf2..." ANSI_COLOR_RESET "\n");
 
   fd = open("tests/sample.bpf.o", O_RDWR);
@@ -160,7 +161,7 @@ static void test_cham_upload_ebpf(struct proto_lib *proto)
   TEST_ASSERT(ret == 0, "cham_upload_ebpf failed");
   TEST_ASSERT(proto->ebpf_program.flag > 0, "ebpf upload flag not set correctly");
  
-  shm_addr = (uint8_t *)proto->shm_base + proto->ebpf_program.off;
+  shm_addr = (__u8 *)proto->shm_base + proto->ebpf_program.off;
   cmp = memcmp(shm_addr, ebpf_bytecode, proto->ebpf_program.size);
   TEST_ASSERT(cmp == 0, "cham_upload_ebpf not at the correct location in shared memory");
  

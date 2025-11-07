@@ -52,7 +52,7 @@ extern "C"
     h->jitted_fn = nullptr;
   }
 
-  int ebpf_vm_register_helper(ebpf_vm_c *h, uint32_t id, void *fn, char *name)
+  int ebpf_vm_register_helper(ebpf_vm_c *h, __u32 id, void *fn, char *name)
   {
     int res; 
     if (!h || !fn)
@@ -74,9 +74,13 @@ extern "C"
   }
 
   int ebpf_vm_exec(ebpf_vm_c *h, void *arg, 
-      size_t arg_len, uint64_t return_value)
+      size_t arg_len, __u64 *return_value)
   {
-    return h->vm.exec(arg, arg_len, return_value);
+    uint64_t rv = return_value ? *return_value : 0;
+    return h->vm.exec(arg, arg_len, rv);
+    
+    if (return_value)
+      *return_value = rv;
   }
 
 } 

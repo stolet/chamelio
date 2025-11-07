@@ -3,6 +3,8 @@
 
 #include "appif.h"
 #include "udp_slow.h"
+#include "udp_queue_types.h"
+#include "queue_fns.h"
 #include "udp.h"
 #include "log.h"
 
@@ -47,7 +49,7 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
 int poll_apps(struct udp_slow_context *ctx)
 {
   int msgs_i, apps_polled, ctxs_polled;
-  uint8_t type;
+  __u8 type;
   struct dqueue *q;
   struct udp_queue_entry *qe;
   struct udp_app_slow *a;

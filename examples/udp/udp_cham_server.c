@@ -6,24 +6,9 @@
  */
 
 #define _GNU_SOURCE
-#include <cham_lib.h>
 #include <udp_lib.h>
-
-// #include <arpa/inet.h>
-// #include <fcntl.h>
-// #include <netinet/in.h>
-// #include <stdbool.h>
-// #include <stdint.h>
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <string.h>
-// #include <sys/socket.h>
-// #include <sys/types.h>
-// #include <time.h>
-// #include <unistd.h>
 #include <errno.h>
 #include <stdlib.h>
-#include <assert.h>
 #include <arpa/inet.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -79,7 +64,7 @@ int main(int argc, char **argv)
     
   memset(&src_addr, 0, sizeof(src_addr));
   src_addr.sin_family = AF_INET;
-  src_addr.sin_port   = htons((uint16_t)port);
+  src_addr.sin_port   = htons((__u16)port);
   if (inet_pton(AF_INET, bind_ip, &src_addr.sin_addr) != 1)
   {
     fprintf(stderr, "Invalid bind_ip\n");
@@ -92,7 +77,7 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
-  uint8_t *buf = (uint8_t *)malloc(buf_size);
+  __u8 *buf = (__u8 *)malloc(buf_size);
   if (!buf) 
   {
     perror("malloc");

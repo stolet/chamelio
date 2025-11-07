@@ -11,8 +11,8 @@
 #include <cham_lib.h>
 
 #include "udp_lib.h"
-#include "queue.h"
-#include "udp_queue.h"
+#include "queue_fns.h"
+#include "udp_queue_types.h"
 #include "log.h"
 #include "uxsocket.h"
 
@@ -104,7 +104,7 @@ int udp_ctx_new()
   void *shm_base;
   struct udp_context_lib *ctx;
   struct udp_queue_new_actx_res *res;
-  uint8_t resp_buf[sizeof(*res)];
+  __u8 resp_buf[sizeof(*res)];
   struct equeue *eq, **eq_list;
   struct dqueue *dq, **dq_list;
   struct udp_queue_new_actx_req req = {
@@ -147,7 +147,7 @@ int udp_ctx_new()
   off = 0;
   while (off < sizeof(*res)) 
   {
-    sz = read(udp->uxsocket_fd, (uint8_t *) res + off, sizeof(*res) - off);
+    sz = read(udp->uxsocket_fd, (__u8 *) res + off, sizeof(*res) - off);
     if (sz < 0) 
     {
       LOG_ERROR("read failed");
@@ -282,7 +282,7 @@ int udp_socket()
   }
 
   req = &qe->data.new_sock_req;
-  req->opaque = (uint64_t) sock;
+  req->opaque = (__u64) sock;
   ret = queue_enqueue(q, UDP_QUEUE_NEW_SOCK_REQ);
   if (ret != 0)
   {
@@ -332,7 +332,7 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
     const struct sockaddr *addr, socklen_t addrlen)
 {
   int n, ret;
-  uint32_t tail, n1, n2;
+  __u32 tail, n1, n2;
   struct udp_socket *sock;
   struct equeue *q;
   struct udp_queue_bump_entry *qe;
@@ -408,7 +408,7 @@ int udp_recvfrom(int sockfd, void *buf, size_t len,
     struct sockaddr *addr, socklen_t addr_len)
 {
   int n, ret;
-  uint32_t n1, n2, new_head;
+  __u32 n1, n2, new_head;
   struct equeue *q;
   struct udp_queue_bump_entry *qe;
   struct udp_queue_bump_cham_rx *bump; 
@@ -583,7 +583,7 @@ static int handle_new_sock_res(struct udp_queue_entry *qe)
 
 static int handle_tx_bump(struct udp_queue_bump_entry *qe)
 {
-  uint32_t new_head;
+  __u32 new_head;
   struct udp_queue_bump_app_tx *bump;
   struct udp_socket *sock;
 

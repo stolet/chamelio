@@ -1,5 +1,5 @@
-#include "cham_fast.h"
-#include "cham_scheduler.h"
+#include "stdlib.h"
+#include "scheduler_fns.h"
 #include "log.h"
 
 void sched_init(struct cham_scheduler *sched)
@@ -8,7 +8,7 @@ void sched_init(struct cham_scheduler *sched)
   sched->tail = SCHED_ID_INVALID;
 }
 
-int sched_add(struct cham_scheduler *sched, uint32_t id, uint32_t priority)
+int sched_add(struct cham_scheduler *sched, __u32 id, __u32 priority)
 {
   int prev, cur;
   struct cham_sched_entry *entry;

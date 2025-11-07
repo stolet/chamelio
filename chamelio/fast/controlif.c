@@ -1,7 +1,8 @@
 #include "fast.h"
-#include "queue.h"
+#include "queue_types.h"
+#include "queue_fns.h"
 #include "udp_fast.h"
-#include "cham_scheduler.h"
+#include "scheduler_fns.h"
 
 static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe);
@@ -13,7 +14,7 @@ static void handle_upload_ebpf(struct fast_context *ctx, struct queue_entry *qe)
 int controlif_poll(struct fast_context *ctx)
 {
   int i;
-  uint8_t type;
+  __u8 type;
   struct dqueue *q;
   struct queue_entry *qe;
  

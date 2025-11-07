@@ -1,7 +1,7 @@
 #ifndef CHAM_LIB_H_
 #define CHAM_LIB_H_
 
-#include <stdint.h>
+#include <linux/types.h>
 
 #include "queue.h"
 
@@ -19,35 +19,35 @@
 
 struct proto_queue_lib {
   /* ID of this queue */
-  uint16_t id;
+  __u16 id;
   /* Number of elements in the queue */
-  uint32_t nelems;
+  __u32 nelems;
   /* Size of elements in the queue */
-  uint32_t elsize;
+  __u32 elsize;
   /* Offset in shared memory to start of queue */
-  uint64_t off;
+  __u64 off;
   /* Protocol this queue belongs to */
   struct proto_lib *proto;
 };
 
 struct proto_ebpf_lib{
 /* Size of the ebpf program */
-  uint32_t size;
+  __u32 size;
   /* Offset in shared memory to start of queue */
-  uint64_t off;
+  __u64 off;
   /* flag indicating arrival of response from the control plane */
   int flag; 
 };
 
 struct proto_map_lib {
   /* ID of this map */
-  uint16_t id;
+  __u16 id;
   /* Number of elements in the map */
-  uint32_t nelems;
+  __u32 nelems;
   /* Size of each element in the map */
-  uint32_t elsize;
+  __u32 elsize;
   /* Offset in shared memory to start of map */
-  uint64_t off;
+  __u64 off;
   /* Protocol this map belongs to */
   struct proto_lib *proto;
 };
@@ -61,7 +61,7 @@ struct guest_lib {
 
 struct proto_lib {
   /* Size of shared memory region */
-  uint32_t shm_size;
+  __u32 shm_size;
   /* Base pointer for shared memory region used by this guest */
   void *shm_base;
   /* Allocator for shared memory */
@@ -69,9 +69,9 @@ struct proto_lib {
   /* Guest this protocol belongs to */
   struct guest_lib *guest;
   /* Number of Chamelio fast-path cores */
-  uint32_t n_fp_cores;
+  __u32 n_fp_cores;
   /* Local IP address */
-  uint32_t local_ip;
+  __u32 local_ip;
   
   /* Guest->control queue */
   struct equeue *guest_ctl_q;
@@ -79,12 +79,12 @@ struct proto_lib {
   struct dqueue *ctl_guest_q;
 
   /* Number of created protocol queues */
-  uint16_t nqueues;
+  __u16 nqueues;
   /* Protocol queues created with Chamelio */
   struct proto_queue_lib queues[MAX_PROTO_QUEUES];
 
   /* Number of maps */
-  uint16_t nmaps;
+  __u16 nmaps;
   /* Maps created with Chamelio */
   struct proto_map_lib maps[MAX_PROTO_MAPS];
 
@@ -98,24 +98,24 @@ int cham_init_ivshmem();
 /* Connects a guest with Chamelio */
 struct guest_lib * cham_connect_guest();
 /* Creates a new protocol and maps shared memory region */
-struct proto_lib* cham_new_proto(struct guest_lib *g, uint32_t shmsize);
+struct proto_lib* cham_new_proto(struct guest_lib *g, __u32 shmsize);
 
 /* Creates a queue of the specified size in the shared memory of the protocol */
 struct proto_queue_lib * cham_new_queue(struct proto_lib *p, 
-    uint32_t nelems, uint32_t elsize);
+    __u32 nelems, __u32 elsize);
 /* Creates a new map in shared memory */
 struct proto_map_lib * cham_new_map(struct proto_lib *p, 
-    uint32_t nelems, uint32_t elsize);
+    __u32 nelems, __u32 elsize);
 
 /* Enables the queue with the given ID on the specified fast-path core */
-int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
+int cham_enable_queue(struct proto_lib *p, __u16 qid, __u16 core);
 /* Disables the queue in the fast-path */
-int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core);
+int cham_disable_queue(struct proto_lib *p, __u16 qid, __u16 core);
 
 /* Allocates space for an eBPF program in shared memory and registers it with the control plane */
-struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, uint32_t size);
+struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, __u32 size);
 /* Uploads an eBPF program to Chamelio and register it with the fast-path */
-int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size);
+int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, __u32 size);
 /* Frees the allocated eBPF program in shared memory and unregisters it from the control plane */
 int cham_free_ebpf(struct proto_lib *p);
 

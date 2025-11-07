@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include <stdint.h>
+#include <linux/types.h>
 #include <assert.h>
 #include <string.h>
 #include <bpf/libbpf.h>
@@ -11,7 +11,8 @@
 #include "guestif.h"
 #include "config.h"
 #include "log.h"
-#include "queue.h"
+#include "queue_fns.h"
+#include "queue_types.h"
 
 #include "ebpf.h"
 
@@ -266,7 +267,7 @@ static int handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
   int i, ret;
-  uint16_t nqueues;
+  __u16 nqueues;
   struct queue_entry *qe_res;
   struct queue_new_queue_req *req, *req_fast;
   struct queue_new_queue_res *res;
@@ -540,7 +541,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   assert(qe_res != NULL);
   res = (struct queue_up_ebpf_res *)&qe_res->data;
   
-  ebpf_bytecode = (uint8_t *)g->shm_base + req->off;
+  ebpf_bytecode = (__u8 *)g->shm_base + req->off;
   bpf_obj = bpf_object__open_mem(ebpf_bytecode, req->size, NULL);
   if (bpf_obj == NULL)
   {
@@ -674,8 +675,8 @@ static int verify_ebpf(void *ebpf_bytecode, size_t size)
   return 0;
 }
 
-static uint64_t nop_helper(uint64_t r1, uint64_t r2, uint64_t r3,
-                           uint64_t r4, uint64_t r5) {
+static __u64 nop_helper(__u64 r1, __u64 r2, __u64 r3,
+                           __u64 r4, __u64 r5) {
   (void)r1; (void)r2; (void)r3; (void)r4; (void)r5;
   return 0;
 }
@@ -684,7 +685,7 @@ static uint64_t nop_helper(uint64_t r1, uint64_t r2, uint64_t r3,
    the ebpf_vm_c struct: ebpf_jitted_fn */
 static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
 {
-  uint64_t res;
+  __u64 res;
   struct ebpf_vm_c *vm;
   vm = ebpf_vm_create();
 

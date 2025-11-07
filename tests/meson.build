@@ -4,6 +4,7 @@ test_cham_queue_srcs = files('test_cham_queue.c', 'test_utils.c')
 
 deps = [
   dependency('cham_lib'),
+  dependency('scheduler_dep')
 ]
 
 # Find ecc compiler

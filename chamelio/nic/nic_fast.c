@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include <stdint.h>
+#include <linux/types.h>
 
 #include <rte_mbuf.h>
 #include <rte_malloc.h>
@@ -15,16 +15,16 @@
 #define TX_DESCRIPTORS 128
 
 static rte_spinlock_t initlock = RTE_SPINLOCK_INITIALIZER;
-static volatile uint32_t tx_init_done = 0;
-static volatile uint32_t rx_init_done = 0;
-static volatile uint32_t start_done = 0;
+static volatile __u32 tx_init_done = 0;
+static volatile __u32 rx_init_done = 0;
+static volatile __u32 start_done = 0;
 
-static struct rte_mempool *mempool_alloc(uint16_t pool_id);
-static int reta_setup(uint8_t port_id, 
-    uint16_t fp_cores_max, uint16_t reta_size);
+static struct rte_mempool *mempool_alloc(__u16 pool_id);
+static int reta_setup(__u8 port_id, 
+    __u16 fp_cores_max, __u16 reta_size);
 
 int nic_fast_init(struct nic_context *nic_ctx,
-    struct nic_fast_context *nic_fast_ctx, uint16_t queue_id,
+    struct nic_fast_context *nic_fast_ctx, __u16 queue_id,
     struct configuration *config)
 {
   int ret;
@@ -108,7 +108,7 @@ error_mempool:
   return -1;
 }
 
-static struct rte_mempool *mempool_alloc(uint16_t pool_id)
+static struct rte_mempool *mempool_alloc(__u16 pool_id)
 {
   unsigned int socket_id;
   char name[32];
@@ -122,10 +122,10 @@ static struct rte_mempool *mempool_alloc(uint16_t pool_id)
         rte_pktmbuf_init, NULL, socket_id, 0);
 }
 
-static int reta_setup(uint8_t port_id, 
-    uint16_t fp_cores_max, uint16_t reta_size)
+static int reta_setup(__u8 port_id, 
+    __u16 fp_cores_max, __u16 reta_size)
 {
-  uint16_t i, c;
+  __u16 i, c;
   static struct rte_eth_rss_reta_entry64 *rss_reta;
 
   /* Allocate RSS redirection table and core-bucket count table */

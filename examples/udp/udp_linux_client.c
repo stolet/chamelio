@@ -17,7 +17,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <stdbool.h>
-#include <stdint.h>
+#include <linux/types.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -28,7 +28,7 @@
 #include <unistd.h>
 
 struct payload_hdr {
-  uint64_t tsc;
+  __u64 tsc;
 }__attribute__((packed));
 
 /* Default arg values */
@@ -39,10 +39,10 @@ const char *server_ip;
 int port;
 
 /* Variables used to report stats */
-uint64_t t_start_ns, t_end_ns;
-uint64_t t_last_report_ns, t_next_report_ns;
-uint64_t tx_bytes_interval, tx_pkts_interval;
-uint64_t total_sent_pkts;
+__u64 t_start_ns, t_end_ns;
+__u64 t_last_report_ns, t_next_report_ns;
+__u64 tx_bytes_interval, tx_pkts_interval;
+__u64 total_sent_pkts;
 
 /* Cycles per microsecond */
 static double tsc_per_us = 0.0;
@@ -50,14 +50,14 @@ static double tsc_per_us = 0.0;
 /* RTT histogram (µs buckets) */
 /* Clamp histogram at 1 second */
 #define MAX_RTT_US 1000000u  
-static uint64_t *rtt_hist = NULL;
-static uint64_t rtt_samples = 0;
+static __u64 *rtt_hist = NULL;
+static __u64 rtt_samples = 0;
 
-static inline uint64_t util_rdtsc(void)
+static inline __u64 util_rdtsc(void)
 {
-  uint32_t eax, edx;
+  __u32 eax, edx;
   asm volatile ("rdtsc" : "=a" (eax), "=d" (edx));
-  return ((uint64_t)edx << 32) | eax;
+  return ((__u64)edx << 32) | eax;
 }
 
 static inline void calibrate_tsc(void)
@@ -71,9 +71,9 @@ static inline void calibrate_tsc(void)
     exit(EXIT_FAILURE);
   }
 
-  uint64_t t0 = util_rdtsc();
+  __u64 t0 = util_rdtsc();
   usleep(10000);
-  uint64_t t1 = util_rdtsc();
+  __u64 t1 = util_rdtsc();
 
   if (clock_gettime(CLOCK_MONOTONIC_RAW, &ts_after) != 0)
   {
@@ -81,12 +81,12 @@ static inline void calibrate_tsc(void)
     exit(EXIT_FAILURE);
   }
 
-  uint64_t dt_cycles = t1 - t0;
-  uint64_t us_before = (uint64_t)ts_before.tv_sec * 1000000ULL 
-      + (uint64_t)(ts_before.tv_nsec / 1000ULL);
-  uint64_t us_after  = (uint64_t)ts_after.tv_sec  * 1000000ULL 
-      + (uint64_t)(ts_after.tv_nsec  / 1000ULL);
-  uint64_t dt_us = us_after - us_before;
+  __u64 dt_cycles = t1 - t0;
+  __u64 us_before = (__u64)ts_before.tv_sec * 1000000ULL 
+      + (__u64)(ts_before.tv_nsec / 1000ULL);
+  __u64 us_after  = (__u64)ts_after.tv_sec  * 1000000ULL 
+      + (__u64)(ts_after.tv_nsec  / 1000ULL);
+  __u64 dt_us = us_after - us_before;
   
   if (dt_us == 0) 
     dt_us = 1;
@@ -99,46 +99,46 @@ static inline void calibrate_tsc(void)
   }
 }
 
-static inline uint64_t us_since_tsc(uint64_t tsc_then)
+static inline __u64 us_since_tsc(__u64 tsc_then)
 {
-  uint64_t tsc_now = util_rdtsc();
+  __u64 tsc_now = util_rdtsc();
   double delta = (double)(tsc_now - tsc_then);
   if (delta < 0.0) delta = 0.0;
   double us = delta / tsc_per_us;
   if (us < 0.0) us = 0.0;
-  return (uint64_t)(us + 0.5);
+  return (__u64)(us + 0.5);
 }
 
-static inline uint64_t now_ns(void)
+static inline __u64 now_ns(void)
 {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+  return (__u64)ts.tv_sec * 1000000000ULL + (__u64)ts.tv_nsec;
 }
 
-static inline void hist_add(uint64_t rtt_us)
+static inline void hist_add(__u64 rtt_us)
 {
   if (rtt_us > MAX_RTT_US) rtt_us = MAX_RTT_US;
   rtt_hist[rtt_us]++;
   rtt_samples++;
 }
 
-static bool hist_percentiles(uint64_t *p50, uint64_t *p99, uint64_t *p999)
+static bool hist_percentiles(__u64 *p50, __u64 *p99, __u64 *p999)
 {
   if (rtt_samples == 0) return false;
 
-  uint64_t N = rtt_samples;
-  uint64_t t50  = (N * 50  + 100 - 1) / 100;
-  uint64_t t99  = (N * 99  + 100 - 1) / 100;
-  uint64_t t999 = (N * 999 + 1000 - 1) / 1000;
+  __u64 N = rtt_samples;
+  __u64 t50  = (N * 50  + 100 - 1) / 100;
+  __u64 t99  = (N * 99  + 100 - 1) / 100;
+  __u64 t999 = (N * 999 + 1000 - 1) / 1000;
 
-  uint64_t acc = 0;
-  uint64_t v50 = 0, v99 = 0, v999 = 0;
+  __u64 acc = 0;
+  __u64 v50 = 0, v99 = 0, v999 = 0;
   bool got50 = false, got99 = false, got999 = false;
 
-  for (uint32_t i = 0; i <= MAX_RTT_US; i++)
+  for (__u32 i = 0; i <= MAX_RTT_US; i++)
   {
-    uint64_t c = rtt_hist[i];
+    __u64 c = rtt_hist[i];
     
     if (c == 0) 
       continue;
@@ -240,7 +240,7 @@ static int parse_args(int argc, char **argv)
 
 static int init_hist()
 {
-  rtt_hist = (uint64_t *) calloc((size_t) MAX_RTT_US + 1, sizeof(uint64_t));
+  rtt_hist = (__u64 *) calloc((size_t) MAX_RTT_US + 1, sizeof(__u64));
   if (!rtt_hist) 
   {
     perror("calloc rtt_hist");
@@ -250,12 +250,12 @@ static int init_hist()
   return 0;
 }
 
-static void print_stats(uint64_t now)
+static void print_stats(__u64 now)
 {
   double interval_s, pps, MBps;
   bool have;
   
-  uint64_t p50 = 0, p99 = 0, p999 = 0;
+  __u64 p50 = 0, p99 = 0, p999 = 0;
   
   interval_s = (double)(t_next_report_ns - t_last_report_ns) / 1e9;
   if (interval_s <= 0.0) interval_s = 1.0;
@@ -298,11 +298,11 @@ int main(int argc, char **argv)
   int ret, burst;
   ssize_t s;
   struct sockaddr_in dst;
-  uint8_t *txbuf, *rxbuf;
-  uint64_t now, rtt_us;
+  __u8 *txbuf, *rxbuf;
+  __u64 now, rtt_us;
   struct payload_hdr *ph;
   
-  uint64_t seq = 1;
+  __u64 seq = 1;
   socklen_t dstlen = sizeof(dst);
   
   tx_bytes_interval = 0;
@@ -311,7 +311,7 @@ int main(int argc, char **argv)
   t_start_ns = now_ns();
   t_last_report_ns = t_start_ns;
   t_next_report_ns = t_start_ns + 1000000000ULL;
-  t_end_ns = t_start_ns + (uint64_t) duration_sec * 1000000000ULL;
+  t_end_ns = t_start_ns + (__u64) duration_sec * 1000000000ULL;
   
   ret = parse_args(argc, argv);
   if (ret != 0)
@@ -337,15 +337,15 @@ int main(int argc, char **argv)
 
   memset(&dst, 0, sizeof(dst));
   dst.sin_family = AF_INET;
-  dst.sin_port   = htons((uint16_t)port);
+  dst.sin_port   = htons((__u16)port);
   if (inet_pton(AF_INET, server_ip, &dst.sin_addr) != 1)
   {
     fprintf(stderr, "Invalid server_ip\n");
     return EXIT_FAILURE;
   }
 
-  txbuf = (uint8_t *)malloc(msg_size);
-  rxbuf = (uint8_t *)malloc(msg_size);
+  txbuf = (__u8 *)malloc(msg_size);
+  rxbuf = (__u8 *)malloc(msg_size);
   if (!txbuf || !rxbuf) 
   {
     perror("malloc buffers");
@@ -380,7 +380,7 @@ int main(int argc, char **argv)
         break;
       }
       
-      tx_bytes_interval += (uint64_t)s;
+      tx_bytes_interval += (__u64)s;
       tx_pkts_interval  += 1;
       total_sent_pkts   += 1;
       seq++;
@@ -417,7 +417,7 @@ int main(int argc, char **argv)
   }
 
   /* Final summary */
-  uint64_t p50 = 0, p99 = 0, p999 = 0;
+  __u64 p50 = 0, p99 = 0, p999 = 0;
   bool have = hist_percentiles(&p50, &p99, &p999);
   printf("\n=== Summary ===\n");
   printf("Sent packets: %llu\n", (unsigned long long) total_sent_pkts);

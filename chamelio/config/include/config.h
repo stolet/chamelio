@@ -1,42 +1,42 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
-#include <stdint.h>
+#include <linux/types.h>
 
 struct configuration {
   /*** SHM configurations ***/
   /* Shared memory size for one guest */
-  uint64_t shm_len;
+  __u64 shm_len;
   /* Internal Chamelio shared memory size */
-  uint64_t shm_internal_len;
+  __u64 shm_internal_len;
   /* Size of queue between control and fast path in Chamelio */
-  uint64_t cham_queue_len;
+  __u64 cham_queue_len;
   /* Size of queue between guest agent and chamelio */
-  uint64_t agt_queue_len;
+  __u64 agt_queue_len;
 
   /*** IP address configurations ***/
   /* IP address for this host */
-  uint32_t ip;
+  __u32 ip;
   /* IP prefix length for this host */
-  uint8_t ip_prefix;
+  __u8 ip_prefix;
   /* List of routes */
   struct config_route *routes;
 
   /*** Max values ***/
   /* Max number of guests supported */
-  uint32_t max_guests;
+  __u32 max_guests;
   /* Max number of applications per guest */
-  uint32_t max_apps;
+  __u32 max_apps;
   /* Max number of application contexts per app */
-  uint32_t max_app_ctxs;
+  __u32 max_app_ctxs;
   /* Max number of buffers per application */
-  uint32_t max_bufs;
+  __u32 max_bufs;
 
   /*** Fast-path configurations ***/
   /* Enable checksum offload */
-  uint32_t fp_xsumoffloads;
+  __u32 fp_xsumoffloads;
   /* Max number of fast-path cores */
-  uint32_t fp_cores_max;
+  __u32 fp_cores_max;
   
   /*** DPDK configurations ***/
   /* DPDK extra argument count */
@@ -48,11 +48,11 @@ struct configuration {
 /* Route entry in configuration */
 struct config_route {
   /* Destination IP address */
-  uint32_t ip;
+  __u32 ip;
   /* Destination prefix length */
-  uint8_t ip_prefix;
+  __u8 ip_prefix;
   /* Next hop IP */
-  uint32_t next_hop_ip;
+  __u32 next_hop_ip;
   /* Next pointer for route list */
   struct config_route *next;
 };

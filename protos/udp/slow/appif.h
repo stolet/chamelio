@@ -1,12 +1,12 @@
 #ifndef APPIF_H_
 #define APPIF_H_
 
-#include <stdint.h>
+#include <linux/types.h>
 
 #include <cham_lib.h>
 
 #include "queue.h"
-#include "udp_queue.h"
+#include "udp_queue_types.h"
 #include "udp_slow.h"
 
 struct app_event {

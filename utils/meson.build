@@ -2,6 +2,7 @@ subdir('log')
 subdir('uxsocket')
 subdir('shm')
 subdir('queue')
+subdir('scheduler')
 
 utils_inc = include_directories('include')
 
@@ -16,6 +17,7 @@ deps = [
   dependency('uxsocket_dep'),
   dependency('shm_dep'),
   dependency('queue_dep'),
+  dependency('scheduler_dep'),
 ]
 
 utils_dep = declare_dependency(

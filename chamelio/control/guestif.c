@@ -14,7 +14,8 @@
 #include "control.h"
 #include "log.h"
 #include "shmalloc.h"
-#include "queue.h"
+#include "queue_fns.h"
+#include "queue_types.h"
 #include "uxsocket.h"
 
 #define EP_LISTEN_GUEST 1

@@ -1,13 +1,11 @@
 #ifndef UDP_QUEUE_H_
 #define UDP_QUEUE_H_
 
-#include <stdlib.h>
-#include <stdint.h>
+#include <linux/types.h>
 #include <cham_fast.h>
 
 #include "shmalloc.h"
-#include "queue.h"
-
+#include "utils.h"
 
 /* Type of queue entries */
 enum udp_queue_type {
@@ -36,122 +34,122 @@ enum udp_queue_type {
 /* Request to create new socket in slow-path */
 struct udp_queue_new_sock_req {
   /* Pointer to socket in the library */
-  uint64_t opaque;
+  __u64 opaque;
 } __attribute__((packed)); 
 
 /* Response for new socket created */
 struct udp_queue_new_sock_res {
   /* ID of the socket in slow-path */
-  uint32_t sock_id;
+  __u32 sock_id;
   /* Pointer to socket in the library */
-  uint64_t opaque;
+  __u64 opaque;
   /* Fast-path core this socket is running */
-  uint16_t core;
+  __u16 core;
   /* Queue ID of RX buffer */
-  uint16_t rx_qid;
+  __u16 rx_qid;
   /* Length of RX buffer */
-  uint32_t rx_len;
+  __u32 rx_len;
   /* Offset of RX buffer */
-  uint64_t rx_off;
+  __u64 rx_off;
   /* Queue ID of TX buffer */
-  uint16_t tx_qid;
+  __u16 tx_qid;
   /* Length of TX buffer */
-  uint32_t tx_len;
+  __u32 tx_len;
   /* Offset of TX buffer */
-  uint64_t tx_off;
+  __u64 tx_off;
 } __attribute__((packed));
 
 /* Request for app context to register with slow-path */
 struct udp_queue_new_actx_req {
   /* Add a byte value to request so it's not empty */
-  uint8_t req;
+  __u8 req;
 } __attribute__((packed));
 
 /* Response when app context registers with slow-path */
 struct udp_queue_new_actx_res {
   /* Number of fast-path cores */
-  uint32_t n_fp_cores;
+  __u32 n_fp_cores;
   /* Size of shm region */
-  uint32_t shm_len;
+  __u32 shm_len;
   /* NUmber of elements app->slow queue */
-  uint32_t as_nelems;
+  __u32 as_nelems;
   /* Size of elements app->slow queue */
-  uint32_t as_elsize;
+  __u32 as_elsize;
   /* Offset in shm of app->slow queue */
-  uint64_t as_off;
+  __u64 as_off;
   /* Number of elements slow->app queue */
-  uint32_t sa_nelems;
+  __u32 sa_nelems;
   /* Size of elements slow->app queue */
-  uint32_t sa_elsize;
+  __u32 sa_elsize;
   /* Offset in shm of slow->app queue */
-  uint64_t sa_off;
+  __u64 sa_off;
   /* Number of elements app->fast queues */
-  uint32_t af_nelems;
+  __u32 af_nelems;
   /* Size of elements app->fast queues */;
-  uint32_t af_elsize;
+  __u32 af_elsize;
   /* Offsets for app->fast bump queues */
-  uint64_t af_offs[MAX_FP_CORES];
+  __u64 af_offs[MAX_FP_CORES];
   /* Number of elements fast->app queues */
-  uint32_t fa_nelems;
+  __u32 fa_nelems;
   /* Size of elements fast->app queues */
-  uint32_t fa_elsize;
+  __u32 fa_elsize;
   /* Offsets for fast->app bump queues */
-  uint64_t fa_offs[MAX_FP_CORES];
+  __u64 fa_offs[MAX_FP_CORES];
 } __attribute__((packed));
 
 /* Message that sends the src port and ip */
 struct udp_queue_bind {
   /* Socket ID used by slow-path */
-  uint32_t sock_id;
+  __u32 sock_id;
   /* Source port for this bind */
-  uint16_t src_port;
+  __u16 src_port;
   /* Source IP for this bind */
-  uint32_t src_ip;
+  __u32 src_ip;
 } __attribute__((packed));
 
 /* Message that bumps the Chamelio TX avail */
 struct udp_queue_bump_cham_tx {
   /* Socket ID used by slow-path */
-  uint32_t sock_id;
+  __u32 sock_id;
   /* TX port for this bump */
-  uint16_t tx_port;
+  __u16 tx_port;
   /* TX IP for this bump */
-  uint32_t tx_ip;
+  __u32 tx_ip;
   /* Bump for TX available */
-  uint32_t tx_avail;
+  __u32 tx_avail;
 } __attribute__((packed));
 
 /* Message that bumps the Chamelio RX head */
 struct udp_queue_bump_cham_rx {
   /* Socket ID used by slow-path */
-  uint32_t sock_id;
+  __u32 sock_id;
   /* Bump for RX head */
-  uint32_t rx_head;
+  __u32 rx_head;
 } __attribute__((packed));
 
 /* Message that bumps the app TX head */
 struct udp_queue_bump_app_tx {
   /* Opaque pointer to struct in app library */
-  uint64_t opaque;
+  __u64 opaque;
   /* Bump for TX head */
-  uint32_t tx_head;
+  __u32 tx_head;
 } __attribute__((packed));
 
 /* Message that bumps the app RX available */
 struct udp_queue_bump_app_rx {
   /* Opaque pointer to struct in app library */
-  uint64_t opaque;
+  __u64 opaque;
   /* RX port for this bump */
-  uint16_t rx_port;
+  __u16 rx_port;
   /* RX IP for this bump */
-  uint32_t rx_ip;
+  __u32 rx_ip;
   /* Bump for RX available */
-  uint32_t rx_avail;
+  __u32 rx_avail;
 } __attribute__((packed));
 
 struct udp_queue_entry {
   /* Type of queue entry. Don't update outside of enqueue or dequeue */
-  volatile uint8_t type;
+  volatile __u8 type;
   /* Data section of queue entry */
   union {
     struct udp_queue_new_actx_req new_actx_req;
@@ -160,13 +158,13 @@ struct udp_queue_entry {
     struct udp_queue_new_sock_res new_sock_res;
     struct udp_queue_bind bind;
     /* Keeps queue entry the size of half a cache line */
-    uint8_t raw[511];
+    __u8 raw[511];
   } __attribute__((packed)) data;
 } __attribute__((packed));
 
 struct udp_queue_bump_entry {
   /* Type of queue entry. Don't upadete outside of enqueue or dequeue */
-  volatile uint8_t type;
+  volatile __u8 type;
   /* Data section of queue entry */
   union {
     struct udp_queue_bump_app_tx bump_app_tx;
@@ -174,7 +172,7 @@ struct udp_queue_bump_entry {
     struct udp_queue_bump_cham_tx bump_cham_tx;
     struct udp_queue_bump_cham_rx bump_cham_rx;
     /* Keeps queue entry the size of a cache line */
-    uint8_t raw[31];
+    __u8 raw[31];
   } __attribute__((packed)) data;
 } __attribute__((packed));
 

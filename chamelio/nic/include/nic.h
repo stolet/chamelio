@@ -1,7 +1,7 @@
 #ifndef NIC_H_
 #define NIC_H_
 
-#include <stdint.h>
+#include <linux/types.h>
 
 #include <rte_ethdev.h>
 
@@ -10,7 +10,7 @@
 /* NIC context used by Chamelio main theread */
 struct nic_context {
   /* Port ID of initialised NIC */
-  uint8_t port_id;
+  __u8 port_id;
   /* DPDK port configuration */
   struct rte_eth_conf port_conf;
   /* DPDK device information of initialised NIC */

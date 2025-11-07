@@ -7,19 +7,19 @@
 #include "fast.h"
 #include "nic.h"
 #include "nic_fast.h"
-#include "queue.h"
+#include "queue_fns.h"
+#include "queue_types.h"
 #include "udp.h"
 #include "log.h"
 #include "config.h"
 #include "controlif.h"
-#include "cham_scheduler.h"
 
 
-struct guest_fast * init_guest(uint8_t id, uint64_t shm_len);
+struct guest_fast * init_guest(__u8 id, __u64 shm_len);
 struct guest_fast *find_guest(struct fast_context *ctx, struct rte_mbuf *mbuf);
 
 static inline void tx_cache_alloc(struct fast_context *ctx, 
-    struct rte_mbuf ***mbs, uint16_t num);
+    struct rte_mbuf ***mbs, __u16 num);
 static inline void tx_cache_free(struct fast_context *ctx, struct rte_mbuf *mb);
 
 int poll_rx(struct fast_context *ctx);
@@ -28,7 +28,7 @@ int poll_tx(struct fast_context *ctx);
 int poll_control(struct fast_context *ctx);
 
 int fast_context_init(struct fast_context *f_ctx, 
-    struct nic_context *nic_ctx, uint16_t thread_id,
+    struct nic_context *nic_ctx, __u16 thread_id,
     struct shm_handle *fc_handle, struct shm_handle *cf_handle,
     struct configuration *config, int shm_fd_internal, void *shm_base_internal)
 {
@@ -147,7 +147,7 @@ int poll_rx(struct fast_context *ctx)
     g = find_guest(ctx, mbs[i]);
     if (g != NULL)
     {
-      g->proto.event_rx(rte_pktmbuf_mtod(mbs[i], uint8_t *), 
+      g->proto.event_rx(rte_pktmbuf_mtod(mbs[i], __u8 *), 
           &g->proto.handle);
     }
   }
@@ -160,7 +160,7 @@ int poll_rx(struct fast_context *ctx)
 int poll_queues(struct fast_context *ctx)
 {
   int i, ret, ndeq;
-  uint16_t qid;
+  __u16 qid;
   struct guest_fast *g;
   struct cham_dqueue *q;
   struct queue_entry *qe;
@@ -206,7 +206,7 @@ int poll_tx(struct fast_context *ctx)
   int i, ret, n_used;
   struct guest_fast *guest;
   struct rte_mbuf **mbs;
-  uint8_t n_guests = ctx->n_guests;
+  __u8 n_guests = ctx->n_guests;
   
   if (ctx->guests == NULL)
     return 0;
@@ -225,7 +225,7 @@ int poll_tx(struct fast_context *ctx)
     for (;n_used < n;)
     {
       mbs[n_used]->data_off = 0;
-      ret = guest->proto.event_tx(rte_pktmbuf_mtod(mbs[n_used], uint8_t *), 
+      ret = guest->proto.event_tx(rte_pktmbuf_mtod(mbs[n_used], __u8 *), 
           &guest->proto.handle);
 
       if (ret >= 0)
@@ -278,9 +278,9 @@ struct guest_fast *find_guest(struct fast_context *ctx, struct rte_mbuf *mbuf)
 }
 
 static inline void tx_cache_alloc(struct fast_context *ctx, 
-    struct rte_mbuf ***mbs, uint16_t num)
+    struct rte_mbuf ***mbs, __u16 num)
 {
-  uint16_t grow, tail, g;
+  __u16 grow, tail, g;
 
   /* We don't have enough mbufs in the cache so allocate more */
   if (ctx->tx_cache_n < num)
@@ -313,7 +313,7 @@ static inline void tx_cache_alloc(struct fast_context *ctx,
 
 static inline void tx_cache_free(struct fast_context *ctx, struct rte_mbuf *mb)
 {
-  uint16_t n, head;
+  __u16 n, head;
 
   n = ctx->tx_cache_n;
   if (n < TX_CACHE_SIZE)

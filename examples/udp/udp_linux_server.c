@@ -11,7 +11,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <stdbool.h>
-#include <stdint.h>
+#include <linux/types.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,7 +61,7 @@ int main(int argc, char **argv)
   struct sockaddr_in addr;
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
-  addr.sin_port   = htons((uint16_t)port);
+  addr.sin_port   = htons((__u16)port);
   if (inet_pton(AF_INET, bind_ip, &addr.sin_addr) != 1)
   {
     fprintf(stderr, "Invalid bind_ip\n");
@@ -74,7 +74,7 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
-  uint8_t *buf = (uint8_t *)malloc(buf_size);
+  __u8 *buf = (__u8 *)malloc(buf_size);
   if (!buf) 
   {
     perror("malloc");

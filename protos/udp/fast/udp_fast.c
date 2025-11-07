@@ -1,25 +1,26 @@
 #include <rte_ip4.h>
 #include <cham_fast.h>
-#include <cham_scheduler.h>
 
+#include "scheduler_fns.h"
 #include "udp.h"
 #include "udp_fast.h"
-#include "udp_queue.h"
-#include "queue.h"
+#include "udp_queue_types.h"
+#include "queue_fns.h"
+#include "queue_types.h"
 #include "log.h"
 
 #define SOCK_MAP_IDX 0
 
-int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN]);
+int mac_from_text(const char *text, __u8 out[ETH_ADDR_LEN]);
 int handle_bump_tx(struct udp_queue_bump_entry *qe, 
     struct cham_proto_handle *handle);
 int handle_bump_rx(struct udp_queue_bump_entry *qe, 
     struct cham_proto_handle *handle);
 
 struct udp_sock * udp_sock_find(struct cham_proto_handle *handle,
-    uint32_t remote_ip_be, uint16_t remote_port_be);
+    __u32 remote_ip_be, __u16 remote_port_be);
 
-int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN])
+int mac_from_text(const char *text, __u8 out[ETH_ADDR_LEN])
 {
   unsigned int tmp[ETH_ADDR_LEN];
 
@@ -28,14 +29,14 @@ int mac_from_text(const char *text, uint8_t out[ETH_ADDR_LEN])
     return -1;
 
   for (size_t i = 0; i < ETH_ADDR_LEN; ++i)
-    out[i] = (uint8_t)tmp[i];
+    out[i] = (__u8)tmp[i];
 
   return 0;
 }
 
 /* TODO: For now just return the first socket always */
 struct udp_sock *udp_sock_find(struct cham_proto_handle *handle,
-    uint32_t remote_ip_be, uint16_t remote_port_be)
+    __u32 remote_ip_be, __u16 remote_port_be)
 {
   struct udp_sock *sock_map;
   sock_map = handle->maps[SOCK_MAP_IDX].addr;
@@ -50,8 +51,8 @@ int udp_init_fp(void *config)
 int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
 {
   int ret;
-  uint16_t ip_hdrs_len, ip_total_len, udp_len, payload_len;
-  uint64_t mac_src_val, mac_dst_val;
+  __u16 ip_hdrs_len, ip_total_len, udp_len, payload_len;
+  __u64 mac_src_val, mac_dst_val;
   struct eth_hdr *eth;
   struct ip_hdr  *ip;
   struct udp_hdr *udp;
@@ -62,13 +63,13 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
   struct udp_queue_bump_entry *qe;
   struct udp_queue_bump_app_rx *bump;
 
-  uint8_t *rx_base;
-  uint32_t free_bytes;
-  uint32_t tail;
-  uint32_t part;
+  __u8 *rx_base;
+  __u32 free_bytes;
+  __u32 tail;
+  __u32 part;
 
-  uint16_t ip_saved_chksum, ip_comp_chksum;
-  uint16_t udp_saved_chksum, udp_comp_chksum;
+  __u16 ip_saved_chksum, ip_comp_chksum;
+  __u16 udp_saved_chksum, udp_comp_chksum;
 
   sock = NULL;
 
@@ -83,14 +84,14 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
   memcpy(&mac_dst_val, &eth->dst, ETH_ADDR_LEN);
 
   /* Parse IP header */
-  ip = (struct ip_hdr *) ((uint8_t *) pkt + sizeof(struct eth_hdr));
+  ip = (struct ip_hdr *) ((__u8 *) pkt + sizeof(struct eth_hdr));
   if (IPH_V(ip) != 4 || IPH_HL(ip) < 5)
   {
     LOG_ERROR("rx drop: bad IPv4 header v=%u hl=%u", IPH_V(ip), IPH_HL(ip));
     return -1;
   }
 
-  ip_hdrs_len  = (uint16_t) (IPH_HL(ip) * 4);
+  ip_hdrs_len  = (__u16) (IPH_HL(ip) * 4);
   ip_total_len = f_beui16(ip->len);
 
   if (ip->proto != IP_PROTO_UDP)
@@ -106,7 +107,7 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
     return -1;
   }
 
-  if (ip_total_len < ip_hdrs_len + (uint16_t) sizeof(struct udp_hdr))
+  if (ip_total_len < ip_hdrs_len + (__u16) sizeof(struct udp_hdr))
   {
     LOG_ERROR("rx drop: malformed lengths ip_total=%u ip_hl=%u",
               ip_total_len, ip_hdrs_len);
@@ -126,7 +127,7 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
   }
 
   /* Parse UDP header */
-  udp = (struct udp_hdr *) ((uint8_t *) ip + ip_hdrs_len);
+  udp = (struct udp_hdr *) ((__u8 *) ip + ip_hdrs_len);
   udp_len = f_beui16(udp->len);
   if (udp_len < sizeof(struct udp_hdr))
   {
@@ -158,8 +159,8 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
   }
 
   /* Lookup socket */
-  uint32_t src_ip_be  = htonl(f_beui32(ip->src));
-  uint16_t src_prt_be = htons(f_beui16(udp->src));
+  __u32 src_ip_be  = htonl(f_beui32(ip->src));
+  __u16 src_prt_be = htons(f_beui16(udp->src));
   sock = udp_sock_find(handle, src_ip_be, src_prt_be);
   
   if (sock == NULL)
@@ -170,9 +171,9 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
   }
 
   /* Copy payload */
-  payload_len = (uint16_t) (udp_len - sizeof(struct udp_hdr));
-  payload = (void *) ((uint8_t *) udp + sizeof(struct udp_hdr));
-  rx_base = (uint8_t *) handle->shm_base + sock->rx_off;
+  payload_len = (__u16) (udp_len - sizeof(struct udp_hdr));
+  payload = (void *) ((__u8 *) udp + sizeof(struct udp_hdr));
+  rx_base = (__u8 *) handle->shm_base + sock->rx_off;
   free_bytes = sock->rx_len - sock->rx_avail;
 
   if (payload_len > free_bytes)
@@ -190,7 +191,7 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
   {
     part = sock->rx_len - tail;
     memcpy(rx_base + tail, payload, part);
-    memcpy(rx_base, (uint8_t *) payload + part, payload_len - part);
+    memcpy(rx_base, (__u8 *) payload + part, payload_len - part);
   }
 
   /* Publish bytes for the consumer */
@@ -223,8 +224,8 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
   // LOG_DEBUG("rx ip: src_ip=%08x dst_ip=%08x",
   //           f_beui32(ip->src), f_beui32(ip->dst));
   // LOG_DEBUG("rx eth: src_mac=%012" PRIx64 " dst_mac=%012" PRIx64,
-  //           (uint64_t)(be64toh(mac_src_val)),
-  //           (uint64_t)(be64toh(mac_dst_val)));
+  //           (__u64)(be64toh(mac_src_val)),
+  //           (__u64)(be64toh(mac_dst_val)));
 
   return 0;
 }
@@ -239,10 +240,10 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   struct udp_queue_bump_app_tx *bump;
   struct cham_scheduler *sched;
   struct cham_sched_entry *se;
-  uint16_t opt_len, payload_len;
-  uint16_t udp_hdrs_len, ip_hdrs_len, pkt_hdrs_len;
-  uint32_t new_head;
-  uint64_t part;
+  __u16 opt_len, payload_len;
+  __u16 udp_hdrs_len, ip_hdrs_len, pkt_hdrs_len;
+  __u32 new_head;
+  __u64 part;
   struct udp_pkt *p = (struct udp_pkt *) pkt;
   
   /* If there is nothing scheduled return */
@@ -327,7 +328,7 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   sock->tx_head = new_head;
   sock->tx_avail -= payload_len;
   se->avail -= payload_len;
-  se->opaque = (uint64_t) sock;
+  se->opaque = (__u64) sock;
 
   /* Remove first element from priority list */
   ret = sched_pop(sched);
@@ -373,8 +374,8 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   // LOG_DEBUG("tx ip: dst_ip=%08x src_ip=%08x",
       // f_beui32(p->ip.dst), f_beui32(p->ip.src));
   // LOG_DEBUG("tx eth: src_mac=%012" PRIx64 " dst_mac=%012" PRIx64,
-  //         (uint64_t)(be64toh(mac_src_val)),
-  //         (uint64_t)(be64toh(mac_dst_val)));
+  //         (__u64)(be64toh(mac_src_val)),
+  //         (__u64)(be64toh(mac_dst_val)));
 
   return pkt_hdrs_len + payload_len;
 }
@@ -426,7 +427,7 @@ int handle_bump_tx(struct udp_queue_bump_entry *qe,
   sched = &handle->sched;
   se = &sched->entries[sock->id];
   se->avail = se->avail + bump->tx_avail;
-  se->opaque = (uint64_t) sock;
+  se->opaque = (__u64) sock;
 
   /* Add scheduler entry to the list if it has not been added yet */
   if (se->id == SCHED_ID_INVALID)
@@ -446,7 +447,7 @@ int handle_bump_tx(struct udp_queue_bump_entry *qe,
 int handle_bump_rx(struct udp_queue_bump_entry *qe,
     struct cham_proto_handle *handle)
 {
-  uint32_t new_head;
+  __u32 new_head;
   struct udp_sock *sock, *sock_map;
   struct udp_queue_bump_cham_rx *bump;
   

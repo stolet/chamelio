@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "queue.h"
+#include "queue_fns.h"
 #include "test_utils.h"
 
 #define TEST_QUEUE_SIZE 4
@@ -11,12 +11,12 @@ static void test_queue_enqueue()
 {
   printf(ANSI_COLOR_BLUE "Testing queue_enqueue..." ANSI_COLOR_RESET "\n");
 
-  uint8_t buffer[TEST_QUEUE_SIZE * TEST_ELEMENT_SIZE] = {0};
+  __u8 buffer[TEST_QUEUE_SIZE * TEST_ELEMENT_SIZE] = {0};
   struct equeue eq;
 
   equeue_init(&eq, TEST_QUEUE_SIZE, TEST_ELEMENT_SIZE, buffer, 0);
 
-  for (uint8_t i = 1; i <= TEST_QUEUE_SIZE; ++i) 
+  for (__u8 i = 1; i <= TEST_QUEUE_SIZE; ++i) 
   {
     TEST_ASSERT(queue_enqueue(&eq, i) == 0, "Failed to enqueue element");
   }
@@ -30,21 +30,21 @@ static void test_queue_dequeue()
 {
   printf(ANSI_COLOR_BLUE "Testing queue_dequeue..." ANSI_COLOR_RESET "\n");
 
-  uint8_t buffer[TEST_QUEUE_SIZE * TEST_ELEMENT_SIZE] = {0};
+  __u8 buffer[TEST_QUEUE_SIZE * TEST_ELEMENT_SIZE] = {0};
   struct equeue eq;
   struct dqueue dq;
 
   equeue_init(&eq, TEST_QUEUE_SIZE, TEST_ELEMENT_SIZE, buffer, 0);
   dqueue_init(&dq, TEST_QUEUE_SIZE, TEST_ELEMENT_SIZE, buffer, 0);
 
-  for (uint8_t i = 1; i <= TEST_QUEUE_SIZE; ++i) 
+  for (__u8 i = 1; i <= TEST_QUEUE_SIZE; ++i) 
   {
     TEST_ASSERT(queue_enqueue(&eq, i) == 0, "Failed to enqueue element");
   }
 
   TEST_ASSERT(queue_enqueue(&eq, 99) == -1, "Queue should be full");
 
-  for (uint8_t i = 1; i <= TEST_QUEUE_SIZE; ++i) 
+  for (__u8 i = 1; i <= TEST_QUEUE_SIZE; ++i) 
   {
     TEST_ASSERT(queue_dequeue(&dq) == 0, "Failed to dequeue element");
   }
@@ -59,14 +59,14 @@ static void test_queue_wraparound()
 {
   printf(ANSI_COLOR_BLUE "Testing queue wraparound..." ANSI_COLOR_RESET "\n");
 
-  uint8_t buffer[TEST_QUEUE_SIZE * TEST_ELEMENT_SIZE] = {0};
+  __u8 buffer[TEST_QUEUE_SIZE * TEST_ELEMENT_SIZE] = {0};
   struct equeue eq;
   struct dqueue dq;
 
   equeue_init(&eq, TEST_QUEUE_SIZE, TEST_ELEMENT_SIZE, buffer, 0);
   dqueue_init(&dq, TEST_QUEUE_SIZE, TEST_ELEMENT_SIZE, buffer, 0);
 
-  for (uint8_t i = 1; i <= TEST_QUEUE_SIZE; ++i) 
+  for (__u8 i = 1; i <= TEST_QUEUE_SIZE; ++i) 
   {
     TEST_ASSERT(queue_enqueue(&eq, i) == 0, "Failed to enqueue element");
   }
@@ -79,7 +79,7 @@ static void test_queue_wraparound()
   TEST_ASSERT(queue_enqueue(&eq, 100) == 0, 
     "Failed to enqueue element after wraparound");
 
-  for (uint8_t i = 3; i <= TEST_QUEUE_SIZE; ++i) 
+  for (__u8 i = 3; i <= TEST_QUEUE_SIZE; ++i) 
   {
     TEST_ASSERT(queue_dequeue(&dq) == 0, "Failed to dequeue element");
   }
@@ -96,7 +96,7 @@ static void test_queue_head_tail()
 {
     printf(ANSI_COLOR_BLUE "Testing queue_head and queue_tail..." ANSI_COLOR_RESET "\n");
 
-    uint8_t buffer[TEST_QUEUE_SIZE * TEST_ELEMENT_SIZE] = {0};
+    __u8 buffer[TEST_QUEUE_SIZE * TEST_ELEMENT_SIZE] = {0};
     struct equeue eq;
     struct dqueue dq;
 
@@ -109,7 +109,7 @@ static void test_queue_head_tail()
     TEST_ASSERT(queue_enqueue(&eq, 1) == 0, "Failed to enqueue element");
     TEST_ASSERT(queue_tail(&eq) != NULL, "Tail should not be NULL after enqueue");
 
-    uint8_t *head = queue_head(&dq);
+    __u8 *head = queue_head(&dq);
     TEST_ASSERT(head != NULL, "Head should not be NULL after enqueue");
     TEST_ASSERT(*head == 1, "Head should point to the first element");
 

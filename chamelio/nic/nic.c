@@ -5,9 +5,9 @@
 int nic_init(struct nic_context *nic_ctx, struct configuration *config)
 {
   int ret;
-  uint16_t n_ports, p;
+  __u16 n_ports, p;
   
-  uint8_t port_id = 0;
+  __u8 port_id = 0;
   struct rte_eth_dev_info *dev_info;
   
   n_ports = rte_eth_dev_count_avail();

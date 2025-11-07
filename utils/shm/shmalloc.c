@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
+#include <linux/types.h>
 
 #include "shmalloc.h"
 #include "log.h"
@@ -10,7 +10,7 @@ static inline void sh_free(struct shm_handle *sh);
 static inline void merge_items(struct shm_allocator *alloc, 
     struct shm_handle *sh_prev);
 
-struct shm_allocator * shmalloc_init(int shm_fd, void *shm_base, uint64_t len)
+struct shm_allocator * shmalloc_init(int shm_fd, void *shm_base, __u64 len)
 {
   struct shm_allocator *alloc;
   struct shm_handle *sh;

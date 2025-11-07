@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include <stdint.h>
+#include <linux/types.h>
 #include <pthread.h>
 
 #include <rte_malloc.h>
@@ -9,7 +9,7 @@
 #include "fast.h"
 #include "control.h"
 #include "nic.h"
-#include "queue.h"
+#include "queue_types.h"
 #include "log.h"
 #include "shm.h"
 #include "shmalloc.h"
@@ -182,7 +182,7 @@ int fast_start(struct configuration *config)
   unsigned cores_avail, cores_needed, core, threads_launched = 0;
   void *arg;
 
-  uint32_t fp_cores_max = config->fp_cores_max;
+  __u32 fp_cores_max = config->fp_cores_max;
 
   /* fast path cores + one control path core */
   cores_needed = fp_cores_max + 1;
@@ -219,7 +219,7 @@ int fast_start(struct configuration *config)
 static int fast_thread(void *arg)
 {
   int ret;
-  uint16_t id = (uintptr_t) arg;
+  __u16 id = (uintptr_t) arg;
   struct fast_context *f_ctx;
 
   {

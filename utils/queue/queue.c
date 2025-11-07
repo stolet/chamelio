@@ -1,4 +1,8 @@
+#include <stdlib.h>
+
 #include "queue.h"
+#include "queue_fns.h"
+#include "queue_types.h"
 #include "log.h"
 #include "utils.h"
 #include "shmalloc.h"
@@ -7,8 +11,8 @@
     so we allocate from hugepages. But this is a bit annoying since
     the library also uses the queue interface but it can't allocate
     from hugepages. */
-struct equeue * equeue_new(uint32_t nelems, size_t elsize,
-    void *addr, uint64_t off)
+struct equeue * equeue_new(__u32 nelems, size_t elsize,
+    void *addr, __u64 off)
 {
   struct equeue *q;
 
@@ -28,8 +32,8 @@ struct equeue * equeue_new(uint32_t nelems, size_t elsize,
   return q;
 }
 
-struct dqueue * dqueue_new(uint32_t nelems, size_t elsize, 
-    void *addr, uint64_t off)
+struct dqueue * dqueue_new(__u32 nelems, size_t elsize, 
+    void *addr, __u64 off)
 {
   struct dqueue *q;
 
@@ -49,8 +53,8 @@ struct dqueue * dqueue_new(uint32_t nelems, size_t elsize,
   return q;
 }
 
-int equeue_init(struct equeue *q, uint32_t nelems, size_t elsize,
-    void *addr, uint64_t off)
+int equeue_init(struct equeue *q, __u32 nelems, size_t elsize,
+    void *addr, __u64 off)
 {
   if (q == NULL)
     return -1;
@@ -64,8 +68,8 @@ int equeue_init(struct equeue *q, uint32_t nelems, size_t elsize,
   return 0;
 }
 
-int dqueue_init(struct dqueue *q, uint32_t nelems, size_t elsize,
-    void *addr, uint64_t off)
+int dqueue_init(struct dqueue *q, __u32 nelems, size_t elsize,
+    void *addr, __u64 off)
 {
   if (q == NULL)
     return -1;
@@ -80,12 +84,12 @@ int dqueue_init(struct dqueue *q, uint32_t nelems, size_t elsize,
 }
 
 /* Only one thread can enqueue */
-int queue_enqueue(struct equeue *q, uint8_t type)
+int queue_enqueue(struct equeue *q, __u8 type)
 {
-  uint32_t tail;
-  uint8_t *tail_type;
+  __u32 tail;
+  __u8 *tail_type;
 
-  tail_type = (uint8_t *) q->entries + q->tail;
+  tail_type = (__u8 *) q->entries + q->tail;
 
   /* Queue is full */
   if (*tail_type != QUEUE_EMPTY)
@@ -105,10 +109,10 @@ int queue_enqueue(struct equeue *q, uint8_t type)
 /* Only one thread can dequeue */
 int queue_dequeue(struct dqueue *q)
 {
-  uint32_t head;
-  uint8_t *type;
+  __u32 head;
+  __u8 *type;
   
-  type = (uint8_t *) q->entries + q->head;
+  type = (__u8 *) q->entries + q->head;
 
   /* Queue is empty */
   if (*type == QUEUE_EMPTY)
@@ -127,9 +131,9 @@ int queue_dequeue(struct dqueue *q)
 
 void * queue_head(struct dqueue *q)
 {
-  uint8_t *type;
+  __u8 *type;
   
-  type = (uint8_t *) q->entries + q->head;
+  type = (__u8 *) q->entries + q->head;
   
   /* Queue is empty */
   if (*type == QUEUE_EMPTY)
@@ -140,9 +144,9 @@ void * queue_head(struct dqueue *q)
 
 void * queue_tail(struct equeue *q)
 {
-  uint8_t *type;
+  __u8 *type;
   
-  type = (uint8_t *) q->entries + q->tail;
+  type = (__u8 *) q->entries + q->tail;
   
   /* Queue is full */
   if (*type != QUEUE_EMPTY)

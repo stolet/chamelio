@@ -1,7 +1,7 @@
 #ifndef UDP_LIB_H_
 #define UDP_LIB_H_
 
-#include <stdint.h>
+#include <linux/types.h>
 #include <sys/socket.h>
 
 #include "queue.h"
@@ -13,49 +13,49 @@ struct udp_socket {
     /* File descriptor identifier for this socket */
     int fd;
     /* Socket ID in the slow-path */
-    uint32_t sock_id;
+    __u32 sock_id;
     /* Context that created this socket */
     struct udp_context_lib *ctx;
     /* Fast-path core of this socket */
-    uint16_t core;
+    __u16 core;
 
     /* RX port */
-    uint16_t rx_port;
+    __u16 rx_port;
     /* RX IP address */
-    uint32_t rx_ip;
+    __u32 rx_ip;
     /* TX port */
-    uint16_t tx_port;
+    __u16 tx_port;
     /* TX IP address */
-    uint32_t tx_ip;
+    __u32 tx_ip;
 
     /* Queue ID used for RX buffer */
-    uint16_t rx_qid;
+    __u16 rx_qid;
     /* Length of RX buffer */
-    uint32_t rx_len;
+    __u32 rx_len;
     /* Number of available bytes to be read */
-    uint32_t rx_avail;
+    __u32 rx_avail;
     /* Head of RX buffer */
-    uint32_t rx_head;
+    __u32 rx_head;
     /* Pointer to start of RX buffer in shared memory */
     void *rx_buf;
     
     /* Queue ID used for TX buffer */
-    uint16_t tx_qid;
+    __u16 tx_qid;
     /* Length of the TX buffer */
-    uint32_t tx_len;
+    __u32 tx_len;
     /* Number of bytes written to buffer */
-    uint32_t tx_avail;
+    __u32 tx_avail;
     /* Head of the TX buffer */
-    uint32_t tx_head;
+    __u32 tx_head;
     /* Pointer to the start of the TX buffer in shared memory */
     void *tx_buf;
 };
 
 struct udp_context_lib {
   /* ID for this context */
-  uint16_t id;
+  __u16 id;
   /* ID for this context in slow-path */
-  uint16_t id_slow;
+  __u16 id_slow;
 
   /* Queue from app context to slow-path */
   struct equeue *app_slow_q;  
@@ -63,7 +63,7 @@ struct udp_context_lib {
   struct dqueue *slow_app_q;
   
   /* Outgoing and incoming queue for each fast-path core*/
-  uint16_t ncores;
+  __u16 ncores;
   struct equeue **app_fast_qs;
   struct dqueue **fast_app_qs;
 };

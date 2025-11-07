@@ -22,14 +22,14 @@ extern "C"
     void ebpf_vm_unload_code(ebpf_vm_c *h);
 
     /* Register helper functions */
-    int ebpf_vm_register_helper(ebpf_vm_c *h, uint32_t id, void *fn, char *name);
+    int ebpf_vm_register_helper(ebpf_vm_c *h, __u32 id, void *fn, char *name);
 
     /* JIT compiled loaded eBPF code */
     int ebpf_vm_compile(ebpf_vm_c *h);
 
     /* Execute jitted function */
     int ebpf_vm_exec(ebpf_vm_c *h, void *arg, 
-      size_t arg_len, uint64_t return_value);
+      size_t arg_len, __u64 *return_value);
 
 #ifdef __cplusplus
 }

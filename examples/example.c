@@ -1,11 +1,8 @@
 #include <stdlib.h>
-#include <assert.h>
 #include <arpa/inet.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <stdio.h>
 
-#include <cham_lib.h>
 #include <udp_lib.h>
 
 int main (int argc, char **argv)
@@ -13,7 +10,7 @@ int main (int argc, char **argv)
   int ret, sockfd;
   struct sockaddr_in addr;
   socklen_t addr_len;
-  uint8_t buf[2048];
+  __u8 buf[2048];
   // struct proto_lib *p;
   // struct guest_lib *g;
   

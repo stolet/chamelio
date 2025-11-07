@@ -1,7 +1,7 @@
 #ifndef IVSHMEMIF_H_
 #define IVSHMEMIF_H_
 
-#include <stdint.h>
+#include <linux/types.h>
 
 #include "control.h"
 
@@ -10,7 +10,7 @@
 struct ivshmem_event {
   int type;
   int fd;
-  uint8_t vmid;
+  __u8 vmid;
 };
 
 int ivshmemif_init(struct control_context *ctx);

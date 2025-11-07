@@ -8,8 +8,10 @@
 #include <string.h>
 
 #include "include/cham_lib.h"
-#include "queue.h"
+#include "queue_fns.h"
+#include "queue_types.h"
 #include "log.h"
+#include "shmalloc.h"
 #include "uxsocket.h"
 
 static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe);
@@ -75,7 +77,7 @@ close_sockfd:
   return NULL;
 }
 
-struct proto_lib *cham_new_proto(struct guest_lib *g, uint32_t shmsize)
+struct proto_lib *cham_new_proto(struct guest_lib *g, __u32 shmsize)
 {
   int ret;
   ssize_t sz, off;
@@ -86,7 +88,7 @@ struct proto_lib *cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   struct queue_new_proto_res *res;
   struct shm_allocator *alloc;
   struct shm_handle *sh;
-  uint8_t resp_buf[sizeof(*res)];
+  __u8 resp_buf[sizeof(*res)];
   struct queue_new_proto_req req = {
       .proto_type = 1,
   };
@@ -120,7 +122,7 @@ struct proto_lib *cham_new_proto(struct guest_lib *g, uint32_t shmsize)
   off = 0;
   while (off < sizeof(*res))
   {
-    sz = read(g->uxsocket_fd, (uint8_t *)res + off, sizeof(*res) - off);
+    sz = read(g->uxsocket_fd, (__u8 *)res + off, sizeof(*res) - off);
     if (sz < 0)
     {
       LOG_ERROR("read failed");
@@ -204,10 +206,10 @@ struct proto_lib *cham_new_proto(struct guest_lib *g, uint32_t shmsize)
 }
 
 struct proto_queue_lib * cham_new_queue(struct proto_lib *p, 
-    uint32_t nelems, uint32_t elsize)
+    __u32 nelems, __u32 elsize)
 {
   int ret;
-  uint16_t nqueues;
+  __u16 nqueues;
   struct equeue *q;
   struct queue_entry *qe;
   struct queue_new_queue_req *req;
@@ -226,7 +228,7 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p,
   req->nelems = nelems;
   req->elsize = elsize;
   pq = &p->queues[nqueues];
-  req->opaque = (uint64_t) pq;
+  req->opaque = (__u64) pq;
 
   /* Set to 0 so we can check queue was initialised when we poll control */
   pq->elsize = 0;
@@ -249,10 +251,10 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p,
 }
 
 struct proto_map_lib *cham_new_map(struct proto_lib *p,
-                                   uint32_t nelems, uint32_t elsize)
+                                   __u32 nelems, __u32 elsize)
 {
   int ret;
-  uint16_t nmaps;
+  __u16 nmaps;
   struct equeue *q;
   struct queue_entry *qe;
   struct queue_new_map_req *req;
@@ -271,7 +273,7 @@ struct proto_map_lib *cham_new_map(struct proto_lib *p,
   req->nelems = nelems;
   req->elsize = elsize;
   m = &p->maps[nmaps];
-  req->opaque = (uint64_t) m;
+  req->opaque = (__u64) m;
 
   /* Set to 0 so we can check map was initialised when we poll control */
   m->nelems = 0;
@@ -292,7 +294,7 @@ struct proto_map_lib *cham_new_map(struct proto_lib *p,
   return &p->maps[nmaps];
 }
 
-int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
+int cham_enable_queue(struct proto_lib *p, __u16 qid, __u16 core)
 {
   int ret;
   struct equeue *q;
@@ -321,7 +323,7 @@ int cham_enable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
   return 0;
 }
 
-int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
+int cham_disable_queue(struct proto_lib *p, __u16 qid, __u16 core)
 {
   int ret;
   struct equeue *q;
@@ -350,7 +352,7 @@ int cham_disable_queue(struct proto_lib *p, uint16_t qid, uint16_t core)
   return 0;
 }
 
-struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, uint32_t size)
+struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, __u32 size)
 {
   struct equeue *q = p->guest_ctl_q;
   struct queue_entry *qe = queue_tail(q);
@@ -361,7 +363,7 @@ struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, uint32_t size)
   }
   struct queue_allocate_ebpf_req *req = &qe->data.alloc_ebpf_req;
   req->size = size;
-  req->opaque = (uint64_t)&p->ebpf_program;
+  req->opaque = (__u64)&p->ebpf_program;
   p->ebpf_program.flag = 0; //reset flag to 0 before sending request
 
   int ret = queue_enqueue(q, QUEUE_ALLOCATE_EBPF_REQ);
@@ -377,7 +379,7 @@ struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, uint32_t size)
   return &p->ebpf_program;
 }
 
-int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
+int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, __u32 size)
 {
   if (p->ebpf_program.size == 0) 
   {
@@ -386,7 +388,7 @@ int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, uint32_t size)
   }
   
   /* Copy ebpf bytecode to shared memory */
-  void *shm_addr = (uint8_t *) p->shm_base + p->ebpf_program.off;
+  void *shm_addr = (__u8 *) p->shm_base + p->ebpf_program.off;
   memcpy(shm_addr, ebpf_bytecode, p->ebpf_program.size);
 
   struct equeue *q = p->guest_ctl_q;

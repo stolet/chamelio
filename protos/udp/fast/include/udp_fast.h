@@ -3,6 +3,7 @@
 
 #include "utils.h"
 #include "cham_fast.h"
+#include "queue_types.h"
 
 /*** ETH ***/
 
@@ -11,7 +12,7 @@
 #define ETH_ADDR_LEN 6
 
 struct eth_addr {
-  uint8_t addr[ETH_ADDR_LEN];
+  __u8 addr[ETH_ADDR_LEN];
 } __attribute__ ((packed));
 
 struct eth_hdr {
@@ -66,9 +67,9 @@ typedef beui32_t ip_addr_t;
 
 struct ip_hdr {
   /* Version / header length */
-  uint8_t _v_hl;
+  __u8 _v_hl;
   /* Type of service */
-  uint8_t _tos;
+  __u8 _tos;
   /* Total length */
   beui16_t len;
   /* Identification */
@@ -76,11 +77,11 @@ struct ip_hdr {
   /* Fragment offset field */
   beui16_t offset;
   /* Time to live */
-  uint8_t ttl;
+  __u8 ttl;
   /* Protocol*/
-  uint8_t proto;
+  __u8 proto;
   /* Checksum */
-  uint16_t chksum;
+  __u16 chksum;
   /* Source IP address */
   ip_addr_t src;
   /* Destination IP address */
@@ -97,7 +98,7 @@ struct udp_hdr {
   /* Length of header and data */
   beui16_t len;
   /* Checksum */
-  uint16_t chksum;
+  __u16 chksum;
 } __attribute__ ((packed));
 
 struct udp_pkt {

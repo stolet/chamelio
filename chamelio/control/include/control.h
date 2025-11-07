@@ -10,15 +10,15 @@
 
 struct proto_queue_control {
   /* Queue ID */
-  uint16_t id;
+  __u16 id;
   /* Number of elements in the queue */
-  uint32_t nelems;
+  __u32 nelems;
   /* Size of elements in the queue */
-  uint32_t elsize;
+  __u32 elsize;
   /* Offset in shared memory for start of this queue */
-  uint64_t off;
+  __u64 off;
   /* Core where this queue is currently running */
-  uint16_t core;
+  __u16 core;
 };
 
 struct proto_control {
@@ -26,17 +26,17 @@ struct proto_control {
   struct guest_control *guest;
 
   /* Number of queues in shared memory */
-  uint16_t nqueues;
+  __u16 nqueues;
   /* List of queues for this protocol */
   struct proto_queue_control queues[MAX_PROTO_QUEUES];
 
   /* Number of maps created */
-  uint16_t nmaps;
+  __u16 nmaps;
 };
 
 struct guest_control {
   /* ID of registered guest */
-  uint8_t id;
+  __u8 id;
 
   /* File descriptor for shared memory region for this guest */
   int shm_fd;
@@ -58,7 +58,7 @@ struct control_context {
   /* Configuration parameters */
   struct configuration *config;
   /* Next fast-path core to poll */
-  uint16_t next_core;
+  __u16 next_core;
   /* Queues from the fast-path to control-path. One per core. */
   struct dqueue **fast_ctl_qs;
   /* Queues from the control-path to the fast-path. One per core */
@@ -80,9 +80,9 @@ struct control_context {
   int guest_epfd;
 
   /* Number of registered guests */
-  uint8_t n_guests;
+  __u8 n_guests;
   /* Next guest to poll */
-  uint16_t next_guest;
+  __u16 next_guest;
   /* Guests that have registered with chamelio */
   struct guest_control *guests;
 };

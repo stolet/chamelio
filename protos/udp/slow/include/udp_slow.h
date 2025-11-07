@@ -20,7 +20,7 @@
 
 struct udp_app_context_slow {
   /* ID for application context */
-  uint8_t id;
+  __u8 id;
   /* Application this context belongs to */
   struct udp_app_slow *app;
   /* Queue for messages app->slow */
@@ -35,15 +35,15 @@ struct udp_app_context_slow {
 
 struct udp_app_slow {
   /* ID of the application */
-  uint8_t id;
+  __u8 id;
   /* Number of registered application contexts */
-  uint8_t n_ctxs;
+  __u8 n_ctxs;
   /* Next context to poll */
-  uint8_t next_ctx;
+  __u8 next_ctx;
   /* List of application contexts */
   struct udp_app_context_slow ctxs[MAX_CTXS];
   /* Number of sockets registered */
-  uint32_t n_socks;
+  __u32 n_socks;
   /* Chamelio socket map */
   struct proto_map_lib *socks_map;
 };
@@ -60,9 +60,9 @@ struct udp_slow_context {
   struct proto_lib *proto;
 
   /* Number of registered applications */
-  uint8_t n_apps;
+  __u8 n_apps;
   /* Next app to poll */
-  uint8_t next_app;
+  __u8 next_app;
   /* Apps that have registered with chamelio */
   struct udp_app_slow apps[MAX_APPS];
 };

@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include <stdint.h>
+#include <linux/types.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <assert.h>
@@ -8,9 +8,9 @@
 #include <sys/mman.h>
 
 #include "log.h"
-#include "queue.h"
 #include "cham_lib.h"
 #include "uxsocket.h"
+#include "queue.h"
 
 int cham_init_ivshmem()
 {

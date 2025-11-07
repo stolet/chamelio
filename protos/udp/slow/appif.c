@@ -12,7 +12,7 @@
 #include "log.h"
 #include "appif.h"
 #include "udp_slow.h"
-#include "queue.h"
+#include "queue_fns.h"
 #include "uxsocket.h"
 
 #define EP_LISTEN_APP 1

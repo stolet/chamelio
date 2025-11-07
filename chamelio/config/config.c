@@ -1,7 +1,7 @@
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
+#include <linux/types.h>
 #include <string.h>
 #include <arpa/inet.h>
 #include <inttypes.h>
@@ -69,12 +69,12 @@ static struct option opts[] = {
 
 static int config_defaults(struct configuration *c, char *progname);
 static void print_usage(struct configuration *c, char *progname);
-static int parse_int64(const char *s, uint64_t *pi);
-static int parse_int32(const char *s, uint32_t *pu32);
+static int parse_int64(const char *s, __u64 *pi);
+static int parse_int32(const char *s, __u32 *pu32);
 static int parse_arg_append(char *s, struct configuration *c);
-static int parse_cidr(char *s, uint32_t *ip, uint8_t *prefix);
+static int parse_cidr(char *s, __u32 *ip, __u8 *prefix);
 static int parse_route(char *s, struct configuration *c);
-static int parse_ipv4(const char *s, uint32_t *ip);
+static int parse_ipv4(const char *s, __u32 *ip);
 
 int config_parse(struct configuration *c, int argc, char **argv)
 {
@@ -214,28 +214,28 @@ static void print_usage(struct configuration *c, char *progname)
       "\n"
       "Memory sizes:\n"
       "  --shm-len=LEN                           Shared memory len"
-           "[default: %"PRIu64"]\n"
+           "[default: %llu]\n"
       "  --shm-internal-len=LEN                  Internal shared memory len"
-           "[default: %"PRIu64"]\n"
+           "[default: %llu]\n"
       "  --cham-queue-len=LEN                    Chamelio Fast <-> Control queue len"
-           "[default: %"PRIu64"]\n"
+           "[default: %llu]\n"
       "  --agt-queue-len=LEN                     Guest agent <-> Chamelio queue len"
-           "[default: %"PRIu64"]\n"
+           "[default: %llu]\n"
       "IP protocol parameters:\n"
       "  --ip-route=DEST[/PREFIX],NEXTHOP        Add route\n"
       "  --ip-addr=ADDR[/PREFIXLEN]              Set local IP address\n"
       "Max values:\n"
       "  --max-guests=GUESTS                     Max number of guests\n"
-          "[default: %"PRIu32"]\n"
+          "[default: %u]\n"
       "  --max-apps=APPS                         Max number of apps per guest\n"
-          "[default: %"PRIu32"]\n"
+          "[default: %u]\n"
       "  --max-app-ctxs=CTXS                     Max number of app ctxs per app\n"
-          "[default: %"PRIu32"]\n"
+          "[default: %u]\n"
       "  --max-BUFS=BUFS                         Max number of bufs per app\n"
-          "[default: %"PRIu32"]\n"
+          "[default: %u]\n"
       "Fast path:\n"
       "  --fp-cores-max=CORES                    Max cores used for fast path"
-           "[default: %"PRIu32"]\n"
+           "[default: %u]\n"
       "  --fp-no-xsumoffload                     Disable TX Checksum offload "
           "[default: enabled]\n"
       "Miscelaneous:\n"
@@ -248,7 +248,7 @@ static void print_usage(struct configuration *c, char *progname)
       c->fp_cores_max);
 }
 
-static int parse_int64(const char *s, uint64_t *pi)
+static int parse_int64(const char *s, __u64 *pi)
 {
   char *end;
   *pi = strtoul(s, &end, 10);
@@ -257,7 +257,7 @@ static int parse_int64(const char *s, uint64_t *pi)
   return 0;
 }
 
-static int parse_int32(const char *s, uint32_t *pi)
+static int parse_int32(const char *s, __u32 *pi)
 {
   char *end;
   *pi = strtoul(s, &end, 10);
@@ -266,7 +266,7 @@ static int parse_int32(const char *s, uint32_t *pi)
   return 0;
 }
 
-static int parse_int8(const char *s, uint8_t *pi)
+static int parse_int8(const char *s, __u8 *pi)
 {
   char *end;
   *pi = strtoul(s, &end, 10);
@@ -292,7 +292,7 @@ static int parse_arg_append(char *s, struct configuration *c)
   return 0;
 }
 
-static int parse_cidr(char *s, uint32_t *ip, uint8_t *prefix)
+static int parse_cidr(char *s, __u32 *ip, __u8 *prefix)
 {
   char *slash;
 
@@ -366,7 +366,7 @@ failed:
   return -1;
 }
 
-int parse_ipv4(const char *s, uint32_t *ip)
+int parse_ipv4(const char *s, __u32 *ip)
 {
   if (inet_pton(AF_INET, s, ip) != 1) 
   {

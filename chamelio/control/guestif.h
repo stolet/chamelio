@@ -1,12 +1,12 @@
 #ifndef GUESTIF_H_
 #define GUESTIF_H_
 
-#include <stdint.h>
+#include <linux/types.h>
 
 #include <cham_lib.h>
 
 #include "control.h"
-#include "queue.h"
+#include "queue_types.h"
 #include "shmalloc.h"
 
 struct guest_event {

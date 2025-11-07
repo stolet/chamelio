@@ -4,15 +4,15 @@
 // #include "routing.h"
 // #include "../../config/config.h"
 
-// static inline uint32_t prefix_len_mask(uint8_t len);
-// static inline struct routing_table_entry *resolve(struct routing_table *rt, uint32_t ip);
+// static inline __u32 prefix_len_mask(__u8 len);
+// static inline struct routing_table_entry *resolve(struct routing_table *rt, __u32 ip);
 
 // int routing_init(struct routing_table *rt, struct configuration *config)
 // {
 //   struct routing_table_entry *entries;
 //   struct config_route *cr;
 //   size_t i;
-//   uint32_t mask;
+//   __u32 mask;
 
 //   /* count number of entries to be added */
 //   rt->len = 1;
@@ -53,7 +53,7 @@
 //   return 0;
 // }
 
-// int routing_resolve(struct routing_table *rt, struct nicif_completion *comp, uint32_t ip, uint64_t *mac)
+// int routing_resolve(struct routing_table *rt, struct nicif_completion *comp, __u32 ip, __u64 *mac)
 // {
 //   struct routing_table_entry *rte;
 
@@ -74,12 +74,12 @@
 //   return  arp_request(comp, ip, mac);
 // }
 
-// static inline uint32_t prefix_len_mask(uint8_t len)
+// static inline __u32 prefix_len_mask(__u8 len)
 // {
 //   return ~((1ULL << (32 - len)) - 1);
 // }
 
-// static inline struct routing_table_entry *resolve(struct routing_table *rt, uint32_t ip)
+// static inline struct routing_table_entry *resolve(struct routing_table *rt, __u32 ip)
 // {
 //   size_t i;
 

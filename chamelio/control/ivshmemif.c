@@ -12,7 +12,8 @@
 #include "control.h"
 #include "log.h"
 #include "shmalloc.h"
-#include "queue.h"
+#include "queue_fns.h"
+#include "queue_types.h"
 #include "uxsocket.h"
 
 #define IVSHMEM_PROTOCOL_VERSION 0
@@ -181,7 +182,7 @@ static int uxsocket_accept(struct control_context *ctx)
   struct queue_new_guest_req *new_guest_req;
 
   int64_t version = IVSHMEM_PROTOCOL_VERSION;
-  uint64_t hostid = HOST_PEERID;
+  __u64 hostid = HOST_PEERID;
 
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));
