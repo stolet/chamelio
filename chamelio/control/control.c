@@ -18,6 +18,7 @@
 
 static int poll_fast(struct control_context *ctx);
 static int poll_guests(struct control_context *ctx);
+
 static int handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
 static int handle_new_map_req(struct control_context *ctx,
@@ -33,6 +34,8 @@ static int handle_free_ebpf_req(struct control_context *ctx,
 static int handle_upload_ebpf_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
 static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size);
+
+static void * bpf_memcpy(void *dst, void *src, size_t n);
 
 int control_context_init(struct control_context *ctx, 
     struct configuration *config, struct shm_handle **fc_handles,
@@ -675,12 +678,6 @@ static int verify_ebpf(void *ebpf_bytecode, size_t size)
   return 0;
 }
 
-static __u64 nop_helper(__u64 r1, __u64 r2, __u64 r3,
-                           __u64 r4, __u64 r5) {
-  (void)r1; (void)r2; (void)r3; (void)r4; (void)r5;
-  return 0;
-}
-
 /* Pointer to the memory with the jitted code inside 
    the ebpf_vm_c struct: ebpf_jitted_fn */
 static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
@@ -703,10 +700,24 @@ static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
   }
 
   // Register helper functions here
-  res = ebpf_vm_register_helper(vm, 2, (void*)nop_helper, "nop_helper");
+  res = ebpf_vm_register_helper(vm, 1001, "queue_tail", queue_tail);
   if (res != 0)
   {
-    LOG_ERROR("failed to register helper function");
+    LOG_ERROR("failed to register queue_tail helper");
+    return NULL;
+  }
+  
+  res = ebpf_vm_register_helper(vm, 1002, "queue_enqueue", queue_enqueue);
+  if (res != 0)
+  {
+    LOG_ERROR("failed to register queue_enqueue helper");
+    return NULL;  
+  }
+  
+    res = ebpf_vm_register_helper(vm, 1003, "bpf_memcpy", bpf_memcpy);
+  if (res != 0)
+  {
+    LOG_ERROR("failed to register bpf_memcpy helper");
     return NULL;
   }
 
@@ -716,6 +727,12 @@ static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
     LOG_ERROR("failed to JIT ebpf bytecode");
     return NULL;
   }
-
+  
   return vm;
+}
+
+
+static void * bpf_memcpy(void *dst, void *src, size_t n)
+{
+  return memcpy(dst, src, n);
 }

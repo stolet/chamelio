@@ -65,12 +65,14 @@ static pid_t start_chamelio()
 
 static void test_connect_guest()
 {
-  printf(ANSI_COLOR_BLUE "Testing cham_connect_guest..." ANSI_COLOR_RESET "\n");
+  printf(ANSI_COLOR_BLUE "Testing cham_connect_guest..." 
+      ANSI_COLOR_RESET "\n");
   struct guest_lib *guest = cham_connect_guest();
   TEST_ASSERT(guest != NULL, "guest is NULL");
   TEST_ASSERT(guest->uxsocket_fd >= 0, "invalid uxsocket_fd");
   TEST_ASSERT(guest->shm_fd >= 0, "invalid shm_fd");
-  printf(ANSI_COLOR_GREEN "cham_connect_guest test passed" ANSI_COLOR_RESET "\n");
+  printf(ANSI_COLOR_GREEN "cham_connect_guest test passed"
+      ANSI_COLOR_RESET "\n");
 }
 
 static void test_new_proto(struct guest_lib *guest)
@@ -112,18 +114,22 @@ static void test_new_map(struct proto_lib *proto)
 
 static void test_enable_queue(struct proto_lib *proto)
 {
-  printf(ANSI_COLOR_BLUE "Testing cham_enable_queue..." ANSI_COLOR_RESET "\n");
+  printf(ANSI_COLOR_BLUE "Testing cham_enable_queue..." 
+      ANSI_COLOR_RESET "\n");
   int ret = cham_enable_queue(proto, 0, TEST_CORE_ID);
   TEST_ASSERT(ret == 0, "enable_queue failed");
-  printf(ANSI_COLOR_GREEN "cham_enable_queue test passed" ANSI_COLOR_RESET "\n");
+  printf(ANSI_COLOR_GREEN "cham_enable_queue test passed" 
+      ANSI_COLOR_RESET "\n");
 }
 
 static void test_disable_queue(struct proto_lib *proto)
 {
-  printf(ANSI_COLOR_BLUE "Testing cham_disable_queue..." ANSI_COLOR_RESET "\n");
+  printf(ANSI_COLOR_BLUE "Testing cham_disable_queue..." 
+      ANSI_COLOR_RESET "\n");
   int ret = cham_disable_queue(proto, 0, TEST_CORE_ID);
   TEST_ASSERT(ret == 0, "disable_queue failed");
-  printf(ANSI_COLOR_GREEN "cham_disable_queue test passed" ANSI_COLOR_RESET "\n");
+  printf(ANSI_COLOR_GREEN "cham_disable_queue test passed" 
+      ANSI_COLOR_RESET "\n");
 }
 
 static void test_cham_allocate_ebpf(struct proto_lib *proto)
@@ -132,7 +138,8 @@ static void test_cham_allocate_ebpf(struct proto_lib *proto)
   struct stat statbuf;
   struct proto_ebpf_lib *ebpf;
 
-  printf(ANSI_COLOR_BLUE "Testing cham_allocate_ebpf..." ANSI_COLOR_RESET "\n");
+  printf(ANSI_COLOR_BLUE "Testing cham_allocate_ebpf..." 
+      ANSI_COLOR_RESET "\n");
   fd = open("tests/sample.bpf.o", O_RDWR);
   TEST_ASSERT(fd >= 0, "failed to open file");
   
@@ -142,30 +149,36 @@ static void test_cham_allocate_ebpf(struct proto_lib *proto)
   TEST_ASSERT(ebpf->size == statbuf.st_size, "incorrect ebpf size");
   TEST_ASSERT(ebpf->off > 0, "invalid ebpf offset"); //will it always be necessarily greater than 0?  
   
-  printf(ANSI_COLOR_GREEN "cham_allocate_ebpf test passed" ANSI_COLOR_RESET "\n");
+  printf(ANSI_COLOR_GREEN "cham_allocate_ebpf test passed" 
+      ANSI_COLOR_RESET "\n");
 }
 
 static void test_cham_upload_ebpf(struct proto_lib *proto)
 {
   int fd, ret, cmp;
   __u8 *ebpf_bytecode, *shm_addr;
-  printf(ANSI_COLOR_BLUE "Testing cham_upload_ebpf2..." ANSI_COLOR_RESET "\n");
+  printf(ANSI_COLOR_BLUE "Testing cham_upload_ebpf2..." 
+      ANSI_COLOR_RESET "\n");
 
   fd = open("tests/sample.bpf.o", O_RDWR);
   TEST_ASSERT(fd >= 0, "failed to open file");
  
-  ebpf_bytecode = mmap(NULL, proto->ebpf_program.size, PROT_READ | PROT_EXEC, MAP_PRIVATE, fd, 0);
+  ebpf_bytecode = mmap(NULL, proto->ebpf_program.size, 
+      PROT_READ | PROT_EXEC, MAP_PRIVATE, fd, 0);
   TEST_ASSERT(ebpf_bytecode != NULL, "failed to map bytecode");
  
   ret = cham_upload_ebpf(proto, ebpf_bytecode, proto->ebpf_program.size);
   TEST_ASSERT(ret == 0, "cham_upload_ebpf failed");
-  TEST_ASSERT(proto->ebpf_program.flag > 0, "ebpf upload flag not set correctly");
+  TEST_ASSERT(proto->ebpf_program.flag > 0, 
+      "ebpf upload flag not set correctly");
  
   shm_addr = (__u8 *)proto->shm_base + proto->ebpf_program.off;
   cmp = memcmp(shm_addr, ebpf_bytecode, proto->ebpf_program.size);
-  TEST_ASSERT(cmp == 0, "cham_upload_ebpf not at the correct location in shared memory");
+  TEST_ASSERT(cmp == 0, 
+      "cham_upload_ebpf not at the correct location in shared memory");
  
-  printf(ANSI_COLOR_GREEN "cham_upload_ebpf test passed" ANSI_COLOR_RESET "\n");
+  printf(ANSI_COLOR_GREEN "cham_upload_ebpf test passed" 
+      ANSI_COLOR_RESET "\n");
 }
 
 int main()

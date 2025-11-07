@@ -4,7 +4,6 @@
 #include <linux/types.h>
 #include <cham_fast.h>
 
-#include "shmalloc.h"
 #include "utils.h"
 
 /* Type of queue entries */

@@ -418,9 +418,9 @@ int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, __u32 size)
   {
     LOG_ERROR("eBPF upload failed");
     return -1;
-  } // upload failed in control plane
+  }
   
-  return ret;
+  return 0;
 }
 
 int cham_free_ebpf(struct proto_lib *p)

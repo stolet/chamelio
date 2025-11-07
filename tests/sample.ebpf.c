@@ -3,12 +3,12 @@
 
 struct cham_ebpf_ctx {};
 
-static int new_global = 100;
+static void (*ebpf_print)(void) = (void *) 2;
 
 SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
 {
-  new_global = 5;
+  ebpf_print();
   return 0;
 }
 

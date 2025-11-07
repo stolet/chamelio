@@ -1,4 +1,7 @@
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 #include <cham_lib.h>
 
 #include "appif.h"
@@ -7,6 +10,12 @@
 #include "queue_fns.h"
 #include "udp.h"
 #include "log.h"
+#include <stdio.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <fcntl.h>
 
 int init_udp_slow_context(struct udp_slow_context *ctx);
 
@@ -16,9 +25,13 @@ int handle_new_sock(struct udp_slow_context *ctx,
   struct udp_app_context_slow *actx, struct udp_queue_entry *qe);
 int handle_bind(struct udp_slow_context *ctx, 
     struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req);
-
+    
 int init_udp_slow_context(struct udp_slow_context *ctx)
 {
+  int fd, ret;
+  struct stat statbuf;
+  struct proto_ebpf_lib *ebpf;
+  __u8 *ebpf_bytecode;
   struct guest_lib *g;
   struct proto_lib *p;
 
@@ -33,6 +46,36 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   if (p == NULL)
   {
     LOG_ERROR("UDP slow-path failed to register protocol with Chamelio");
+    abort();
+  }
+  
+  fd = open(UDP_EBPF_BYTECODE, O_RDWR);
+  if (fd < 0)
+  {
+    LOG_ERROR("Failed to open UDP eBPF bytecode");
+    abort();
+  }
+  fstat(fd, &statbuf);
+  
+  ebpf = cham_allocate_ebpf(p, statbuf.st_size);
+  if (ebpf == NULL)
+  {
+    LOG_ERROR("Failed to allocate space for eBPF bytecode in shared memory");
+    abort();
+  }
+  
+  ebpf_bytecode = mmap(NULL, ebpf->size, PROT_READ | PROT_EXEC,
+      MAP_PRIVATE, fd, 0);
+  if (ebpf_bytecode == NULL)
+  {
+    LOG_ERROR("failed to mmap eBPF bytecode");
+    abort();
+  }
+  
+  ret = cham_upload_ebpf(p, ebpf_bytecode, ebpf->size);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to upload eBPF bytecode to shared memory");
     abort();
   }
 

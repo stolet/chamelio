@@ -4,9 +4,11 @@
 #include <unistd.h>
 #include <sys/un.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <netinet/in.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #include <cham_lib.h>
 

@@ -17,8 +17,9 @@ static __always_inline struct udp_sock * udp_sock_find(struct cham_map *maps,
     __u32 remote_ip_be, __u16 remote_port_be);
     
 /* Add these functions as helpers */
-static void * (*queue_tail)(struct equeue *q);
-static int (*queue_enqueue)(struct equeue *q, __u8 type);
+static void * (*queue_tail)(struct equeue *q) = (void *) 1001;
+static int (*queue_enqueue)(struct equeue *q, __u8 type) = (void *) 1002;
+static void * (*bpf_memcpy)(void *src, void *dst, size_t len) = (void *) 1003;
     
 SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
@@ -125,14 +126,16 @@ int ret;
 
   if (tail + payload_len <= sock->rx_len)
   {
-    bpf_probe_read(rx_base + tail, payload_len, payload);
-    // __builtin_memcpy(rx_base + tail, payload, payload_len);
+    // bpf_probe_read(rx_base + tail, payload_len, payload);
+    bpf_memcpy(rx_base + tail, payload, payload_len);
   }
   else
   {
     part = sock->rx_len - tail;
-    bpf_probe_read(rx_base + tail, part, payload);
-    bpf_probe_read(rx_base, payload_len - part, (__u8 *) payload + part);
+    // bpf_probe_read(rx_base + tail, part, payload);
+    // bpf_probe_read(rx_base, payload_len - part, (__u8 *) payload + part);
+    bpf_memcpy(rx_base + tail, payload, part);
+    bpf_memcpy(rx_base, (__u8 *) payload + part, payload_len - part);
   }
 
   /* Publish bytes for the consumer */
@@ -177,43 +180,67 @@ static __always_inline struct udp_sock *udp_sock_find(struct cham_map *maps,
   return &sock_map[0];
 }
 
-static __always_inline __u16 csum_fold_helper(__u32 csum)
+static __always_inline __u32 csum_add(__u32 sum, __u32 v)
 {
-  /* Fold 32-bit sum to 16 bits and invert (one's complement) */
-  csum = (csum & 0xffff) + (csum >> 16);
-  csum = (csum & 0xffff) + (csum >> 16);
-  return ~csum;
+  sum += v;
+  return (sum & 0xffff) + (sum >> 16);
+}
+
+static __always_inline __u16 csum_fold(__u32 sum)
+{
+  sum = (sum & 0xffff) + (sum >> 16);
+  sum = (sum & 0xffff) + (sum >> 16);
+  return (__u16) ~sum;
+}
+
+static __always_inline __u32 csum_partial_be16(const void *data, __u32 len)
+{
+  const __u8 *p;
+  __u16 w;
+  __u32 sum, i;
+  
+  p = (const __u8 *) data;
+  sum = 0;
+
+  #pragma clang loop unroll(disable)
+  for (i = 0; i + 1 < len; i += 2) 
+  {
+    w = ((__u16) p[i] << 8) | p[i + 1];
+    sum = csum_add(sum, w);
+  }
+  
+  if (len & 1) 
+  {
+    sum = csum_add(sum, (__u32) p[len - 1] << 8);
+  }
+  
+  return sum;
 }
 
 static __always_inline __u16 ipv4_checksum(struct ip_hdr *ip)
 {
-  __u32 ihl_bytes, sum;
-  __u16 old, csum;
-
-  ihl_bytes = (__u32) IPH_HL(ip) << 2;
-  old = ip->chksum;
-  sum = bpf_csum_diff(NULL, 0, (__be32 *) ip, ihl_bytes, 0);
-  csum = csum_fold_helper(sum);
-
-  return csum;
+  __u32 ihl_bytes = (__u32) IPH_HL(ip) << 2;
+  __u32 sum = csum_partial_be16((const void *) ip, ihl_bytes);
+  return csum_fold(sum);
 }
 
-/* Compute UDP checksum: IP pseudo-header + UDP hdr + payload */
-static __always_inline __u16 udp_checksum(struct ip_hdr *ip, 
+static __always_inline __u16 udp_checksum(struct ip_hdr *ip,
     struct udp_hdr *udp)
 {
-  __u16 udp_len, csum;
-  __u32 sum, ph;
-
+  __u16 csum;
+  __u32 udp_len, sum;
+  
   udp_len = f_beui16(udp->len);
-  sum = bpf_csum_diff(NULL, 0, (__be32 *) udp, udp_len, 0);
-  sum = bpf_csum_diff(NULL, 0, (__be32 *) &ip->src, 4, sum);
-  sum = bpf_csum_diff(NULL, 0, (__be32 *) &ip->dst, 4, sum);
+  sum = 0;
 
-  ph = (__u32) IP_PROTO_UDP << 16 | udp->len.x;
-  sum = bpf_csum_diff(NULL, 0, (__be32 *) &ph, sizeof(ph), sum);
+  sum = csum_add(sum, csum_partial_be16((const void *) udp, udp_len));
 
-  csum = csum_fold_helper(sum);
+  sum = csum_add(sum, csum_partial_be16((const void *) &ip->src, 4));
+  sum = csum_add(sum, csum_partial_be16((const void *) &ip->dst, 4));
 
+  sum = csum_add(sum, 0x0011);                
+  sum = csum_add(sum, bpf_htons(udp_len));     
+
+  csum = csum_fold(sum);
   return csum ? csum : (__u16) 0xffff;
 }

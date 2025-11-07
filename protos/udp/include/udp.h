@@ -14,6 +14,8 @@
 
 #define ID_INVALID (-1U)
 
+#define UDP_EBPF_BYTECODE "protos/udp/fast/udp_fast.bpf.o"
+
 /* Entry for the socket map */
 struct udp_sock {
   /* Socket ID */
