@@ -29,7 +29,7 @@ extern "C"
 
     /* Execute jitted function */
     int ebpf_vm_exec(ebpf_vm_c *h, void *arg, 
-      size_t arg_len, __u64 *return_value);
+      size_t arg_len, int *return_value);
 
 #ifdef __cplusplus
 }

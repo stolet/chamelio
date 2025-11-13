@@ -40,16 +40,17 @@ struct proto_fast {
   /* Array of nodes for enabled queues dequeued by Chamelio */
   struct cham_dqueue dqueues[MAX_PROTO_QUEUES];
   /* Handle containing protocol state passed to custom fast-path */  
-  struct cham_proto_handle handle;
+  // struct cham_proto_handle handle;
+  struct cham_ebpf_ctx ebpf_ctx;
 
   /* These are used as baselines to the ebpf jitted functions */
   /* Non-ebpf function to processes one received packet */
-  int (*event_rx)(void *pkt, struct cham_proto_handle *handle);
-  /* Non-ebpf function to process one scheduled packet for transmission */
-  int (*event_tx)(void *pkt, struct cham_proto_handle *handle);
-  /* Non-ebpf function to dequeue and process entry from a queue */
-  int (*event_deq)(int qid, struct queue_entry *qe, 
-      struct cham_proto_handle *handle);
+  // int (*event_rx)(void *pkt, struct cham_proto_handle *handle);
+  // /* Non-ebpf function to process one scheduled packet for transmission */
+  // int (*event_tx)(void *pkt, struct cham_proto_handle *handle);
+  // /* Non-ebpf function to dequeue and process entry from a queue */
+  // int (*event_deq)(int qid, struct queue_entry *qe, 
+  //     struct cham_proto_handle *handle);
 
   /* Jitted LLVM VM to process one received packet */
   struct ebpf_vm_c *event_rx_vm;

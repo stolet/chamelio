@@ -13,6 +13,7 @@
 #include "log.h"
 #include "config.h"
 #include "controlif.h"
+#include "ebpf.h"
 
 
 struct guest_fast * init_guest(__u8 id, __u64 shm_len);
@@ -75,7 +76,7 @@ int fast_context_init(struct fast_context *f_ctx,
   {
     for (j = 0; j < MAX_SCHED_ENTRIES; j++)
     {
-      f_ctx->guests[i].proto.handle.sched.entries[j].id = SCHED_ID_INVALID;
+      f_ctx->guests[i].proto.ebpf_ctx.sched.entries[j].id = SCHED_ID_INVALID;
     }
   }
 
@@ -128,7 +129,7 @@ int fast_loop(struct fast_context *ctx)
 
 int poll_rx(struct fast_context *ctx)
 {
-  int i, n;
+  int i, n, ret;
   struct rte_mbuf *mbs[BATCH_SIZE];
   struct guest_fast *g;
 
@@ -147,8 +148,11 @@ int poll_rx(struct fast_context *ctx)
     g = find_guest(ctx, mbs[i]);
     if (g != NULL)
     {
-      g->proto.event_rx(rte_pktmbuf_mtod(mbs[i], __u8 *), 
-          &g->proto.handle);
+      // g->proto.event_rx(rte_pktmbuf_mtod(mbs[i], __u8 *), 
+          // &g->proto.handle);
+      g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[i], __u8 *);
+      ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx, 
+          sizeof(struct cham_ebpf_ctx), &ret);
     }
   }
 
@@ -159,7 +163,7 @@ int poll_rx(struct fast_context *ctx)
 
 int poll_queues(struct fast_context *ctx)
 {
-  int i, ret, ndeq;
+  int i, ret, deq_ret, ndeq;
   __u16 qid;
   struct guest_fast *g;
   struct cham_dqueue *q;
@@ -184,8 +188,13 @@ int poll_queues(struct fast_context *ctx)
 
       /* Execute custom dequeue procedure */
       ndeq++;
-      g->proto.event_deq(q->id, qe, &g->proto.handle);
-
+      g->proto.ebpf_ctx.pkt = NULL;
+      g->proto.ebpf_ctx.qe = qe;
+      g->proto.ebpf_ctx.qid = q->id;
+      ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx, 
+          sizeof(struct cham_ebpf_ctx), &deq_ret);
+      // g->proto.event_deq(q->id, qe, &g->proto.handle);
+      
       /* Pop the queue */
       ret = queue_dequeue(&q->dq);
       if (ret != 0)
@@ -203,8 +212,8 @@ int poll_queues(struct fast_context *ctx)
 int poll_tx(struct fast_context *ctx)
 {
   unsigned n;
-  int i, ret, n_used;
-  struct guest_fast *guest;
+  int i, ret, tx_ret, n_used;
+  struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
   
@@ -218,19 +227,27 @@ int poll_tx(struct fast_context *ctx)
   /* Allocate mbufs to use for transmission from mempool cache */
   tx_cache_alloc(ctx, &mbs, n);
 
-  guest = ctx->guests;
+  g = ctx->guests;
   n_used = 0;
-  for (i = 0; i < n_guests && guest != NULL && n_used < n; i++)
+  for (i = 0; i < n_guests && g != NULL && n_used < n; i++)
   {
+    g = &ctx->guests[i];
+    if (g->proto.event_tx_vm == NULL)
+      continue;
+    
     for (;n_used < n;)
     {
       mbs[n_used]->data_off = 0;
-      ret = guest->proto.event_tx(rte_pktmbuf_mtod(mbs[n_used], __u8 *), 
-          &guest->proto.handle);
+      // ret = g->proto.event_tx(rte_pktmbuf_mtod(mbs[n_used], __u8 *), 
+          // &guest->proto.handle);
+      g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[n_used], __u8 *);
+      ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx.pkt, 
+          sizeof(struct cham_ebpf_ctx), &tx_ret);
 
-      if (ret >= 0)
+      /* Add to transmission buffer if packet processed for TX */
+      if (tx_ret >= 0)
       {
-        mbs[n_used]->pkt_len = mbs[n_used]->data_len = ret;
+        mbs[n_used]->pkt_len = mbs[n_used]->data_len = tx_ret;
         ctx->tx_mbs[ctx->tx_n] = mbs[n_used];
         ctx->tx_n++;
         n_used++;

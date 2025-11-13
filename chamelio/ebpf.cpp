@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <new>
+#include <iostream>
 
 #include <llvmbpf/llvmbpf.hpp>
 #include "ebpf.h"
@@ -74,13 +75,15 @@ extern "C"
   }
 
   int ebpf_vm_exec(ebpf_vm_c *h, void *arg, 
-      size_t arg_len, __u64 *return_value)
+      size_t arg_len, int *return_value)
   {
-    uint64_t rv = return_value ? *return_value : 0;
-    return h->vm.exec(arg, arg_len, rv);
+    int exec_ret;
+    uint64_t rv = 0;
     
-    if (return_value)
-      *return_value = rv;
+    exec_ret = h->vm.exec(arg, arg_len, rv);
+    *return_value = rv;
+    
+    return exec_ret;
   }
 
 } 

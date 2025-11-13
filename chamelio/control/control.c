@@ -4,6 +4,7 @@
 #include <string.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
+#include <rte_ip4.h>
 
 #include "control.h"
 #include "shmalloc.h"
@@ -13,6 +14,7 @@
 #include "log.h"
 #include "queue_fns.h"
 #include "queue_types.h"
+#include "scheduler_fns.h"
 
 #include "ebpf.h"
 
@@ -36,6 +38,8 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
 static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size);
 
 static void * bpf_memcpy(void *dst, void *src, size_t n);
+static __u16 ipv4_checksum(void *ip_hdr);
+static __u16 ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr);
 
 int control_context_init(struct control_context *ctx, 
     struct configuration *config, struct shm_handle **fc_handles,
@@ -714,13 +718,48 @@ static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
     return NULL;  
   }
   
-    res = ebpf_vm_register_helper(vm, 1003, "bpf_memcpy", bpf_memcpy);
+  res = ebpf_vm_register_helper(vm, 1003, "bpf_memcpy", bpf_memcpy);
   if (res != 0)
   {
     LOG_ERROR("failed to register bpf_memcpy helper");
     return NULL;
   }
 
+  res = ebpf_vm_register_helper(vm, 1005, "ipv4_checksum", ipv4_checksum);
+  if (res != 0)
+  {
+    LOG_ERROR("failed to register ipv4_checksum helper");
+    return NULL;
+  }
+  
+  res = ebpf_vm_register_helper(vm, 1006, "ipv4_udptcp_cksum", ipv4_udptcp_cksum);
+  if (res != 0)
+  {
+    LOG_ERROR("failed to register ipv4_udptcp_cksum helper");
+    return NULL;
+  }
+  
+  res = ebpf_vm_register_helper(vm, 1007, "sched_head", sched_head);
+  if (res != 0)
+  {
+    LOG_ERROR("failed to register sched_head helper");
+    return NULL;
+  }
+  
+  res = ebpf_vm_register_helper(vm, 1008, "sched_pop", sched_pop);
+  if (res != 0)
+  {
+    LOG_ERROR("failed to register sched_pop helper");
+    return NULL;
+  }
+  
+  res = ebpf_vm_register_helper(vm, 1009, "sched_add", sched_add);
+  if (res != 0)
+  {
+    LOG_ERROR("failed to register sched_add helper");
+    return NULL;
+  }
+  
   res = ebpf_vm_compile(vm); // LLVM JIT
   if (res != 0)
   {
@@ -735,4 +774,14 @@ static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
 static void * bpf_memcpy(void *dst, void *src, size_t n)
 {
   return memcpy(dst, src, n);
+}
+
+static __u16 ipv4_checksum(void *ip_hdr)
+{
+  return rte_ipv4_cksum(ip_hdr);
+}
+
+static __u16 ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr)
+{
+  return rte_ipv4_udptcp_cksum(ip_hdr, udp_hdr);
 }

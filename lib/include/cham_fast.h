@@ -63,6 +63,8 @@ struct cham_ebpf_ctx {
   void *pkt;
   /* Queue ID for used for event_deq */
   int qid;
+  /* Queue entry dequeued by Chamelio */
+  struct queue_entry *qe;
   /* List of protocol queues use by fast-path to enqueue */
   struct cham_equeue equeues[MAX_PROTO_QUEUES]; 
   /* List of created protocol maps */

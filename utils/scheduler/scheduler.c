@@ -8,6 +8,8 @@ void sched_init(struct cham_scheduler *sched)
   sched->tail = SCHED_ID_INVALID;
 }
 
+int yooo = 0;
+
 int sched_add(struct cham_scheduler *sched, __u32 id, __u32 priority)
 {
   int prev, cur;
@@ -22,6 +24,7 @@ int sched_add(struct cham_scheduler *sched, __u32 id, __u32 priority)
   {
     sched->head = id;
     sched->tail = id;
+    yooo = 1;
     return 0;
   }
 

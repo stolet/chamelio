@@ -82,13 +82,17 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
   g->proto.dqueues_tail = PROTOQ_ID_INVALID;
 
   /* TODO: Add ebpf code here */
-  g->proto.event_rx = udp_event_rx;
-  g->proto.event_tx = udp_event_tx;
-  g->proto.event_deq = udp_event_deq;
+  // g->proto.event_rx = udp_event_rx;
+  // g->proto.event_tx = udp_event_tx;
+  // g->proto.event_deq = udp_event_deq;
+  
+  g->proto.event_rx_vm = NULL;
+  g->proto.event_tx_vm = NULL;
+  g->proto.event_deq_vm = NULL;
   
   /* Init qman */
-  sched_init(&g->proto.handle.sched);
-  g->proto.handle.shm_base = g->shm_base;
+  sched_init(&g->proto.ebpf_ctx.sched);
+  g->proto.ebpf_ctx.shm_base = g->shm_base;
 
   ctx->n_guests++;
 }
@@ -103,7 +107,7 @@ static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe)
 
   g = &ctx->guests[req->gid];
   p = &g->proto;
-  q = &p->handle.equeues[req->qid];
+  q = &p->ebpf_ctx.equeues[req->qid];
   q->id = req->qid;
 
   equeue_init(&q->eq, req->nelems, req->elsize, g->shm_base + req->off, req->off);
@@ -120,7 +124,7 @@ static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)
 
   g = &ctx->guests[req->gid];
   p = &g->proto;
-  m = &p->handle.maps[req->gid];
+  m = &p->ebpf_ctx.maps[req->gid];
 
   m->id = req->mid;
   m->elsize = req->elsize;
