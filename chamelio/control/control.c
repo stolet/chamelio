@@ -31,8 +31,8 @@ static int handle_disableq_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe);
 static int handle_allocate_ebpf_req(struct guest_control *g, 
     struct queue_entry *qe_req);
-static int handle_free_ebpf_req(struct control_context *ctx,
-    struct guest_control *g, struct queue_entry *qe_req);
+static int handle_free_ebpf_req(struct guest_control *g, 
+    struct queue_entry *qe_req);
 static int handle_upload_ebpf_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
 static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size);
@@ -248,7 +248,7 @@ static int poll_guests(struct control_context *ctx)
         queue_dequeue(q);
         break;
       case QUEUE_FREE_EBPF_REQ:
-        handle_free_ebpf_req(ctx, g, qe);
+        handle_free_ebpf_req(g, qe);
         queue_dequeue(q);
         break;
       case QUEUE_UPLOAD_EBPF_REQ:
@@ -498,7 +498,6 @@ static int handle_allocate_ebpf_req(struct guest_control *g,
 {
   int ret;
   struct queue_allocate_ebpf_req *req;
-  struct shm_handle *sh;
   struct queue_entry *qe_res;
   struct queue_allocate_ebpf_res *res;
   
@@ -507,7 +506,7 @@ static int handle_allocate_ebpf_req(struct guest_control *g,
   assert(qe_res != NULL);
   res = (struct queue_allocate_ebpf_res *)&qe_res->data;
 
-  ret = shmalloc_alloc(g->alloc, req->size, &sh);
+  ret = shmalloc_alloc(g->alloc, req->size, &g->ebpf_shm_handle);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocate memory for eBPF program");
@@ -515,13 +514,13 @@ static int handle_allocate_ebpf_req(struct guest_control *g,
     res->off = 0;
     res->opaque = req->opaque;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_ALLOCATE_EBPF_RES);
-    assert(ret == 0); // to ensure queue-enqueue succeeds
+    assert(ret == 0);
     return -1;
   }
   
-  memset(sh->addr, 0, sh->len);
+  memset(g->ebpf_shm_handle->addr, 0, g->ebpf_shm_handle->len);
   res->size = req->size;
-  res->off = sh->off;
+  res->off = g->ebpf_shm_handle->off;
   res->opaque = req->opaque;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_ALLOCATE_EBPF_RES);
   assert(ret == 0);
@@ -648,9 +647,8 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   return 0;
 }
 
-// TODO: do I actually need these ctx?
-static int handle_free_ebpf_req(struct control_context *ctx,
-    struct guest_control *g, struct queue_entry *qe_req)
+static int handle_free_ebpf_req(struct guest_control *g, 
+    struct queue_entry *qe_req)
 {
   int ret;
   struct queue_free_ebpf_res *res;
@@ -661,17 +659,9 @@ static int handle_free_ebpf_req(struct control_context *ctx,
   
   res = (struct queue_free_ebpf_res *)&qe_res->data;
 
-  // TODO: modify this to use handler
-  // shmalloc_free(g->alloc, &sh);
+  shmalloc_free(g->alloc, g->ebpf_shm_handle);
 
-  // TODO: implement shmalloc_free with offset and size only instead of handle
-  //  not convenient as we need to find a matching offset and size everytime.
-  // TODO: modify the ebpf struct to include the handle instead of off and size
-
-  // return success for now without freeing
-  //TODO: unload the vm code and destroy it 
-
-  res->success = 0; // indicating free was successful
+  res->success = 0;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_FREE_EBPF_RES);
   assert(ret == 0);
   return 0;

@@ -243,7 +243,6 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p,
   p->nqueues++;
 
   /* Poll waiting for response */
-  /* TODO: Make this async instead of blocking here */
   while (pq->nelems == 0)
     cham_poll_control(p);
 
@@ -287,7 +286,6 @@ struct proto_map_lib *cham_new_map(struct proto_lib *p,
   p->nmaps++;
 
   /* Poll waiting for response */
-  /* TODO: Make this async instead of blocking here */
   while (m->nelems == 0)
     cham_poll_control(p);
 
@@ -373,9 +371,9 @@ struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, __u32 size)
     return NULL;
   }
 
-  //TODO: Make THIS asynchronous instead of blocking here
   while(p->ebpf_program.flag == 0)
     cham_poll_control(p);
+
   return &p->ebpf_program;
 }
 

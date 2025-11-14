@@ -57,4 +57,3 @@ RUN install -m 0644 build/_deps/spdlog-build/libspdlog.a /usr/local/lib/libspdlo
 WORKDIR /workspaces/chamelio/tests
 RUN wget https://github.com/eunomia-bpf/eunomia-bpf/releases/latest/download/ecc && chmod +x ./ecc
 RUN install -m 0755 ecc /usr/local/bin/ecc
-RUN ecc sample.ebpf.c

@@ -52,7 +52,6 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
 {
   int ret;
   __u16 ip_hdrs_len, ip_total_len, udp_len, payload_len;
-  __u64 mac_src_val, mac_dst_val;
   struct eth_hdr *eth;
   struct ip_hdr  *ip;
   struct udp_hdr *udp;
@@ -80,8 +79,6 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
     LOG_ERROR("rx drop: non-IPv4 ethertype=%04x", f_beui16(eth->type));
     return -1;
   }
-  memcpy(&mac_src_val, &eth->src, ETH_ADDR_LEN);
-  memcpy(&mac_dst_val, &eth->dst, ETH_ADDR_LEN);
 
   /* Parse IP header */
   ip = (struct ip_hdr *) ((__u8 *) pkt + sizeof(struct eth_hdr));
@@ -218,14 +215,6 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
     LOG_ERROR("failed to enqueue bump message");
     return -1;
   }
-
-  // LOG_DEBUG("rx udp: src_port=%d dst_port=%d",
-  //           f_beui16(udp->src), f_beui16(udp->dst));
-  // LOG_DEBUG("rx ip: src_ip=%08x dst_ip=%08x",
-  //           f_beui32(ip->src), f_beui32(ip->dst));
-  // LOG_DEBUG("rx eth: src_mac=%012" PRIx64 " dst_mac=%012" PRIx64,
-  //           (__u64)(be64toh(mac_src_val)),
-  //           (__u64)(be64toh(mac_dst_val)));
 
   return 0;
 }

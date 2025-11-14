@@ -34,7 +34,6 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 {
 int ret;
   __u16 ip_hdrs_len, ip_total_len, udp_len, payload_len;
-  __u64 mac_src_val, mac_dst_val;
   struct eth_hdr *eth;
   struct ip_hdr  *ip;
   struct udp_hdr *udp;
@@ -60,9 +59,6 @@ int ret;
   eth = (struct eth_hdr *) pkt;
   if (f_beui16(eth->type) != ETH_TYPE_IP)
     return -1;
-    
-  __builtin_memcpy(&mac_src_val, &eth->src, ETH_ADDR_LEN);
-  __builtin_memcpy(&mac_dst_val, &eth->dst, ETH_ADDR_LEN);
   
   /* Parse IP header */
   ip = (struct ip_hdr *) ((__u8 *) pkt + sizeof(struct eth_hdr));

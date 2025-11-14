@@ -153,6 +153,20 @@ static void test_cham_allocate_ebpf(struct proto_lib *proto)
       ANSI_COLOR_RESET "\n");
 }
 
+static void test_cham_free_ebpf(struct proto_lib *proto)
+{
+  int ret;
+
+  printf(ANSI_COLOR_BLUE "Testing cham_free_ebpf..." 
+      ANSI_COLOR_RESET "\n");
+
+  ret = cham_free_ebpf(proto);
+  TEST_ASSERT(ret == 0, "free ebpf from shm failed");
+
+  printf(ANSI_COLOR_GREEN "cham_free_ebpf test passed" 
+      ANSI_COLOR_RESET "\n");
+}
+
 static void test_cham_upload_ebpf(struct proto_lib *proto)
 {
   int fd, ret, cmp;
@@ -211,6 +225,8 @@ int main()
 
   test_cham_allocate_ebpf(proto);
   test_cham_upload_ebpf(proto);
+
+  test_cham_free_ebpf(proto);
 
   printf("All tests passed!\n");
 

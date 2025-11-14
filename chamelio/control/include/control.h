@@ -44,6 +44,8 @@ struct guest_control {
   void *shm_base;
   /* Allocator for shared memory region */
   struct shm_allocator *alloc;
+  /* eBPF shared memory handle */
+  struct shm_handle *ebpf_shm_handle;
   
   /* Queue from the guest to the Chamelio control-path */
   struct dqueue *guest_cham_q;

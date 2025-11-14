@@ -3,12 +3,9 @@
 
 struct cham_ebpf_ctx {};
 
-static void (*ebpf_print)(void) = (void *) 2;
-
 SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
 {
-  ebpf_print();
   return 0;
 }
 

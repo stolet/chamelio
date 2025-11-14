@@ -80,11 +80,6 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
   g->proto.ndqueues = 0;
   g->proto.dqueues_head = PROTOQ_ID_INVALID;
   g->proto.dqueues_tail = PROTOQ_ID_INVALID;
-
-  /* TODO: Add ebpf code here */
-  // g->proto.event_rx = udp_event_rx;
-  // g->proto.event_tx = udp_event_tx;
-  // g->proto.event_deq = udp_event_deq;
   
   g->proto.event_rx_vm = NULL;
   g->proto.event_tx_vm = NULL;
