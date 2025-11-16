@@ -9,7 +9,8 @@
 #define MAX_APPS 8
 #define MAX_CTXS 8
 #define MAX_READY 16
-#define MAX_SOCKETS 8192
+#define MIN_PORT 1002
+#define MAX_SOCKETS 65534
 #define MAX_SCHED MAX_SOCKETS
 
 #define ID_INVALID (-1U)
@@ -29,13 +30,13 @@ struct udp_sock {
   /* Queue ID to bump app */
   __u16 app_bump_qid;
   /* Destination IP */
-  __u32 dst_ip;
+  __u32 remote_ip;
   /* Destination port */
-  __u16 dst_port;
-  /* Source IP */
-  __u32 src_ip;
-  /* Source port */
-  __u16 src_port;
+  __u16 remote_port;
+  /* Local IP */
+  __u32 local_ip;
+  /* Local port */
+  __u16 local_port;
 
   /* Queue ID used for RX buffer */
   __u16 rx_qid;

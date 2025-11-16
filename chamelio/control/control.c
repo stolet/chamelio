@@ -672,6 +672,11 @@ static int verify_ebpf(void *ebpf_bytecode, size_t size)
   return 0;
 }
 
+static void bpf_print(int a)
+{
+  LOG_DEBUG("HERE %d", a);
+}
+
 /* Pointer to the memory with the jitted code inside 
    the ebpf_vm_c struct: ebpf_jitted_fn */
 static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
@@ -712,6 +717,13 @@ static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
   if (res != 0)
   {
     LOG_ERROR("failed to register bpf_memcpy helper");
+    return NULL;
+  }
+
+  res = ebpf_vm_register_helper(vm, 1004, "bpf_print", bpf_print);
+  if (res != 0)
+  {
+    LOG_ERROR("failed to register sched_add helper");
     return NULL;
   }
 

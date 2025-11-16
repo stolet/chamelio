@@ -49,6 +49,10 @@ struct udp_socket {
     __u32 tx_head;
     /* Pointer to the start of the TX buffer in shared memory */
     void *tx_buf;
+
+    /* Result from bind. Default is -1 and is set 
+       to 1 on success and 0 on failure */
+    int bind_success;
 };
 
 struct udp_context_lib {

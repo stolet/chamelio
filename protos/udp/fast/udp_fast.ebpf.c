@@ -8,10 +8,12 @@
 #include "udp_queue_types.h"
 #include "utils.h"
 
-#define SOCK_MAP_IDX 0
+#define PORT_SOCK_MAP_IDX 0
+#define SOCK_MAP_IDX 1
 
 static __always_inline struct udp_sock * udp_sock_find(struct cham_map *maps,
-    __u32 remote_ip_be, __u16 remote_port_be);
+    __u16 local_port);
+static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx);
 static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx);
 static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx);
     
@@ -28,6 +30,7 @@ static __u16 (*ipv4_udptcp_cksum)(void *ip_hdr, void *udp_hdr) = (void *) 1006;
 static struct cham_sched_entry * (*sched_head)(struct cham_scheduler *sched) = (void *) 1007;
 static int (*sched_pop)(struct cham_scheduler *sched) = (void *) 1008;
 static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u32 priority) = (void *) 1009;
+
 
 SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
@@ -108,10 +111,9 @@ int ret;
   }
 
   /* Lookup socket */
-  __u32 src_ip_be  = bpf_htonl(f_beui32(ip->src));
-  __u16 src_prt_be = bpf_ntohs(f_beui16(udp->src));
-  sock = udp_sock_find(ctx->maps, src_ip_be, src_prt_be);
+  sock = udp_sock_find(ctx->maps, f_beui16(udp->dst));
   
+  /* TODO: Socket doesn't exist so send to slow-path */
   if (sock == NULL)
     return -1;
 
@@ -139,7 +141,7 @@ int ret;
     bpf_memcpy(rx_base, (__u8 *) payload + part, payload_len - part);
   }
 
-  /* Publish bytes for the consumer */
+  /* Update number of available bytes */
   sock->rx_avail += payload_len;
   
   /* Send bump to application */
@@ -214,10 +216,8 @@ int event_tx(struct cham_ebpf_ctx *ctx)
   p->eth.dst.addr[3] = 196;
   p->eth.dst.addr[4] = 175;
   p->eth.dst.addr[5] = 230;
-
+  
   p->eth.type = t_beui16(ETH_TYPE_IP);
-  // memcpy(&mac_src_val, &p->eth.src, ETH_ADDR_LEN);
-  // memcpy(&mac_dst_val, &p->eth.dst, ETH_ADDR_LEN);
 
   /* Set IP header */
   IPH_VHL_SET(&p->ip, 4, 5);
@@ -227,15 +227,14 @@ int event_tx(struct cham_ebpf_ctx *ctx)
   p->ip.offset = t_beui16(0);
   p->ip.ttl = 0xff;
   p->ip.proto = IP_PROTO_UDP;
-  p->ip.src = t_beui32(sock->src_ip);
-  p->ip.dst = t_beui32(sock->dst_ip);
+  p->ip.src = t_beui32(sock->local_ip);
+  p->ip.dst = t_beui32(sock->remote_ip);
   p->ip.chksum = 0;
 
   /* Set UDP header */
-  p->udp.dst = t_beui16(sock->dst_port);
-  p->udp.src = t_beui16(sock->src_port);
+  p->udp.dst = t_beui16(sock->remote_port);
+  p->udp.src = t_beui16(sock->local_port);
   p->udp.len = t_beui16(udp_hdrs_len + payload_len);
-  p->udp.chksum = 0; /* UDP checksum has to be 0 before we compute it */
   
   /* Copy data to packet */
   payload = ctx->pkt + pkt_hdrs_len;
@@ -251,6 +250,8 @@ int event_tx(struct cham_ebpf_ctx *ctx)
   }
   
   /* Compute checksums */
+  /* UDP checksum has to be 0 before we compute it */
+  p->udp.chksum = 0;
   p->udp.chksum = ipv4_udptcp_cksum((void *) &p->ip, (void *) &p->udp);
   p->ip.chksum = ipv4_checksum((void *) &p->ip);
   
@@ -316,6 +317,8 @@ int event_deq(struct cham_ebpf_ctx *ctx)
 static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 {
   int ret;
+  __u16 local_port;
+  int *port_socks;
   struct udp_sock *sock, *sock_map;
   struct cham_scheduler *sched;
   struct cham_sched_entry *se;
@@ -330,9 +333,20 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   /* TODO: We want to keep a list of out-of-order bumps so
     we can appropriately send each bump to the correct address */
   /* Set IP address and port to socket */
-  sock->dst_ip = bump->tx_ip;
-  sock->dst_port = bump->tx_port;
+  sock->remote_ip = bump->tx_ip;
+  sock->remote_port = bump->tx_port;
   
+  /* Set local port for socket if it is not defined yet */
+  if (sock->local_port == 0)
+  {
+    local_port = find_free_port(ctx);
+    if (local_port == 0)
+      return -1;
+    port_socks = ctx->maps[PORT_SOCK_MAP_IDX].addr;
+    port_socks[local_port] = sock->id;
+    sock->local_port = local_port;
+  }
+
   sched = &ctx->sched;
   se = &sched->entries[sock->id];
   se->avail = se->avail + bump->tx_avail;
@@ -346,6 +360,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     if (ret != 0)
       return -1;
   }
+  
   return 0;
 }
  
@@ -370,10 +385,37 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   return 0;
 }
 
-static __always_inline struct udp_sock *udp_sock_find(struct cham_map *maps,
-    __u32 remote_ip_be, __u16 remote_port_be)
+static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
 {
+  __u16 port;
+  __u16 sock_id;
+  int *port_socks;
+
+  port_socks = ctx->maps[PORT_SOCK_MAP_IDX].addr;
+  for (port = MIN_PORT; port < MAX_SOCKETS; port++)
+  {
+    sock_id = port_socks[port];
+    if (sock_id == __UINT16_MAX__)
+      return port;
+  }
+
+  return 0;
+}
+
+static __always_inline struct udp_sock *udp_sock_find(struct cham_map *maps,
+     __u16 local_port)
+{
+  int *port_sock_map;
+  __u16 sock_id;
   struct udp_sock *sock_map;
+
+  if (local_port < MIN_PORT || local_port > 65535)
+    return NULL;
+
+  port_sock_map = maps[PORT_SOCK_MAP_IDX].addr;
+  sock_id = port_sock_map[local_port];
   sock_map = maps[SOCK_MAP_IDX].addr;
-  return &sock_map[0];
+
+  /* Subtract one from port because the map starts indexing at 0 */
+  return &sock_map[sock_id];
 }

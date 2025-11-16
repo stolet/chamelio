@@ -19,7 +19,9 @@ enum udp_queue_type {
   /* Response from slow-path for created socket */
   UDP_QUEUE_NEW_SOCK_RES,
   /* Bind message for a socket */
-  UDP_QUEUE_BIND,
+  UDP_QUEUE_BIND_REQ,
+  /* Returns if bind was successful */
+  UDP_QUEUE_BIND_RES,
   /* Bumps Chamelio when app calls send */
   UDP_QUEUE_BUMP_CHAM_TX,
   /* Bump Chamelio when app calls recv */
@@ -97,13 +99,23 @@ struct udp_queue_new_actx_res {
 } __attribute__((packed));
 
 /* Message that sends the src port and ip */
-struct udp_queue_bind {
+struct udp_queue_bind_req {
   /* Socket ID used by slow-path */
   __u32 sock_id;
   /* Source port for this bind */
-  __u16 src_port;
+  __u16 local_port;
   /* Source IP for this bind */
-  __u32 src_ip;
+  __u32 local_ip;
+  /* Opaque pointer to struct in app library */
+  __u64 opaque;
+} __attribute__((packed));
+
+/* Message that signals if bind was successful */
+struct udp_queue_bind_res {
+  /* 0 for fail 1 for success */
+  __u8 success;
+  /* Opaque pointer to struct in app library */
+  __u64 opaque;
 } __attribute__((packed));
 
 /* Message that bumps the Chamelio TX avail */
@@ -155,7 +167,8 @@ struct udp_queue_entry {
     struct udp_queue_new_actx_res new_actx_res;
     struct udp_queue_new_sock_req new_sock_req;
     struct udp_queue_new_sock_res new_sock_res;
-    struct udp_queue_bind bind;
+    struct udp_queue_bind_req bind_req;
+    struct udp_queue_bind_res bind_res;
     /* Keeps queue entry the size of half a cache line */
     __u8 raw[511];
   } __attribute__((packed)) data;

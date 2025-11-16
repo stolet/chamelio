@@ -176,7 +176,7 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   struct epoll_event ev;
   struct udp_app_slow *a;
   struct app_event *aev;
-  struct proto_map_lib *socks_map;
+  struct proto_map_lib *socks_map;  
 
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));

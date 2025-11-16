@@ -65,6 +65,11 @@ struct udp_slow_context {
   __u8 next_app;
   /* Apps that have registered with chamelio */
   struct udp_app_slow apps[MAX_APPS];
+
+  /* Translation from local port to sockets ID. 
+    Socket ID by itself is not unique but 
+    app id + socket id will give a unique ID */
+  struct proto_map_lib *port_sock_map;
 };
 
 #endif

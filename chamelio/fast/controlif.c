@@ -88,6 +88,7 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
   /* Init qman */
   sched_init(&g->proto.ebpf_ctx.sched);
   g->proto.ebpf_ctx.shm_base = g->shm_base;
+  g->proto.ebpf_ctx.nmaps = 0;
 
   ctx->n_guests++;
 }
@@ -119,7 +120,8 @@ static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)
 
   g = &ctx->guests[req->gid];
   p = &g->proto;
-  m = &p->ebpf_ctx.maps[req->gid];
+  m = &p->ebpf_ctx.maps[p->ebpf_ctx.nmaps];
+  p->ebpf_ctx.nmaps++;
 
   m->id = req->mid;
   m->elsize = req->elsize;

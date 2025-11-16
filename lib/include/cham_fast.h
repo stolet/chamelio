@@ -66,7 +66,9 @@ struct cham_ebpf_ctx {
   /* Queue entry dequeued by Chamelio */
   struct queue_entry *qe;
   /* List of protocol queues use by fast-path to enqueue */
-  struct cham_equeue equeues[MAX_PROTO_QUEUES]; 
+  struct cham_equeue equeues[MAX_PROTO_QUEUES];
+  /* Number of registered maps */
+  __u16 nmaps;
   /* List of created protocol maps */
   struct cham_map maps[MAX_PROTO_MAPS];
   /* TX scheduler for this protocol */

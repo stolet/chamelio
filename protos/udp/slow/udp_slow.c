@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <cham_lib.h>
+#include <assert.h>
 
 #include "appif.h"
 #include "udp_slow.h"
@@ -28,12 +29,14 @@ int handle_bind(struct udp_slow_context *ctx,
     
 int init_udp_slow_context(struct udp_slow_context *ctx)
 {
-  int fd, ret;
+  int fd, ret, i;
   struct stat statbuf;
   struct proto_ebpf_lib *ebpf;
   __u8 *ebpf_bytecode;
   struct guest_lib *g;
   struct proto_lib *p;
+  struct proto_map_lib *port_sock_map;
+  int *port_socks;
 
   g = cham_connect_guest();
   if (g == NULL)
@@ -78,6 +81,20 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
     LOG_ERROR("failed to upload eBPF bytecode to shared memory");
     abort();
   }
+
+  /* Create map used to hold local port to sockets translation */
+  port_sock_map = cham_new_map(p, MAX_SOCKETS, sizeof(__u16));
+  if (port_sock_map == NULL)
+  {
+    LOG_ERROR("failed to create map for port to socket translation");
+    abort();
+  }
+  ctx->port_sock_map = port_sock_map;
+
+  /* Populate map with invalid socket IDs */
+  port_socks = p->shm_base + port_sock_map->off;
+  for (i = 0; i < MAX_SOCKETS; i++)
+    port_socks[i] = __UINT16_MAX__;
 
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;
@@ -134,7 +151,7 @@ int poll_apps(struct udp_slow_context *ctx)
         handle_new_sock(ctx, actx, qe);
         queue_dequeue(q);
         break;
-      case UDP_QUEUE_BIND:
+      case UDP_QUEUE_BIND_REQ:
         handle_bind(ctx, actx, qe);
         queue_dequeue(q);
         break;
@@ -188,9 +205,10 @@ int handle_new_sock(struct udp_slow_context *ctx,
   sock->id = res->sock_id;
   sock->next_id = ID_INVALID;
   sock->core = 0;
-  sock->src_ip = ctx->proto->local_ip;
+  sock->local_ip = ctx->proto->local_ip;
   sock->app_bump_qid = actx->app_bump_qs[0]->id;
   sock->opaque = req->opaque;
+  sock->local_port = 0;
 
   /* Create queue for RX buffer */
   protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
@@ -233,9 +251,13 @@ int handle_new_sock(struct udp_slow_context *ctx,
 int handle_bind(struct udp_slow_context *ctx, 
     struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
 {
+  int ret;
+  __u32 sock_id;
+  int *port_sock_map;
   struct udp_queue_entry *qe_res;
-  struct udp_queue_bind *req;
-  struct udp_sock *sock;
+  struct udp_queue_bind_req *req;
+  struct udp_queue_bind_res *res;
+  struct udp_sock *sock, *socks_map;
 
   qe_res = queue_tail(actx->slow_app_q);
   if (qe_res == NULL)
@@ -244,11 +266,49 @@ int handle_bind(struct udp_slow_context *ctx,
     return -1;
   }
   
-  req = &qe_req->data.bind;
-  struct udp_sock *socks_map = ctx->proto->shm_base + actx->app->socks_map->off;
+  req = &qe_req->data.bind_req;
+
+  /* Return error if port is invalid */
+  res = &qe_res->data.bind_res;
+  if (req->local_port > MAX_SOCKETS)
+  {
+    LOG_ERROR("port is invalid");
+    res->success = 0;
+    res->opaque = req->opaque;
+    ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_BIND_RES);
+    if (ret != 0)
+      LOG_ERROR("failed to enqueue UDP queue bind response");
+    return -1;
+  }
+  
+  /* Return error if another socket is already using this port */
+  port_sock_map = ctx->proto->shm_base + ctx->port_sock_map->off;
+  sock_id = port_sock_map[req->local_port];
+  if (sock_id != __UINT16_MAX__)
+  {
+    LOG_ERROR("socket with this port already in use");
+    res->success = 0;
+    res->opaque = req->opaque;
+    ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_BIND_RES);
+    if (ret != 0)
+      LOG_ERROR("failed to enqueue UDP queue bind response");
+    return -1;
+  }
+
+  socks_map = ctx->proto->shm_base + actx->app->socks_map->off;
   sock = &socks_map[req->sock_id];
-  sock->src_ip = req->src_ip;
-  sock->src_port = req->src_port;
+  sock->local_ip = req->local_ip;
+  sock->local_port = req->local_port;
+  port_sock_map[req->local_port] = req->sock_id;
+
+  res->success = 1;
+  res->opaque = req->opaque;
+  ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_BIND_RES);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue UDP queue bind response");
+    return -1;
+  }
 
   return 0;
 }

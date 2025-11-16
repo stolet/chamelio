@@ -28,6 +28,7 @@ static __thread struct udp_context_lib *udp_ctx = NULL;
 static int handle_new_sock_res(struct udp_queue_entry *qe);
 static int handle_tx_bump(struct udp_queue_bump_entry *qe);
 static int handle_rx_bump(struct udp_queue_bump_entry *qe);
+static int handle_bind_res(struct udp_queue_entry *qe);
 
 int udp_connect_slow()
 {
@@ -269,8 +270,13 @@ int udp_socket()
   sock->rx_head = 0;
   sock->tx_avail = 0;
   sock->tx_head = 0;
+  sock->tx_port = 0;
+  sock->tx_ip = 0;
+  sock->rx_port = 0;
+  sock->rx_ip = 0;
+  sock->bind_success = -1;
   
-  /* Set to 0 here so we can check it was initialised when polling slow-path */
+  /* Set to 0 here so we can check if it was initialised when polling slow-path */
   sock->rx_len = 0;
 
   /* Create socket in slow-path */
@@ -304,8 +310,9 @@ int udp_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
   int ret;
   struct equeue *q;
   struct udp_queue_entry *qe;
-  struct udp_queue_bind *req;
+  struct udp_queue_bind_req *req;
   struct sockaddr_in *sin = (struct sockaddr_in *) addr;
+  struct udp_socket *sock;
   
   /* Send src ip and port to slow-path */
   q = udp_ctx->app_slow_q;
@@ -316,16 +323,28 @@ int udp_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
     return -1;
   }
   
-  req = &qe->data.bind;
-  req->sock_id = udp->socks[sockfd].sock_id;
-  req->src_ip = sin->sin_addr.s_addr;
-  req->src_port = sin->sin_port;
-  ret = queue_enqueue(q, UDP_QUEUE_BIND);
+  req = &qe->data.bind_req;
+  
+  sock = &udp->socks[sockfd];
+  req->sock_id = sock->sock_id;
+  req->local_ip = ntohl(sin->sin_addr.s_addr);
+  req->local_port = ntohs(sin->sin_port);
+  req->opaque = (__u64) sock;
+  ret = queue_enqueue(q, UDP_QUEUE_BIND_REQ);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue new sock req");
     return -1;
   }
+
+  while (sock->bind_success == -1)
+    udp_poll_slow();
+
+  if (!sock->bind_success)
+    return -1;
+
+  sock->tx_port = sin->sin_port;
+  sock->tx_ip = sin->sin_addr.s_addr;
 
   return 0;
 }
@@ -534,9 +553,7 @@ int udp_poll_slow()
   struct dqueue *q;
   struct udp_queue_entry *qe;
 
-  
-  n = 0;
-  
+  n = 0;  
   q = udp_ctx->slow_app_q;
   while (n < POLL_BATCH)
   {
@@ -552,6 +569,10 @@ int udp_poll_slow()
     {
       case UDP_QUEUE_NEW_SOCK_RES:
         handle_new_sock_res(qe);
+        queue_dequeue(q);
+        break;
+      case UDP_QUEUE_BIND_RES:
+        handle_bind_res(qe);
         queue_dequeue(q);
         break;
       default:
@@ -578,9 +599,23 @@ static int handle_new_sock_res(struct udp_queue_entry *qe)
   sock->rx_buf = udp->shm_base + res->rx_off;
   sock->tx_qid = res->tx_qid;
   sock->tx_len = res->tx_len;
-  sock->tx_buf = udp->shm_base + res->tx_off;
+  sock->tx_buf = udp->shm_base +
+ res->tx_off;
 
   return 0;  
+}
+
+static int handle_bind_res(struct udp_queue_entry *qe)
+{
+  struct udp_queue_bind_res *res;
+  struct udp_socket *sock;
+
+  res = &qe->data.bind_res;
+  sock = (struct udp_socket *) res->opaque;
+  
+  sock->bind_success = res->success;
+
+  return 0;
 }
 
 static int handle_tx_bump(struct udp_queue_bump_entry *qe)

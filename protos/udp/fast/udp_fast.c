@@ -17,36 +17,8 @@ int handle_bump_tx(struct udp_queue_bump_entry *qe,
 int handle_bump_rx(struct udp_queue_bump_entry *qe, 
     struct cham_proto_handle *handle);
 
-struct udp_sock * udp_sock_find(struct cham_proto_handle *handle,
-    __u32 remote_ip_be, __u16 remote_port_be);
-
-int mac_from_text(const char *text, __u8 out[ETH_ADDR_LEN])
-{
-  unsigned int tmp[ETH_ADDR_LEN];
-
-  if (sscanf(text, "%2x:%2x:%2x:%2x:%2x:%2x",
-             &tmp[0], &tmp[1], &tmp[2], &tmp[3], &tmp[4], &tmp[5]) != 6)
-    return -1;
-
-  for (size_t i = 0; i < ETH_ADDR_LEN; ++i)
-    out[i] = (__u8)tmp[i];
-
-  return 0;
-}
-
-/* TODO: For now just return the first socket always */
-struct udp_sock *udp_sock_find(struct cham_proto_handle *handle,
-    __u32 remote_ip_be, __u16 remote_port_be)
-{
-  struct udp_sock *sock_map;
-  sock_map = handle->maps[SOCK_MAP_IDX].addr;
-  return &sock_map[0];
-}
-
-int udp_init_fp(void *config)
-{
-  return 0;
-}
+struct udp_sock * udp_sock_find(struct cham_map *maps,
+    __u16 local_port);
 
 int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
 {
@@ -156,12 +128,11 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
   }
 
   /* Lookup socket */
-  __u32 src_ip_be  = htonl(f_beui32(ip->src));
-  __u16 src_prt_be = htons(f_beui16(udp->src));
-  sock = udp_sock_find(handle, src_ip_be, src_prt_be);
-  
+  sock = udp_sock_find(handle->maps, f_beui16(udp->dst));
   if (sock == NULL)
   {
+    /* Socket doesn't exist so send to slow-path */
+    /* TODO: Send socket to slow-path */
     LOG_ERROR("rx drop: no socket for src=%08x:%u",
               f_beui32(ip->src), f_beui16(udp->src));
     return -1;
@@ -283,13 +254,13 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   p->ip.offset = t_beui16(0);
   p->ip.ttl = 0xff;
   p->ip.proto = IP_PROTO_UDP;
-  p->ip.src = t_beui32(sock->src_ip);
-  p->ip.dst = t_beui32(sock->dst_ip);
+  p->ip.src = t_beui32(sock->local_ip);
+  p->ip.dst = t_beui32(sock->remote_ip);
   p->ip.chksum = 0;
 
   /* Set UDP header */
-  p->udp.dst = t_beui16(sock->dst_port);
-  p->udp.src = t_beui16(sock->src_port);
+  p->udp.src = t_beui16(sock->local_port);
+  p->udp.dst = t_beui16(sock->remote_port);
   p->udp.len = t_beui16(udp_hdrs_len + payload_len);
   p->udp.chksum = 0; /* UDP checksum has to be 0 before we compute it */
   
@@ -410,8 +381,8 @@ int handle_bump_tx(struct udp_queue_bump_entry *qe,
   /* TODO: We want to keep a list of out-of-order bumps so
     we can appropriately send each bump to the correct address */
   /* Set IP address and port to socket */
-  sock->dst_ip = bump->tx_ip;
-  sock->dst_port = bump->tx_port;
+  sock->remote_ip = bump->tx_ip;
+  sock->remote_port = bump->tx_port;
   
   sched = &handle->sched;
   se = &sched->entries[sock->id];
@@ -451,4 +422,17 @@ int handle_bump_rx(struct udp_queue_bump_entry *qe,
   sock->rx_avail -= bump->rx_head;
 
   return 0;
+}
+
+/* TODO: For now just return the first socket always */
+struct udp_sock *udp_sock_find(struct cham_map *maps,
+    __u16 local_port)
+{
+  struct udp_sock *sock_map;
+
+  if (local_port < 1 || local_port > 65535)
+    return NULL;
+
+  sock_map = maps[SOCK_MAP_IDX].addr;
+  return &sock_map[local_port];
 }
