@@ -113,7 +113,7 @@ int ret;
   /* Lookup socket */
   sock = udp_sock_find(ctx->maps, f_beui16(udp->dst));
   
-  /* TODO: Socket doesn't exist so send to slow-path */
+  /* Socket doesn't exist so drop it */
   if (sock == NULL)
     return -1;
 
@@ -166,132 +166,6 @@ int ret;
 SEC("chamelio/event_tx")
 int event_tx(struct cham_ebpf_ctx *ctx)
 {
-  // int ret;
-  // void *payload;
-  // struct udp_sock *sock;
-  // struct equeue *q;
-  // struct udp_queue_bump_entry *qe;
-  // struct udp_queue_bump_app_tx *bump;
-  // struct cham_scheduler *sched;
-  // struct cham_sched_entry *se;
-  // __u16 opt_len, payload_len;
-  // __u16 udp_hdrs_len, ip_hdrs_len, pkt_hdrs_len;
-  // __u32 new_head;
-  // __u64 part;
-  // struct udp_pkt *p = (struct udp_pkt *) ctx->pkt;
-  
-  // /* If there is nothing scheduled return */
-  // sched = &ctx->sched;
-  // se = sched_head(sched);
-  // if (se == NULL)
-  //   return -1;
-  
-  // sock = (struct udp_sock *) se->opaque;
-
-  // /* Calculate number of bytes to transmit */
-  // payload_len = se->avail;
-  // if (payload_len > UDP_MSS)
-  //   payload_len = UDP_MSS;
-
-  // /* TODO: Opt len */
-  // opt_len = 0;
-  // udp_hdrs_len = sizeof(struct udp_hdr) + opt_len;
-  // ip_hdrs_len = sizeof(struct ip_hdr);
-  // pkt_hdrs_len = sizeof(struct eth_hdr) + sizeof(struct ip_hdr)
-  //   + sizeof(struct udp_hdr) + opt_len;
-
-  // /* Set ETH header */
-  // // mac_from_text("b8:59:9f:c4:af:e6", mac_src.addr);
-  // p->eth.src.addr[0] = 184;
-  // p->eth.src.addr[1] = 89;
-  // p->eth.src.addr[2] = 159;
-  // p->eth.src.addr[3] = 196;
-  // p->eth.src.addr[4] = 175;
-  // p->eth.src.addr[5] = 230;
-  
-  // // mac_from_text("b8:59:9f:c4:af:66", mac_dst.addr);
-  // p->eth.dst.addr[0] = 184;
-  // p->eth.dst.addr[1] = 89;
-  // p->eth.dst.addr[2] = 159;
-  // p->eth.dst.addr[3] = 196;
-  // p->eth.dst.addr[4] = 175;
-  // p->eth.dst.addr[5] = 102;
-
-  // p->eth.type = t_beui16(ETH_TYPE_IP);
-
-  // /* Set IP header */
-  // IPH_VHL_SET(&p->ip, 4, 5);
-  // p->ip._tos = 0;
-  // p->ip.len = t_beui16(ip_hdrs_len + udp_hdrs_len + payload_len);
-  // p->ip.id = t_beui16(3); /* not sure why we have 3 here */
-  // p->ip.offset = t_beui16(0);
-  // p->ip.ttl = 0xff;
-  // p->ip.proto = IP_PROTO_UDP;
-  // p->ip.src = t_beui32(sock->local_ip);
-  // p->ip.dst = t_beui32(sock->remote_ip);
-  // p->ip.chksum = 0;
-
-  // /* Set UDP header */
-  // p->udp.dst = t_beui16(sock->remote_port);
-  // p->udp.src = t_beui16(sock->local_port);
-  // p->udp.len = t_beui16(udp_hdrs_len + payload_len);
-  
-  // /* Copy data to packet */
-  // payload = ctx->pkt + pkt_hdrs_len;
-  // if (sock->tx_head + payload_len <= sock->tx_len) 
-  // {
-  //   bpf_memcpy(payload, ctx->shm_base + sock->tx_off + sock->tx_head, payload_len);
-  // } 
-  // else 
-  // {
-  //   part = sock->tx_len - sock->tx_head;
-  //   bpf_memcpy(payload, ctx->shm_base + sock->tx_off + sock->tx_head, part);
-  //   bpf_memcpy(payload + part, ctx->shm_base + sock->tx_off, payload_len - part);
-  // }
-  
-  // /* Compute checksums */
-  // /* UDP checksum has to be 0 before we compute it */
-  // p->udp.chksum = 0;
-  // p->udp.chksum = ipv4_udptcp_cksum((void *) &p->ip, (void *) &p->udp);
-  // p->ip.chksum = ipv4_checksum((void *) &p->ip);
-  
-  // /* Update socket and schduler structs */
-  // new_head = sock->tx_head + payload_len;
-  // if (new_head >= sock->tx_len)
-  //   new_head -= sock->tx_len;
-  // sock->tx_head = new_head;
-  // sock->tx_avail -= payload_len;
-  // se->avail -= payload_len;
-  // se->opaque = (__u64) sock;
-
-  // /* Remove first element from priority list */
-  // ret = sched_pop(sched);
-  // if (ret != 0)
-  //   return -1;
-  
-  // /* Add entry to the back if there is still data to send */
-  // if (se->avail > 0)
-  // {
-  //   ret = sched_add(sched, sock->id, 0);
-  //   if (ret != 0)
-  //     return -1;
-  // }
-
-  // /* Send a bump to application */
-  // q = &ctx->equeues[sock->app_bump_qid].eq;
-  // qe = queue_tail(q);
-  // if (qe == NULL)
-  //   return -1;
-
-  // bump = &qe->data.bump_app_tx;
-  // bump->opaque = sock->opaque;
-  // bump->tx_head = payload_len;
-
-  // ret = queue_enqueue(q, UDP_QUEUE_BUMP_APP_TX);
-  // if (ret != 0)
-  //   return -1;
-
-  // return pkt_hdrs_len + payload_len;
   return -1;
 }
 
@@ -435,56 +309,6 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   return pkt_hdrs_len + payload_len;
 }
-
-// static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
-// {
-//   int ret;
-//   __u16 local_port;
-//   int *port_socks;
-//   struct udp_sock *sock, *sock_map;
-//   struct cham_scheduler *sched;
-//   struct cham_sched_entry *se;
-//   struct udp_queue_bump_cham_tx *bump;
-//   struct udp_queue_bump_entry *qe;
-//   qe = (struct udp_queue_bump_entry *) ctx->qe;
-//   sock_map = ctx->maps[SOCK_MAP_IDX].addr;
-//   bump = &qe->data.bump_cham_tx;
-//   sock = &sock_map[bump->sock_id];
-//   sock->tx_avail += bump->tx_avail;
-
-//   /* TODO: We want to keep a list of out-of-order bumps so
-//     we can appropriately send each bump to the correct address */
-//   /* Set IP address and port to socket */
-//   sock->remote_ip = bump->tx_ip;
-//   sock->remote_port = bump->tx_port;
-  
-//   /* Set local port for socket if it is not defined yet */
-//   if (sock->local_port == 0)
-//   {
-//     local_port = find_free_port(ctx);
-//     if (local_port == 0)
-//       return -1;
-//     port_socks = ctx->maps[PORT_SOCK_MAP_IDX].addr;
-//     port_socks[local_port] = sock->id;
-//     sock->local_port = local_port;
-//   }
-
-//   sched = &ctx->sched;
-//   se = &sched->entries[sock->id];
-//   se->avail = se->avail + bump->tx_avail;
-//   se->opaque = (__u64) sock;
-
-//   /* Add scheduler entry to the list if it has not been added yet */
-//   if (se->id == SCHED_ID_INVALID)
-//   {
-//     /* For UDP every socket has the same priority */
-//     ret = sched_add(sched, bump->sock_id, 0);
-//     if (ret != 0)
-//       return -1;
-//   }
-  
-//   return 0;
-// }
  
 static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
 {

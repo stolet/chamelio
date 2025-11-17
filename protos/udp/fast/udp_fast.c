@@ -131,8 +131,7 @@ int udp_event_rx(void *pkt, struct cham_proto_handle *handle)
   sock = udp_sock_find(handle->maps, f_beui16(udp->dst));
   if (sock == NULL)
   {
-    /* Socket doesn't exist so send to slow-path */
-    /* TODO: Send socket to slow-path */
+    /* Socket doesn't exist so drop packet */
     LOG_ERROR("rx drop: no socket for src=%08x:%u",
               f_beui32(ip->src), f_beui16(udp->src));
     return -1;
@@ -378,8 +377,6 @@ int handle_bump_tx(struct udp_queue_bump_entry *qe,
   sock = &sock_map[bump->sock_id];
   sock->tx_avail += bump->tx_avail;
 
-  /* TODO: We want to keep a list of out-of-order bumps so
-    we can appropriately send each bump to the correct address */
   /* Set IP address and port to socket */
   sock->remote_ip = bump->tx_ip;
   sock->remote_port = bump->tx_port;
@@ -424,7 +421,6 @@ int handle_bump_rx(struct udp_queue_bump_entry *qe,
   return 0;
 }
 
-/* TODO: For now just return the first socket always */
 struct udp_sock *udp_sock_find(struct cham_map *maps,
     __u16 local_port)
 {
