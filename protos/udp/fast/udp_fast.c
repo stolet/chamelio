@@ -2,6 +2,9 @@
 #include <cham_fast.h>
 
 #include "scheduler_fns.h"
+#include "udp_hdr.h"
+#include "ip_hdr.h"
+#include "eth_hdr.h"
 #include "udp.h"
 #include "udp_fast.h"
 #include "udp_queue_types.h"

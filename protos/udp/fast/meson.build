@@ -3,6 +3,7 @@ udp_fast_inc = include_directories('include', '../include')
 deps = [
   dependency('log_dep'),
   dependency('utils_dep'),
+  dependency('pkt_hdrs_dep'),
   dependency('cham_lib'),
 ]
 
@@ -16,6 +17,7 @@ ebpf_incs = [
   src / 'lib/include',
   src / 'utils/queue/include',
   src / 'utils/scheduler/include',
+  src / 'utils/pkt_hdrs/include',
   src / 'protos/udp/include',
   src / 'protos/udp/fast/include',
 ]

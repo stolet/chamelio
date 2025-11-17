@@ -1,7 +1,6 @@
 #include "fast.h"
 #include "queue_types.h"
 #include "queue_fns.h"
-#include "udp_fast.h"
 #include "scheduler_fns.h"
 
 static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
