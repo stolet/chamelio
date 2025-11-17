@@ -167,6 +167,10 @@ struct udp_queue_entry {
     struct udp_queue_new_actx_res new_actx_res;
     struct udp_queue_new_sock_req new_sock_req;
     struct udp_queue_new_sock_res new_sock_res;
+    struct udp_queue_bump_cham_tx bump_cham_tx;
+    struct udp_queue_bump_cham_rx bump_cham_rx;
+    struct udp_queue_bump_app_tx bump_app_tx;
+    struct udp_queue_bump_app_rx bump_app_rx;
     struct udp_queue_bind_req bind_req;
     struct udp_queue_bind_res bind_res;
     /* Keeps queue entry the size of half a cache line */

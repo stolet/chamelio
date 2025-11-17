@@ -413,7 +413,7 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
   bump->sock_id = sock->sock_id;
   bump->tx_ip = ntohl(sin->sin_addr.s_addr);
   bump->tx_port = ntohs(sin->sin_port);
-  bump->tx_avail = n;  
+  bump->tx_avail = n;
 
   ret = queue_enqueue(q, UDP_QUEUE_BUMP_CHAM_TX);
   if (ret != 0)

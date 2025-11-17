@@ -27,6 +27,7 @@ int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
 int poll_tx(struct fast_context *ctx);
 int poll_control(struct fast_context *ctx);
+int tx_flush(struct fast_context *ctx);
 
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, __u16 thread_id,
@@ -113,11 +114,17 @@ int fast_loop(struct fast_context *ctx)
       LOG_ERROR("poll_queues failed");
     }
 
+    /* Flush entries in transmit buffer added by poll_queues */
+    tx_flush(ctx);
+
     ret = poll_tx(ctx);
     if (ret < 0)
     {
       LOG_ERROR("poll_tx failed");
     }
+
+    /* Flush entries in transmit buffer added by poll_tx */
+    tx_flush(ctx);
 
     ret = poll_control(ctx);
     if (ret < 0)
@@ -163,18 +170,26 @@ int poll_rx(struct fast_context *ctx)
 
 int poll_queues(struct fast_context *ctx)
 {
-  int i, ret, deq_ret, ndeq;
+  int i, n, ret, deq_ret, ndeq, ntx;
   __u16 qid;
   struct guest_fast *g;
   struct cham_dqueue *q;
   struct queue_entry *qe;
+  struct rte_mbuf **mbs;
 
-  ndeq = 0;
-  for (i = 0; i < ctx->n_guests && ndeq < BATCH_SIZE; i++)
+  n = BATCH_SIZE;
+  if (TXBUF_SIZE - ctx->tx_n < n)
+    n = TXBUF_SIZE - ctx->tx_n;
+
+  /* Allocate mbufs in case a message wants to transmit something already */
+  tx_cache_alloc(ctx, &mbs, n);
+
+  ntx = ndeq = 0;
+  for (i = 0; i < ctx->n_guests && ndeq < n; i++)
   {
     g = &ctx->guests[i];
     qid = g->proto.dqueues_head;
-    while (qid != PROTOQ_ID_INVALID && ndeq < BATCH_SIZE)
+    while (qid != PROTOQ_ID_INVALID && ndeq < n)
     {
       q = &g->proto.dqueues[qid];
         
@@ -186,15 +201,30 @@ int poll_queues(struct fast_context *ctx)
         continue;
       }
 
-      /* Execute custom dequeue procedure */
-      ndeq++;
-      g->proto.ebpf_ctx.pkt = NULL;
+      /* Prepare packet */
+      mbs[ntx]->data_off = 0;
+      g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[ntx], __u8 *);
+
+      /* Add queue entry to ebpf context */
       g->proto.ebpf_ctx.qe = qe;
       g->proto.ebpf_ctx.qid = q->id;
+
+      /* Execute custom dequeue procedure */
       ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx, 
-          sizeof(struct cham_ebpf_ctx), &deq_ret);
-      // g->proto.event_deq(q->id, qe, &g->proto.handle);
+        sizeof(struct cham_ebpf_ctx), &deq_ret);
+      ndeq++;
+
+      /* Add to transmission buffer if packet processed for TX */
+      if (deq_ret > 0)
+      {
+        mbs[ntx]->pkt_len = mbs[ntx]->data_len = deq_ret;
+        ctx->tx_mbs[ctx->tx_n] = mbs[ntx];
+        ctx->tx_n++;
+        ntx++;
+      }
       
+      // g->proto.event_deq(q->id, qe, &g->proto.handle);
+
       /* Pop the queue */
       ret = queue_dequeue(&q->dq);
       if (ret != 0)
@@ -206,13 +236,18 @@ int poll_queues(struct fast_context *ctx)
       qid = q->next;
     }
   }
+
+  /* Free buffers that were not used */
+  for (i = ntx; i < n; i++)
+    tx_cache_free(ctx, mbs[i]);
+
   return 0;
 }
 
 int poll_tx(struct fast_context *ctx)
 {
   unsigned n;
-  int i, ret, tx_ret, n_used;
+  int i, tx_ret, ntx;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
@@ -228,29 +263,32 @@ int poll_tx(struct fast_context *ctx)
   tx_cache_alloc(ctx, &mbs, n);
 
   g = ctx->guests;
-  n_used = 0;
-  for (i = 0; i < n_guests && g != NULL && n_used < n; i++)
+  ntx = 0;
+  for (i = 0; i < n_guests && g != NULL && ntx < n; i++)
   {
     g = &ctx->guests[i];
     if (g->proto.event_tx_vm == NULL)
       continue;
     
-    for (;n_used < n;)
+    for (;ntx < n;)
     {
-      mbs[n_used]->data_off = 0;
+      /* Prepare packet */
+      mbs[ntx]->data_off = 0;
+      g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[ntx], __u8 *);
       // ret = g->proto.event_tx(rte_pktmbuf_mtod(mbs[n_used], __u8 *), 
           // &guest->proto.handle);
-      g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[n_used], __u8 *);
+      
+      /* Execute custom TX procedure */
       ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx.pkt, 
           sizeof(struct cham_ebpf_ctx), &tx_ret);
 
       /* Add to transmission buffer if packet processed for TX */
       if (tx_ret >= 0)
       {
-        mbs[n_used]->pkt_len = mbs[n_used]->data_len = tx_ret;
-        ctx->tx_mbs[ctx->tx_n] = mbs[n_used];
+        mbs[ntx]->pkt_len = mbs[ntx]->data_len = tx_ret;
+        ctx->tx_mbs[ctx->tx_n] = mbs[ntx];
         ctx->tx_n++;
-        n_used++;
+        ntx++;
       }
       else
       {
@@ -259,12 +297,19 @@ int poll_tx(struct fast_context *ctx)
     }
   }
 
+  /* Free buffers that were not used */
+  for (i = ntx; i < n; i++)
+    tx_cache_free(ctx, mbs[i]);
+
+  return 0;
+}
+
+int tx_flush(struct fast_context *ctx)
+{
+  int i, ret;
+
   /* Push packets to the NIC */
   ret = nic_fast_tx(&ctx->nic_ctx, ctx->tx_n, ctx->tx_mbs);
-  
-  /* Free buffers that were not used */
-  for (i = n_used; i < n; i++)
-    tx_cache_free(ctx, mbs[i]);
 
   if (ret == ctx->tx_n)
   {
@@ -280,7 +325,7 @@ int poll_tx(struct fast_context *ctx)
     ctx->tx_n -= ret;
   }
 
-  return 0;
+  return ret;
 }
 
 int poll_control(struct fast_context *ctx)
