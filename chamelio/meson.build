@@ -10,6 +10,7 @@ meson.override_dependency('chamelio_dep', chamelio_dep)
 
 subdir('config')
 subdir('nic')
+subdir('arp')
 subdir('fast')
 subdir('control')
 

@@ -3,7 +3,6 @@ subdir('uxsocket')
 subdir('shm')
 subdir('queue')
 subdir('scheduler')
-subdir('pkt_hdrs')
 
 utils_inc = include_directories('include')
 
@@ -19,7 +18,6 @@ deps = [
   dependency('shm_dep'),
   dependency('queue_dep'),
   dependency('scheduler_dep'),
-  dependency('pkt_hdrs_dep'),
 ]
 
 utils_dep = declare_dependency(
@@ -29,3 +27,5 @@ utils_dep = declare_dependency(
 )
 
 meson.override_dependency('utils_dep', utils_dep)
+
+subdir('pkt_hdrs')

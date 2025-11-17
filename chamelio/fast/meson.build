@@ -13,6 +13,7 @@ deps = [
   dependency('chamelio_dep'),
   dependency('udp_fast_dep'),
   dependency('cham_lib'),
+  dependency('pkt_hdrs_dep'),
 ]
 
 fast_lib = static_library(

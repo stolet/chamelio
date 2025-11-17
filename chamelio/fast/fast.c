@@ -17,7 +17,7 @@
 
 
 struct guest_fast * init_guest(__u8 id, __u64 shm_len);
-struct guest_fast *find_guest(struct fast_context *ctx, struct rte_mbuf *mbuf);
+struct guest_fast * find_guest(struct fast_context *ctx, struct rte_mbuf *mbuf);
 
 static inline void tx_cache_alloc(struct fast_context *ctx, 
     struct rte_mbuf ***mbs, __u16 num);
