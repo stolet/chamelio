@@ -169,7 +169,6 @@ struct udp_queue_entry {
     struct udp_queue_new_sock_res new_sock_res;
     struct udp_queue_bind_req bind_req;
     struct udp_queue_bind_res bind_res;
-    /* Keeps queue entry the size of half a cache line */
     __u8 raw[511];
   } __attribute__((packed)) data;
 } __attribute__((packed));
@@ -183,7 +182,7 @@ struct udp_queue_bump_entry {
     struct udp_queue_bump_app_rx bump_app_rx;
     struct udp_queue_bump_cham_tx bump_cham_tx;
     struct udp_queue_bump_cham_rx bump_cham_rx;
-    /* Keeps queue entry the size of a cache line */
+    /* Keeps queue entry the size of half a cache line */
     __u8 raw[31];
   } __attribute__((packed)) data;
 } __attribute__((packed));

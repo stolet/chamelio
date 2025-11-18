@@ -5,6 +5,7 @@ queue_srcs = files('queue.c')
 deps = [
   dependency('log_dep'),
   dependency('shm_dep'),
+  dependency('pkt_hdrs_dep'),
 ]
 
 queue_lib = static_library(

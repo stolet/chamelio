@@ -512,11 +512,16 @@ static int handle_free_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
 {
   struct queue_free_ebpf_res *res = &qe->data.free_ebpf_res;
 
-  if (res->success != 0){
+  if (res->success)
+  {
     LOG_ERROR("failed to free eBPF program in control plane");
     p->ebpf_program.flag = -1;
   }
-  else p->ebpf_program.flag = 1; // set flag to 1 to indicate free is complete
+  else 
+  {
+    p->ebpf_program.flag = 1;
+  }
+  
   return 0;
 }
 
@@ -524,11 +529,16 @@ static int handle_upload_ebpf_res(struct proto_lib *p, struct queue_entry *qe)
 {
   struct queue_up_ebpf_res *res = &qe->data.up_ebpf_res;
 
-  if (res->success != 0){
+  if (res->success)
+  {
     LOG_ERROR("failed to upload eBPF program in control plane");
     p->ebpf_program.flag = -1;
   }
-  else p->ebpf_program.flag = 1; // set flag to 1 to indicate upload is complete
+  else 
+  {
+    p->ebpf_program.flag = 1;
+  }
+  
   return 0;
 }
 

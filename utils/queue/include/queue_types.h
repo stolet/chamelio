@@ -5,27 +5,25 @@
 #include <linux/types.h>
 
 #include "utils.h"
+#include "eth_hdr.h"
 
 /* Type of queue entries */
 enum queue_type {
   /* Signals that the queue is empty */
   QUEUE_EMPTY = 0,
-  /* Reqiest for new guest registration */
+  /* Request to register new guest */
   QUEUE_NEW_GUEST_REQ,
   
-  /* Request for new protocol registration */
+  /* Request/response for new protocol registration */
   QUEUE_PROTO_REQ,
-  /* Response for new protocol registration */
   QUEUE_PROTO_RES,
   
-  /* Request for creating protocol queues */
+  /* Request/response for creating protocol queues */
   QUEUE_NEW_QUEUE_REQ,
-  /* Response from protocol queue creation */
   QUEUE_NEW_QUEUE_RES,
   
-  /* Request for creating a protocol map */
+  /* Request/Response for creating a protocol map */
   QUEUE_NEW_MAP_REQ,
-  /* Response from protocol map creation */
   QUEUE_NEW_MAP_RES,
   
   /* Request to enable queue in fast-path */
@@ -33,17 +31,24 @@ enum queue_type {
   /* Request to disable queue in fast-path */
   QUEUE_DISABLEQ_REQ,
 
-  /* Request/Response for allocating memory for eBPF program snippet */
+  /* Request/response for allocating memory for eBPF program snippet */
   QUEUE_ALLOCATE_EBPF_REQ,
   QUEUE_ALLOCATE_EBPF_RES,
 
-  /* Request/Response for uploading eBPF program snippet */
+  /* Request/response for uploading eBPF program snippet */
   QUEUE_UPLOAD_EBPF_REQ,
   QUEUE_UPLOAD_EBPF_RES,
 
-  /* Request/Response for freeing eBPF program snippet */
+  /* Request/response for freeing eBPF program snippet */
   QUEUE_FREE_EBPF_REQ,
-  QUEUE_FREE_EBPF_RES
+  QUEUE_FREE_EBPF_RES,
+  
+  /* Message from fast to control signalling failed ARP lookup */
+  QUEUE_ARP_LOOKUP,
+  /* Message from fast to control signalling ARP request received */
+  QUEUE_ARP_PKT,
+  /* Message from control to fast so fast-path can update ARP table copy */
+  QUEUE_ARP_UPDATE,
 };
 
 /* Request for registering new guest */
@@ -188,11 +193,11 @@ struct queue_up_ebpf_req {
   __u32 size;
   /* Offset in shared memory for eBPF program snippet */
   __u64 off;
-  /* Function pointer to ebpf rx function */
+  /* Function pointer to ebpf rx function. Used only in message to fast */
   struct ebpf_vm_c *event_rx_vm;
-  /* Function pointer to ebpf tx function */
+  /* Function pointer to ebpf tx function. Used only in message to fast */
   struct ebpf_vm_c *event_tx_vm;
-  /* Function pointer to ebpf deq function */
+  /* Function pointer to ebpf deq function. Used only in message to fast */
   struct ebpf_vm_c *event_deq_vm;
 } __attribute__((packed));
 
@@ -206,14 +211,36 @@ struct queue_free_ebpf_req {
   __u64 off;
 } __attribute__((packed));
 
+/* Response sent to slow-path indicating success of ebpf upload */
 struct queue_up_ebpf_res {
-  /* indicating whether the operation was successful: return 0 if upload succesful */
+  /* Indicates if upload was successful: 1 on success 0 on failure */
   int success;
 } __attribute__((packed));
 
+/* Response sent to slow-path indicating success of freeing ebpf from SHM */
 struct queue_free_ebpf_res {
-  /* indicating whether the operation was successful: return 0 if free succesful */
+  /* Indicates if free was successful: 1 on success 0 on failure */
   int success;
+} __attribute__((packed));
+
+/* Message sent to control indicating ARP lookup for the given address failed */
+struct queue_arp_lookup {
+  /* IP for failed ARP lookup */
+  __u32 ip;
+} __attribute__((packed));
+
+/* Message sent to control indicating an ARP request was received */
+struct queue_arp_pkt {
+  /* IP requested in ARP packet */
+  __u32 ip;
+} __attribute__((packed));
+
+/* Message sent to fast telling it to update ARP table */
+struct queue_arp_update {
+  /* IP address for ARP mapping */
+  __u32 ip;
+  /* MAC address for ARP mapping */
+  __u8 mac[ETH_ADDR_LEN];
 } __attribute__((packed));
 
 struct queue_entry {
@@ -224,16 +251,22 @@ struct queue_entry {
     struct queue_new_guest_req new_guest_req;
     struct queue_new_proto_req new_proto_req;
     struct queue_new_proto_res new_proto_res;
+    
     struct queue_new_queue_req new_queue_req;
     struct queue_new_queue_res new_queue_res;
+    
     struct queue_new_map_req new_map_req;
     struct queue_new_map_res new_map_res;
+    
     struct queue_enableq_req enableq_req;
     struct queue_disableq_req disableq_req;
+    
     struct queue_allocate_ebpf_req alloc_ebpf_req;
     struct queue_allocate_ebpf_res alloc_ebpf_res;
+    
     struct queue_up_ebpf_req up_ebpf_req;
     struct queue_up_ebpf_res up_ebpf_res;
+    
     struct queue_free_ebpf_req free_ebpf_req;
     struct queue_free_ebpf_res free_ebpf_res;
     /* Keeps queue entry the size of a cache line */

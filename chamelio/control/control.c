@@ -552,7 +552,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   if (bpf_obj == NULL)
   {
     LOG_ERROR("failed to open bpf_obj from bytecode");
-    res->success = -1;
+    res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
     return -1;
@@ -562,7 +562,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   if (event_rx_prog == NULL)
   {
     LOG_ERROR("failed to get event_rx from bpf_obj");
-    res->success = -1;
+    res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
     return -1;
@@ -574,7 +574,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   if (event_rx_vm == NULL)
   {
     LOG_ERROR("failed to jit event_rx");
-    res->success = -1;
+    res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
     return -1;
@@ -584,7 +584,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   if (event_rx_prog == NULL)
   {
     LOG_ERROR("failed to get event_tx from bpf_obj");
-    res->success = -1;
+    res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
     return -1;
@@ -596,7 +596,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   if (event_tx_vm == NULL)
   {
     LOG_ERROR("failed to jit event_tx");
-    res->success = -1;
+    res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
     return -1;
@@ -606,7 +606,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   if (event_rx_prog == NULL)
   {
     LOG_ERROR("failed to get event_deq from bpf_obj");
-    res->success = -1;
+    res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
     return -1;
@@ -618,7 +618,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   if (event_deq_vm == NULL)
   {
     LOG_ERROR("failed to jit event_deq");
-    res->success = -1;
+    res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
     return -1;
@@ -641,7 +641,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   }
 
   res = (struct queue_up_ebpf_res *)&qe_res->data;
-  res->success = 0;
+  res->success = 1;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
   assert(ret == 0);
   return 0;
@@ -661,7 +661,7 @@ static int handle_free_ebpf_req(struct guest_control *g,
 
   shmalloc_free(g->alloc, g->ebpf_shm_handle);
 
-  res->success = 0;
+  res->success = 1;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_FREE_EBPF_RES);
   assert(ret == 0);
   return 0;
