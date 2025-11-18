@@ -199,7 +199,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   int *port_socks;
   struct udp_sock *sock, *sock_map;
   struct equeue *q;
-  struct udp_queue_entry *qe;
+  struct udp_queue_bump_entry *qe;
   struct udp_queue_bump_cham_tx *bump_cham;
   struct udp_queue_bump_app_tx *bump_app;
   __u16 opt_len, payload_len, local_port;
