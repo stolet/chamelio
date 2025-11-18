@@ -1,9 +1,12 @@
-test_cham_lib_srcs = files('test_cham_lib.c','test_utils.c')
-test_cham_scheduler_srcs = files('test_cham_scheduler.c', 'test_utils.c')
-test_cham_queue_srcs = files('test_cham_queue.c', 'test_utils.c')
+test_lib_srcs = files('test_lib.c','test_utils.c')
+test_scheduler_srcs = files('test_scheduler.c', 'test_utils.c')
+test_queue_srcs = files('test_queue.c', 'test_utils.c')
+test_arp_srcs = files('test_arp.c', 'test_utils.c')
 
 deps = [
   dependency('cham_lib'),
+  dependency('queue_dep'),
+  dependency('arp_dep'),
   dependency('scheduler_dep')
 ]
 
@@ -19,26 +22,34 @@ ebpf_obj = custom_target(
   build_by_default: true
 )
 
-test_cham_lib = executable(
-  'test_cham_lib',
-  test_cham_lib_srcs,
+test_lib = executable(
+  'test_lib',
+  test_lib_srcs,
   dependencies: deps,
 )
 
-test('cham-lib-test', test_cham_lib, depends: ebpf_obj)
+test('lib-test', test_lib, depends: ebpf_obj)
 
-test_cham_scheduler = executable(
-  'test_cham_scheduler',
-  test_cham_scheduler_srcs,
+test_scheduler = executable(
+  'test_scheduler',
+  test_scheduler_srcs,
   dependencies: deps,
 )
 
-test('cham-scheduler-test', test_cham_scheduler, depends: ebpf_obj)
+test('scheduler-test', test_scheduler, depends: ebpf_obj)
 
-test_cham_queue = executable(
-  'test_cham_queue',
-  test_cham_queue_srcs,
+test_queue = executable(
+  'test_queue',
+  test_queue_srcs,
   dependencies: deps,
 )
 
-test('cham-queue-test', test_cham_queue, depends: ebpf_obj)
+test('queue-test', test_queue, depends: ebpf_obj)
+
+test_arp = executable(
+  'test_arp',
+  test_arp_srcs,
+  dependencies: deps,
+)
+
+test('arp-test', test_arp)

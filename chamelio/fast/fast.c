@@ -9,6 +9,9 @@
 #include "nic_fast.h"
 #include "queue_fns.h"
 #include "queue_types.h"
+#include "ip_hdr.h"
+#include "eth_hdr.h"
+#include "arp.h"
 #include "udp.h"
 #include "log.h"
 #include "config.h"
@@ -17,7 +20,9 @@
 
 
 struct guest_fast * init_guest(__u8 id, __u64 shm_len);
-struct guest_fast * find_guest(struct fast_context *ctx, struct rte_mbuf *mbuf);
+
+struct guest_fast * process_infra_rx(struct fast_context *ctx, struct rte_mbuf *mbuf);
+int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb);
 
 static inline void tx_cache_alloc(struct fast_context *ctx, 
     struct rte_mbuf ***mbs, __u16 num);
@@ -152,7 +157,9 @@ int poll_rx(struct fast_context *ctx)
 
   for (i = 0; i < n; i++)
   {
-    g = find_guest(ctx, mbs[i]);
+    /* Process infrastructure protocols */
+    g = process_infra_rx(ctx, mbs[i]);
+
     if (g != NULL)
     {
       // g->proto.event_rx(rte_pktmbuf_mtod(mbs[i], __u8 *), 
@@ -282,9 +289,12 @@ int poll_tx(struct fast_context *ctx)
       ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx.pkt, 
           sizeof(struct cham_ebpf_ctx), &tx_ret);
 
-      /* Add to transmission buffer if packet processed for TX */
       if (tx_ret >= 0)
       {
+        /* Add destination MAC address */
+        process_infra_tx(ctx, mbs[ntx]);
+
+        /* Add to transmission buffer if packet processed for TX */
         mbs[ntx]->pkt_len = mbs[ntx]->data_len = tx_ret;
         ctx->tx_mbs[ctx->tx_n] = mbs[ntx];
         ctx->tx_n++;
@@ -333,10 +343,30 @@ int poll_control(struct fast_context *ctx)
   return controlif_poll(ctx);
 }
 
-struct guest_fast *find_guest(struct fast_context *ctx, struct rte_mbuf *mbuf)
+struct guest_fast * process_infra_rx(struct fast_context *ctx, struct rte_mbuf *mb)
 {
   /* TODO: Use GRE headers to identify guest and protocol */
   return &ctx->guests[0];
+}
+
+int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb)
+{
+  struct eth_hdr *eth;
+  struct ip_hdr  *ip;
+  struct arp_entry *ae;
+  void *pkt;
+  
+  pkt = rte_pktmbuf_mtod(mb, __u8 *);
+  eth = (struct eth_hdr *) pkt;
+  ip = (struct ip_hdr *) ((__u8 *) pkt + sizeof(struct eth_hdr));
+
+  /* Find dst MAC address for IP */
+  ae = arp_lookup(ctx->arp_table, f_beui32(ip->dst));
+  if (ae == NULL)
+    return -1;
+  memcpy(eth->dst.addr, ae->mac, ETH_ADDR_LEN);
+
+  return 0;
 }
 
 static inline void tx_cache_alloc(struct fast_context *ctx, 

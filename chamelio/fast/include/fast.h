@@ -104,6 +104,9 @@ struct fast_context {
   int shm_fd_internal;
   /* Base pointer for internal shared memory region */
   void *shm_base_internal;
+  
+  /* ARP table replicated in fast-path to avoid locks */
+  struct arp_table *arp_table;
 };
 
 /* Initialises the fast-path context when a core is launched */

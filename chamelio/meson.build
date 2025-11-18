@@ -20,6 +20,7 @@ deps = [
   dependency('shm_dep'),
   dependency('queue_dep'),
   dependency('nic_dep'),
+  dependency('arp_dep'),
   dependency('fast_dep'),
   dependency('control_dep'),
   dpdk_dep,

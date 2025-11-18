@@ -31,7 +31,7 @@ struct arp_entry * arp_lookup(struct arp_table *at, __u32 ip)
   return NULL;
 }
 
-void arp_insert(struct arp_table *at, __u32 ip, __u8 *mac) 
+int arp_insert(struct arp_table *at, __u32 ip, __u8 *mac) 
 {
   int i;
   __u32 hash, idx;
@@ -46,9 +46,11 @@ void arp_insert(struct arp_table *at, __u32 ip, __u8 *mac)
     {
       at->buckets[idx].ip = ip;
       memcpy(at->buckets[idx].mac, mac, 6);
-      return;
+      return 0;
     }
   }
+  
+  return -1;
 }
 
 static inline __u32 hash_ip(__u32 ip) 

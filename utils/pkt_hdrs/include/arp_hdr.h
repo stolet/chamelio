@@ -22,4 +22,7 @@ struct arp_hdr {
   ip_addr_t tpa;
 } __attribute__((packed));
 
+void arp_insert(struct arp_table *at, __u32 ip, __u8 *mac);
+struct arp_entry * arp_lookup(struct arp_table *at, __u32 ip);
+
 #endif

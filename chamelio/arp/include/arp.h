@@ -18,4 +18,7 @@ struct arp_table {
   struct arp_entry buckets[ARP_TABLE_SIZE];
 };
 
+struct arp_entry * arp_lookup(struct arp_table *at, __u32 ip);
+int arp_insert(struct arp_table *at, __u32 ip, __u8 *mac);
+
 #endif

@@ -12,8 +12,9 @@ deps = [
   dependency('queue_dep'),
   dependency('chamelio_dep'),
   dependency('udp_fast_dep'),
-  dependency('cham_lib'),
   dependency('pkt_hdrs_dep'),
+  dependency('arp_dep'),
+  dependency('cham_lib'),
 ]
 
 fast_lib = static_library(
