@@ -19,8 +19,10 @@ spdlog_dep  = cc.find_library('spdlog', dirs: ['/usr/local/lib'], required: true
 
 deps = [
   dependency('config_dep'),
+  dependency('nic_dep'),
   dependency('log_dep'),
   dependency('shm_dep'),
+  dependency('arp_dep'),
   dependency('queue_dep'),
   dependency('uxsocket_dep'),
   dependency('cham_lib'),

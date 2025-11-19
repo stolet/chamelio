@@ -10,7 +10,7 @@ struct shm_handle {
   void *addr;
   /* The offset into the shared memory region from the base */
   __u64 off;
-  /* Length of this allocation */
+  /* Size of this allocation in bytes */
   size_t len;
   /* Next handle in list */
   struct shm_handle *next;

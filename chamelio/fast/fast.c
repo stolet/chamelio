@@ -17,16 +17,13 @@
 #include "config.h"
 #include "controlif.h"
 #include "ebpf.h"
+#include "txcache.h"
 
 
 struct guest_fast * init_guest(__u8 id, __u64 shm_len);
 
 struct guest_fast * process_infra_rx(struct fast_context *ctx, struct rte_mbuf *mbuf);
 int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb);
-
-static inline void tx_cache_alloc(struct fast_context *ctx, 
-    struct rte_mbuf ***mbs, __u16 num);
-static inline void tx_cache_free(struct fast_context *ctx, struct rte_mbuf *mb);
 
 int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
@@ -36,19 +33,24 @@ int tx_flush(struct fast_context *ctx);
 
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, __u16 thread_id,
-    struct shm_handle *fc_handle, struct shm_handle *cf_handle,
-    struct configuration *config, int shm_fd_internal, void *shm_base_internal)
+    struct shm_handle *fc_handle, struct shm_handle *cf_handle, 
+    struct shm_handle *ctxq_handle, struct configuration *config, 
+    int shm_fd_internal, void *shm_base_internal)
 {
   int i, j, ret;
-  struct dqueue *cfq;
+  struct dqueue *cfq, *ctxq;
   struct equeue *fcq;
   struct guest_fast *guests;
 
   f_ctx->id = thread_id;
+  f_ctx->config = config;
   f_ctx->shm_fd_internal = shm_fd_internal;
   f_ctx->shm_base_internal= shm_base_internal;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
 
+  /* Initialize ARP table with default values */
+  arp_table_init(&f_ctx->arp_table);
+  
   cfq = dqueue_new(config->cham_queue_len, 
       sizeof(struct queue_entry),
       cf_handle->addr, cf_handle->off);
@@ -67,6 +69,15 @@ int fast_context_init(struct fast_context *f_ctx,
     return -1;
   }
   f_ctx->fast_ctl_q = fcq;
+  
+  ctxq = dqueue_new(config->control_txq_len, config->control_txq_pkt_len,
+      ctxq_handle->addr, ctxq_handle->off);
+  if (ctxq == NULL)
+  {
+    LOG_ERROR("failed to create control tx queue");
+    return -1;
+  }
+  f_ctx->ctl_txq = ctxq;
 
   guests = rte_calloc("fast path guests", config->max_guests, 
       sizeof(struct guest_fast), 0);
@@ -136,6 +147,9 @@ int fast_loop(struct fast_context *ctx)
     {
       LOG_ERROR("poll_control failed");
     }
+    
+    /* Flush entries in transmit buffer added by poll_control */
+    tx_flush(ctx);
   }
 }
 
@@ -189,7 +203,7 @@ int poll_queues(struct fast_context *ctx)
     n = TXBUF_SIZE - ctx->tx_n;
 
   /* Allocate mbufs in case a message wants to transmit something already */
-  tx_cache_alloc(ctx, &mbs, n);
+  txcache_alloc(ctx, &mbs, n);
 
   ntx = ndeq = 0;
   for (i = 0; i < ctx->n_guests && ndeq < n; i++)
@@ -224,10 +238,17 @@ int poll_queues(struct fast_context *ctx)
       /* Add to transmission buffer if packet processed for TX */
       if (deq_ret > 0)
       {
-        mbs[ntx]->pkt_len = mbs[ntx]->data_len = deq_ret;
-        ctx->tx_mbs[ctx->tx_n] = mbs[ntx];
-        ctx->tx_n++;
-        ntx++;
+        /* Add destination MAC address */
+        ret = process_infra_tx(ctx, mbs[ntx]);
+        
+        /* Add to TX buffer if infra protos were successful */
+        if (ret == 0)
+        {
+          mbs[ntx]->pkt_len = mbs[ntx]->data_len = deq_ret;
+          ctx->tx_mbs[ctx->tx_n] = mbs[ntx];
+          ctx->tx_n++;
+          ntx++;
+        }
       }
       
       // g->proto.event_deq(q->id, qe, &g->proto.handle);
@@ -246,7 +267,7 @@ int poll_queues(struct fast_context *ctx)
 
   /* Free buffers that were not used */
   for (i = ntx; i < n; i++)
-    tx_cache_free(ctx, mbs[i]);
+    txcache_free(ctx, mbs[i]);
 
   return 0;
 }
@@ -254,7 +275,7 @@ int poll_queues(struct fast_context *ctx)
 int poll_tx(struct fast_context *ctx)
 {
   unsigned n;
-  int i, tx_ret, ntx;
+  int i, tx_ret, ntx, ret;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
@@ -267,7 +288,7 @@ int poll_tx(struct fast_context *ctx)
     n = TXBUF_SIZE - ctx->tx_n;
 
   /* Allocate mbufs to use for transmission from mempool cache */
-  tx_cache_alloc(ctx, &mbs, n);
+  txcache_alloc(ctx, &mbs, n);
 
   g = ctx->guests;
   ntx = 0;
@@ -292,13 +313,16 @@ int poll_tx(struct fast_context *ctx)
       if (tx_ret >= 0)
       {
         /* Add destination MAC address */
-        process_infra_tx(ctx, mbs[ntx]);
+        ret = process_infra_tx(ctx, mbs[ntx]);
 
-        /* Add to transmission buffer if packet processed for TX */
-        mbs[ntx]->pkt_len = mbs[ntx]->data_len = tx_ret;
-        ctx->tx_mbs[ctx->tx_n] = mbs[ntx];
-        ctx->tx_n++;
-        ntx++;
+        if (ret == 0)
+        {
+          /* Add to transmission buffer if packet processed for TX */
+          mbs[ntx]->pkt_len = mbs[ntx]->data_len = tx_ret;
+          ctx->tx_mbs[ctx->tx_n] = mbs[ntx];
+          ctx->tx_n++;
+          ntx++;
+        }
       }
       else
       {
@@ -309,7 +333,7 @@ int poll_tx(struct fast_context *ctx)
 
   /* Free buffers that were not used */
   for (i = ntx; i < n; i++)
-    tx_cache_free(ctx, mbs[i]);
+    txcache_free(ctx, mbs[i]);
 
   return 0;
 }
@@ -351,9 +375,11 @@ struct guest_fast * process_infra_rx(struct fast_context *ctx, struct rte_mbuf *
 
 int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb)
 {
+  int ret;
   struct eth_hdr *eth;
   struct ip_hdr  *ip;
   struct arp_entry *ae;
+  struct queue_entry *qe;
   void *pkt;
   
   pkt = rte_pktmbuf_mtod(mb, __u8 *);
@@ -361,66 +387,38 @@ int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb)
   ip = (struct ip_hdr *) ((__u8 *) pkt + sizeof(struct eth_hdr));
 
   /* Find dst MAC address for IP */
-  ae = arp_lookup(ctx->arp_table, f_beui32(ip->dst));
+  ae = arp_lookup(&ctx->arp_table, f_beui32(ip->dst));
   if (ae == NULL)
+  {
+    /* ARP entry doesn't exist so send message to control path to resolve */
+    qe = queue_tail(ctx->fast_ctl_q);
+    if (qe == NULL)
+    {
+      LOG_ERROR("failed to get tail for fast->control queue");
+      return -1;
+    }
+    
+    qe->data.arp_lookup.ip = f_beui32(ip->dst);
+    ret = queue_enqueue(ctx->fast_ctl_q, QUEUE_ARP_LOOKUP);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue ARP lookup to control");
+      return -1;
+    }
+    
+    /* Mark ARP entry as pending */
+    arp_insert_pending(&ctx->arp_table, f_beui32(ip->dst));
+    
     return -1;
+  }
+  
+  /* Return if ARP entry is still pending */
+  if (ae->pending)
+    return -1;
+  
+  /* Copy destination MAC address to packet */
   memcpy(eth->dst.addr, ae->mac, ETH_ADDR_LEN);
 
   return 0;
-}
-
-static inline void tx_cache_alloc(struct fast_context *ctx, 
-    struct rte_mbuf ***mbs, __u16 num)
-{
-  __u16 grow, tail, g;
-
-  /* We don't have enough mbufs in the cache so allocate more */
-  if (ctx->tx_cache_n < num)
-  {
-    grow = TX_CACHE_SIZE - ctx->tx_cache_n;
-    tail = (ctx->tx_cache_head + ctx->tx_cache_n) & (TX_CACHE_SIZE - 1);
-
-    if (tail + grow <= TX_CACHE_SIZE)
-    {
-      assert(rte_pktmbuf_alloc_bulk(ctx->nic_ctx.pool, 
-          ctx->tx_cache_mbs + tail , grow) == 0);
-    }
-    else
-    {
-      g = TX_CACHE_SIZE - tail;
-      assert(rte_pktmbuf_alloc_bulk(ctx->nic_ctx.pool, 
-          ctx->tx_cache_mbs + tail, g) == 0);
-      assert(rte_pktmbuf_alloc_bulk(ctx->nic_ctx.pool, 
-          ctx->tx_cache_mbs, grow - g) == 0);
-    }
-
-    ctx->tx_cache_n += grow;
-  }
-
-  *mbs = ctx->tx_cache_mbs + ctx->tx_cache_head;
-
-  ctx->tx_cache_head = (ctx->tx_cache_head + num) & (TX_CACHE_SIZE - 1);
-  ctx->tx_cache_n -= num;
-}
-
-static inline void tx_cache_free(struct fast_context *ctx, struct rte_mbuf *mb)
-{
-  __u16 n, head;
-
-  n = ctx->tx_cache_n;
-  if (n < TX_CACHE_SIZE)
-  {
-    /* Return mbuf to the cache */
-    head = (ctx->tx_cache_head + n) & (TX_CACHE_SIZE - 1);
-    ctx->tx_cache_mbs[head] = mb;
-    ctx->tx_cache_n = n + 1;
-    mb->ol_flags = 0;
-  }
-  else
-  {
-    /* The cache is full so return to the DPDK mempool */
-    rte_pktmbuf_free(mb);
-    mb->ol_flags = 0;
-  }
 }
 

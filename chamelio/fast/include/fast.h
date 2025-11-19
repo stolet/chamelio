@@ -9,6 +9,7 @@
 #include "nic.h"
 #include "nic_fast.h" 
 #include "config.h"
+#include "arp.h"
 #include "queue_types.h"
 #include "shmalloc.h"
 
@@ -76,6 +77,8 @@ struct fast_context {
   __u8 id;
   /* NIC context for the fast-path */
   struct nic_fast_context nic_ctx;
+  /* Chamelio configuration */
+  struct configuration *config;
   
   /* Number of guests registered so far in this fast-path */
   __u8 n_guests;
@@ -99,6 +102,8 @@ struct fast_context {
   struct equeue *fast_ctl_q;
   /* Queue from the control-path to the fast-path */
   struct dqueue *ctl_fast_q;
+  /* Transmit queue for packets from control-path */
+  struct dqueue *ctl_txq;
 
   /* File descriptor for internal shared memory */
   int shm_fd_internal;
@@ -106,14 +111,15 @@ struct fast_context {
   void *shm_base_internal;
   
   /* ARP table replicated in fast-path to avoid locks */
-  struct arp_table *arp_table;
+  struct arp_table arp_table;
 };
 
 /* Initialises the fast-path context when a core is launched */
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, __u16 thread_id,
     struct shm_handle *fc_handle, struct shm_handle *cf_handle,
-    struct configuration *config, int shm_fd_internal, void *shm_base_internal);
+    struct shm_handle *ctxq_handle, struct configuration *config, 
+    int shm_fd_internal, void *shm_base_internal);
 /* Dataplane loop in a fast-path core */
 int fast_loop(struct fast_context *ctx);
 /* Cleans up the fast-path */

@@ -14,6 +14,8 @@ enum cfg_params {
   CP_SHM_INTERNAL_LEN,
   CP_CHAM_QUEUE_LEN,
   CP_AGT_QUEUE_LEN,
+  CP_CONTROL_TXQ_LEN,
+  CP_CONTROL_TXQ_PKT_LEN,
   CP_IP_ADDR,
   CP_IP_ROUTE,
   CP_MAX_GUESTS,
@@ -38,6 +40,12 @@ static struct option opts[] = {
   { .name = "agt-queue-len",
     .has_arg = required_argument,
     .val = CP_AGT_QUEUE_LEN },
+  { .name = "control-txq-len",
+    .has_arg = required_argument,
+    .val = CP_CONTROL_TXQ_LEN },
+  { .name = "control-txq-pkt-len",
+    .has_arg = required_argument,
+    .val = CP_CONTROL_TXQ_PKT_LEN },
   { .name = "ip-addr",
     .has_arg = required_argument,
     .val = CP_IP_ADDR },
@@ -116,6 +124,18 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
+      case CP_CONTROL_TXQ_LEN:
+        if (parse_int64(optarg, &c->control_txq_len) != 0) {
+          fprintf(stderr, "control tx queue len parsing failed\n");
+          goto failed;
+        }
+        break;
+      case CP_CONTROL_TXQ_PKT_LEN:
+        if (parse_int64(optarg, &c->control_txq_pkt_len) != 0) {
+          fprintf(stderr, "control tx queue packet len parsing failed\n");
+          goto failed;
+        }
+        break;
       case CP_IP_ADDR:
         c->ip_prefix = 0;
         if (parse_cidr(optarg, &c->ip, &c->ip_prefix) != 0) {
@@ -189,6 +209,8 @@ static int config_defaults(struct configuration *c, char *progname)
   c->shm_internal_len = 1024 * 1024 * 32;
   c->cham_queue_len = 16 * 1024;
   c->agt_queue_len = 16 * 1024;
+  c->control_txq_len = 1024;
+  c->control_txq_pkt_len = 1500;
   c->ip = 0;
   c->max_guests = 128;
   c->max_apps = 32;
@@ -221,6 +243,10 @@ static void print_usage(struct configuration *c, char *progname)
            "[default: %llu]\n"
       "  --agt-queue-len=LEN                     Guest agent <-> Chamelio queue len"
            "[default: %llu]\n"
+      "  --control-txq-len=LEN                   Transmit queue len for control-path"
+           "[default: %llu]\n"
+      "  --control-txq-pkt-len=LEN               Transmit queue pkt len for control-path"
+           "[default: %llu]\n"
       "IP protocol parameters:\n"
       "  --ip-route=DEST[/PREFIX],NEXTHOP        Add route\n"
       "  --ip-addr=ADDR[/PREFIXLEN]              Set local IP address\n"
@@ -243,7 +269,8 @@ static void print_usage(struct configuration *c, char *progname)
       "\n"
       ,progname, 
       c->shm_len, c->shm_internal_len,
-      c->cham_queue_len, c->agt_queue_len,
+      c->cham_queue_len, c->agt_queue_len, c->control_txq_len,
+      c->control_txq_pkt_len,
       c->max_guests, c->max_apps, c->max_app_ctxs, c->max_bufs,
       c->fp_cores_max);
 }

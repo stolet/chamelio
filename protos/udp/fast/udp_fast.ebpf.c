@@ -208,6 +208,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   __u64 part;
   struct udp_pkt *p = (struct udp_pkt *) ctx->pkt;
   
+  bpf_print(0);
   qe = (struct udp_queue_entry *) ctx->qe;
   sock_map = ctx->maps[SOCK_MAP_IDX].addr;
   bump_cham = &qe->data.bump_cham_tx;
@@ -262,12 +263,12 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   p->ip.ttl = 0xff;
   p->ip.proto = IP_PROTO_UDP;
   p->ip.src = t_beui32(sock->local_ip);
-  p->ip.dst = t_beui32(sock->remote_ip);
+  p->ip.dst = t_beui32(bump_cham->tx_ip);
   p->ip.chksum = 0;
 
   /* Set UDP header */
-  p->udp.dst = t_beui16(sock->remote_port);
   p->udp.src = t_beui16(sock->local_port);
+  p->udp.dst = t_beui16(bump_cham->tx_port);
   p->udp.len = t_beui16(udp_hdrs_len + payload_len);
   
   /* Copy data to packet */

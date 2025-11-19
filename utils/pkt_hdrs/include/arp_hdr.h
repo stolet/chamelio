@@ -10,19 +10,31 @@
 #define ARP_HTYPE_ETHERNET 1
 #define ARP_PTYPE_IPV4 0x0800
 
+/* ARP Header */
 struct arp_hdr {
+  /* Hardware type */
   beui16_t htype;
+  /* Protocol type */
   beui16_t ptype;
+  /* Hardware length */
   __u8 hlen;
+  /* Protocol length */
   __u8 plen;
+  /* Operation */
   beui16_t oper;
+  /* Sender hardware address */
   struct eth_addr sha;
+  /* Sender protocol address */
   ip_addr_t spa;
+  /* Target hardware address */
   struct eth_addr tha;
+  /* Target protocol address */
   ip_addr_t tpa;
 } __attribute__((packed));
 
-void arp_insert(struct arp_table *at, __u32 ip, __u8 *mac);
-struct arp_entry * arp_lookup(struct arp_table *at, __u32 ip);
+struct pkt_arp {
+  struct eth_hdr eth;
+  struct arp_hdr arp;
+} __attribute__ ((packed));
 
 #endif

@@ -31,6 +31,7 @@ static void test_single_insert()
 
   TEST_ASSERT(entry != NULL, "Failed to find inserted ARP entry");
   TEST_ASSERT(memcmp(entry->mac, mac1, 6) == 0, "MAC address mismatch");
+  TEST_ASSERT(entry->pending == 0, "Pending value mismatch");
 
   printf(ANSI_COLOR_GREEN "PASSED: single ARP insert test" 
       ANSI_COLOR_RESET "\n");
@@ -59,10 +60,12 @@ static void test_multiple_inserts()
   TEST_ASSERT(entry1 != NULL, "Failed to find first ARP entry");
   TEST_ASSERT(memcmp(entry1->mac, mac1, 6) == 0, 
       "MAC address mismatch for first entry");
+  TEST_ASSERT(entry1->pending == 0, "Pending value mismatch");
 
   TEST_ASSERT(entry2 != NULL, "Failed to find second ARP entry");
   TEST_ASSERT(memcmp(entry2->mac, mac2, 6) == 0, 
       "MAC address mismatch for second entry");
+  TEST_ASSERT(entry2->pending == 0, "Pending value mismatch");
 
   printf(ANSI_COLOR_GREEN "PASSED: multiple ARP inserts test" 
       ANSI_COLOR_RESET "\n");
@@ -90,10 +93,12 @@ static void test_collision_handling()
   TEST_ASSERT(entry1 != NULL, "Failed to find first ARP entry");
   TEST_ASSERT(memcmp(entry1->mac, mac1, 6) == 0, 
       "MAC address mismatch for first entry");
+  TEST_ASSERT(entry1->pending == 0, "Pending value mismatch");
 
   TEST_ASSERT(entry_collision != NULL, "Failed to find colliding ARP entry");
   TEST_ASSERT(memcmp(entry_collision->mac, mac_collision, 6) == 0, 
       "MAC address mismatch for colliding entry");
+  TEST_ASSERT(entry_collision->pending == 0, "Pending value mismatch");
 
   printf(ANSI_COLOR_GREEN "PASSED: ARP collision handling test" 
       ANSI_COLOR_RESET "\n");
@@ -132,6 +137,7 @@ static void test_insert_and_overwrite()
   TEST_ASSERT(entry != NULL, "Failed to find inserted ARP entry");
   TEST_ASSERT(memcmp(entry->mac, mac1, 6) == 0, 
       "MAC address mismatch for initial insert");
+  TEST_ASSERT(entry->pending == 0, "Pending value mismatch");
 
   ret = arp_insert(&at, TEST_IP_1, mac2);
   TEST_ASSERT(ret == 0, "Failed to insert IP");
@@ -140,6 +146,57 @@ static void test_insert_and_overwrite()
   TEST_ASSERT(entry != NULL, "Failed to find overwritten ARP entry");
   TEST_ASSERT(memcmp(entry->mac, mac2, 6) == 0, 
       "MAC address mismatch after overwrite");
+  TEST_ASSERT(entry->pending == 0, "Pending value mismatch");
+
+  printf(ANSI_COLOR_GREEN "PASSED: ARP insert and overwrite test" 
+      ANSI_COLOR_RESET "\n");
+}
+
+static void test_insert_pending()
+{
+  int ret;
+  struct arp_entry *entry;
+  struct arp_table at = {0};
+  
+  printf(ANSI_COLOR_BLUE "Testing ARP insert pending.." ANSI_COLOR_RESET "\n");
+
+  ret = arp_insert_pending(&at, TEST_IP_1);
+  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  
+  entry = arp_lookup(&at, TEST_IP_1);
+
+  TEST_ASSERT(entry != NULL, "Failed to find inserted ARP entry");
+  TEST_ASSERT(entry->pending == 1, "Pending value mismatch");
+
+  printf(ANSI_COLOR_GREEN "PASSED: single ARP insert test" 
+      ANSI_COLOR_RESET "\n");
+}
+
+static void test_insert_pending_overwrite()
+{
+  int ret;
+  struct arp_entry *entry;
+  struct arp_table at = {0};
+  __u8 mac2[6] = TEST_MAC_2;
+  
+  printf(ANSI_COLOR_BLUE "Testing ARP insert pending and overwrite..." 
+      ANSI_COLOR_RESET "\n");
+
+  ret = arp_insert_pending(&at, TEST_IP_1);
+  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  
+  entry = arp_lookup(&at, TEST_IP_1);
+  TEST_ASSERT(entry != NULL, "Failed to find inserted ARP entry");
+  TEST_ASSERT(entry->pending == 1, "Pending value mismatch");
+
+  ret = arp_insert(&at, TEST_IP_1, mac2);
+  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  
+  entry = arp_lookup(&at, TEST_IP_1);
+  TEST_ASSERT(entry != NULL, "Failed to find overwritten ARP entry");
+  TEST_ASSERT(memcmp(entry->mac, mac2, 6) == 0, 
+      "MAC address mismatch after overwrite");
+  TEST_ASSERT(entry->pending == 0, "Pending value mismatch");
 
   printf(ANSI_COLOR_GREEN "PASSED: ARP insert and overwrite test" 
       ANSI_COLOR_RESET "\n");
@@ -178,6 +235,8 @@ int main()
   test_collision_handling();
   test_lookup_nonexistent();
   test_insert_and_overwrite();
+  test_insert_pending();
+  test_insert_pending_overwrite();
   test_arp_table_full();
 
   printf("All ARP tests passed!\n");

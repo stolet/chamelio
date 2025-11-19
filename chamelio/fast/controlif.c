@@ -2,6 +2,8 @@
 #include "queue_types.h"
 #include "queue_fns.h"
 #include "scheduler_fns.h"
+#include "arp_hdr.h"
+#include "txcache.h"
 
 static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe);
@@ -9,17 +11,23 @@ static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_upload_ebpf(struct fast_context *ctx, struct queue_entry *qe);
+static void handle_arp_pkt(struct fast_context *ctx, struct queue_entry *qe);
 
 int controlif_poll(struct fast_context *ctx)
 {
-  int i;
+  int i, n;
   __u8 type;
   struct dqueue *q;
   struct queue_entry *qe;
  
+  /* TODO: Might be good to decouple messages with control
+     information from from messages that want to send packets */
+  n = BATCH_SIZE;
+  if (TXBUF_SIZE - ctx->tx_n < n)
+    n = TXBUF_SIZE - ctx->tx_n;
+  
   q = ctx->ctl_fast_q;
-
-  for (i = 0; i < BATCH_SIZE; i++)
+  for (i = 0; i < n; i++)
   {
     qe = queue_head(q);
 
@@ -53,6 +61,10 @@ int controlif_poll(struct fast_context *ctx)
         break;
       case QUEUE_UPLOAD_EBPF_REQ:
         handle_upload_ebpf(ctx, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_ARP_PKT_TX:
+        handle_arp_pkt(ctx, qe);
         queue_dequeue(q);
         break;
       default:
@@ -209,4 +221,40 @@ static void handle_upload_ebpf(struct fast_context *ctx, struct queue_entry *qe)
   p->event_rx_vm = req->event_rx_vm;
   p->event_tx_vm = req->event_tx_vm;
   p->event_deq_vm = req->event_deq_vm;
+}
+
+static void handle_arp_pkt(struct fast_context *ctx, struct queue_entry *qe)
+{
+  int ret;
+  struct queue_entry *txqe;
+  struct rte_mbuf **mb;
+  
+  /* Get packet from txq */
+  txqe = queue_head(ctx->ctl_txq);
+  if (txqe == NULL)
+  {
+    LOG_ERROR("failed to get head of control tx queue");
+    return;
+  } 
+  
+  /* TODO: Might want to look into doing this allocation in bulk */
+  /* Allocate buffer for transmission */
+  txcache_alloc(ctx, &mb, 1);
+  
+  /* Copy packet data from shared memory to mbuf */
+  mb[0]->data_off = 0;
+  mb[0]->pkt_len = mb[0]->data_len = sizeof(struct pkt_arp);
+  rte_memcpy(rte_pktmbuf_mtod(mb[0], __u8 *), &txqe->data, mb[0]->data_len);
+
+  /* Add packet to transmit buffer */
+  ctx->tx_mbs[ctx->tx_n] = mb[0];
+  ctx->tx_n++;
+
+/* Dequeue control tx queue */
+  ret = queue_dequeue(ctx->ctl_txq);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to dequeue control tx queue");
+    return;
+  }
 }

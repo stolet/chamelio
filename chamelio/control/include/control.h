@@ -3,6 +3,7 @@
 
 #include "config.h"
 #include "queue.h"
+#include "arp.h"
 #include "shmalloc.h"
 
 #define CORE_INVALID UINT16_MAX
@@ -59,6 +60,8 @@ struct guest_control {
 struct control_context {
   /* Configuration parameters */
   struct configuration *config;
+  /* NIC paremeters and configuration */
+  struct nic_context *nic_ctx;
   /* Next fast-path core to poll */
   __u16 next_core;
   /* Queues from the fast-path to control-path. One per core. */
@@ -70,7 +73,12 @@ struct control_context {
   int shm_fd_internal;
   /* Base pointer for internal shared memory region */
   void *shm_base_internal;
+  /* Queue that pushes packets from control to fast. One per core. */
+  struct equeue **txqs;
 
+  /* ARP table. This is also replicated in fast-path */
+  struct arp_table arp_table;
+  
   /* Listening UX sockets for VMs */
   int ivshmem_uxfd;
   /* Epoll object used by UX VM socket */
@@ -89,8 +97,10 @@ struct control_context {
   struct guest_control *guests;
 };
 
-int control_context_init(struct control_context *s_ctx, struct configuration *config,
-    struct shm_handle **fs_handles, struct shm_handle **sf_handles);
+int control_context_init(struct control_context *ctrl_ctx, 
+    struct nic_context *nic_ctx, struct configuration *config, 
+    struct shm_handle **fc_handles, struct shm_handle **cf_handles,
+    struct shm_handle **txq_handles);
 int control_loop(struct control_context *ctx);
 
 #endif

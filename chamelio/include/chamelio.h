@@ -16,10 +16,15 @@ struct chamelio_context {
   struct control_context sp_ctx;
   /* Context for the fast-path in each core */
   struct fast_context **f_ctxs;
-  /* Shared memory handles for the fast-path to control-path queues. One per core. */
+  /* Shared memory handles for the fast-path to control-path queues. 
+     One per core. */
   struct shm_handle **fast_ctl_handles;
-  /* Shared memory handles for the control-path to fast-path queues. One per core. */
+  /* Shared memory handles for the control-path to fast-path queues. 
+     One per core. */
   struct shm_handle **ctl_fast_handles;
+  /* Shared memory handles for the control-path to fast-path tx queues. 
+     One per core */
+  struct shm_handle **ctxq_handles;
   /* File descriptor for internal shared memory region */
   int shm_fd_internal;
   /* Base pointer to internal shared memory region */

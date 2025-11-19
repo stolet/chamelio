@@ -3,6 +3,7 @@ arp_inc = include_directories('include')
 arp_srcs = files('arp.c')
 
 deps = [
+  dependency('queue_dep'),
   dependency('pkt_hdrs_dep'),
 ]
 

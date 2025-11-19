@@ -8,6 +8,7 @@
 
 #include "control.h"
 #include "shmalloc.h"
+#include "nic.h"
 #include "ivshmemif.h"
 #include "guestif.h"
 #include "config.h"
@@ -15,11 +16,13 @@
 #include "queue_fns.h"
 #include "queue_types.h"
 #include "scheduler_fns.h"
-
 #include "ebpf.h"
 
 static int poll_fast(struct control_context *ctx);
 static int poll_guests(struct control_context *ctx);
+
+static int handle_arp_lookup(struct control_context *ctx, 
+    struct queue_entry *qe);
 
 static int handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
@@ -41,43 +44,58 @@ static void * bpf_memcpy(void *dst, void *src, size_t n);
 static __u16 ipv4_checksum(void *ip_hdr);
 static __u16 ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr);
 
-int control_context_init(struct control_context *ctx, 
-    struct configuration *config, struct shm_handle **fc_handles,
-    struct shm_handle **cf_handles)
+int control_context_init(struct control_context *ctrl_ctx, 
+    struct nic_context *nic_ctx, struct configuration *config, 
+    struct shm_handle **fc_handles, struct shm_handle **cf_handles,
+    struct shm_handle **txq_handles)
 {
   int i;
   struct guest_control *guests;
-  struct equeue *cfq;
+  struct equeue *cfq, *txq;
   struct dqueue *fcq;
   struct dqueue **fast_ctl_qs;
-  struct equeue **ctl_fast_qs;
+  struct equeue **ctl_fast_qs, **txqs;
 
-  ctx->config = config;
+  ctrl_ctx->config = config;
+  ctrl_ctx->nic_ctx = nic_ctx;
 
-  ctx->ivshmem_uxfd = -1;
-  ctx->ivshmem_epfd = -1;
+  ctrl_ctx->ivshmem_uxfd = -1;
+  ctrl_ctx->ivshmem_epfd = -1;
 
-  ctx->guest_uxfd = -1;
-  ctx->guest_epfd = -1;
+  ctrl_ctx->guest_uxfd = -1;
+  ctrl_ctx->guest_epfd = -1;
 
-  /* Allocate pointer list for queues */
+  /* Initialize ARP table to default values */
+  arp_table_init(&ctrl_ctx->arp_table);
+  
+  /* Allocate pointer list for queues from fast to control */
   fast_ctl_qs = malloc(sizeof(struct dqueue *) * config->fp_cores_max);
   if (fast_ctl_qs == NULL)
   {
     LOG_ERROR("failed to allocate list of fast->control queues");
     return -1;
   }
-  ctx->fast_ctl_qs = fast_ctl_qs;
-  ctx->next_core = 0;
+  ctrl_ctx->fast_ctl_qs = fast_ctl_qs;
+  ctrl_ctx->next_core = 0;
 
+  /* Allocate pointer list for queues from control to fast */
   ctl_fast_qs = malloc(sizeof(struct equeue *) * config->fp_cores_max);
   if (ctl_fast_qs == NULL)
   {
     LOG_ERROR("failed to alloacate list of control->fast queues");
     goto free_fast_control_list;
   }
-  ctx->ctl_fast_qs = ctl_fast_qs;
+  ctrl_ctx->ctl_fast_qs = ctl_fast_qs;
 
+  /* Allocate pointer list for queues containing packets for transmission */
+  txqs = malloc(sizeof (struct equeue *) * config->fp_cores_max);
+  if (txqs == NULL)
+  {
+    LOG_ERROR("failed to allocate list of control-path transmit queues");
+    goto free_control_fast_list;
+  }
+  ctrl_ctx->txqs = txqs;
+  
   /* Create a queue with each shared memory handle */
   for (i = 0; i < config->fp_cores_max; i++)
   {
@@ -86,18 +104,27 @@ int control_context_init(struct control_context *ctx,
     if (cfq == NULL)
     {
       LOG_ERROR("failed to create fast to control path queue");
-      goto free_control_fast_list;
+      goto free_control_txqs;
     }
-    ctx->ctl_fast_qs[i] = cfq;
+    ctrl_ctx->ctl_fast_qs[i] = cfq;
 
     fcq = dqueue_new(config->cham_queue_len, sizeof(struct queue_entry),
                      fc_handles[i]->addr, fc_handles[i]->off);
     if (fcq == NULL)
     {
       LOG_ERROR("failed to create control to fast path queue");
-      goto free_control_fast_list;
+      goto free_control_txqs;
     }
-    ctx->fast_ctl_qs[i] = fcq;
+    ctrl_ctx->fast_ctl_qs[i] = fcq;
+    
+    txq = equeue_new(config->control_txq_len, config->control_txq_pkt_len, 
+        txq_handles[i]->addr, txq_handles[i]->off);
+    if (txq == NULL)
+    {
+      LOG_ERROR("failed to create control path transmit queue");
+      goto free_control_txqs;
+    }
+    ctrl_ctx->txqs[i] = txq;
   }
 
   /* Allocate guests */
@@ -107,12 +134,14 @@ int control_context_init(struct control_context *ctx,
     LOG_ERROR("failed to allocate guest list");
     goto free_control_fast_list;
   }
-  ctx->guests = guests;
-  ctx->n_guests = 0;
-  ctx->next_guest = 0;
+  ctrl_ctx->guests = guests;
+  ctrl_ctx->n_guests = 0;
+  ctrl_ctx->next_guest = 0;
 
   return 0;
 
+free_control_txqs:
+  free(txqs);
 free_control_fast_list:
   free(ctl_fast_qs);
 free_fast_control_list:
@@ -179,6 +208,10 @@ static int poll_fast(struct control_context *ctx)
     switch (qe->type)
     {
       case QUEUE_EMPTY:
+        break;
+      case QUEUE_ARP_LOOKUP:
+        handle_arp_lookup(ctx, qe);
+        queue_dequeue(q);
         break;
       default:
         LOG_ERROR("unknown queue entry type from "
@@ -270,6 +303,27 @@ static int poll_guests(struct control_context *ctx)
   return 0;
 }
 
+static int handle_arp_lookup(struct control_context *ctx, 
+    struct queue_entry *qe)
+{
+  struct arp_entry *ae;
+  struct queue_arp_lookup *le;
+  
+  le = &qe->data.arp_lookup;
+  
+  /* Ignore lookup if this address is resolved or pending */
+  ae = arp_lookup(&ctx->arp_table, le->ip);
+  
+  if (ae == NULL)
+  {
+    /* Enqueue ARP request to fast-path */
+    arp_request(ctx->txqs[0], ctx->ctl_fast_qs[0], le->ip,
+        (__u8 *) &ctx->nic_ctx->eth_addr.addr_bytes, ctx->config->ip);
+  }
+      
+  return 0;
+}
+
 static int handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
@@ -342,6 +396,7 @@ static int handle_new_queue_req(struct control_context *ctx,
   res->opaque = req->opaque;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
   assert(ret == 0);
+  
   return 0;
 }
 

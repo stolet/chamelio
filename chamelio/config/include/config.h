@@ -13,6 +13,10 @@ struct configuration {
   __u64 cham_queue_len;
   /* Size of queue between guest agent and chamelio */
   __u64 agt_queue_len;
+  /* Size of transmit queue for control path */
+  __u64 control_txq_len;
+  /* Size of each packet in control transmit queue */
+  __u64 control_txq_pkt_len;
 
   /*** IP address configurations ***/
   /* IP address for this host */

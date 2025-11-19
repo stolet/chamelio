@@ -26,7 +26,7 @@ int main (int argc, char **argv)
   void *shm_base;
   struct configuration *config;
   struct control_context *c_ctx;
-  struct shm_handle *sh, **fs_handles, **sf_handles;
+  struct shm_handle *sh, **fc_handles, **cf_handles, **txq_handles;
   struct fast_context **f_ctxs;
   struct shm_allocator *alloc;
   unsigned threads_launched;
@@ -94,22 +94,31 @@ int main (int argc, char **argv)
   }
 
   /* Allocate fast->control queues */
-  fs_handles = malloc(sizeof(struct shm_handle *) * config->fp_cores_max);
-  if (fs_handles == NULL)
+  fc_handles = malloc(sizeof(struct shm_handle *) * config->fp_cores_max);
+  if (fc_handles == NULL)
   {
     LOG_ERROR("failed to allocate list for fast to control queue handles");
     goto free_sctx;
   }
-  cham_ctx.fast_ctl_handles = fs_handles;
+  cham_ctx.fast_ctl_handles = fc_handles;
   
   /* Allocate control->fast queues */
-  sf_handles = malloc(sizeof(struct queue *) * config->fp_cores_max);
-  if (sf_handles == NULL)
+  cf_handles = malloc(sizeof(struct shm_handle *) * config->fp_cores_max);
+  if (cf_handles == NULL)
   {
-    LOG_ERROR("failed to allocate list for control-path to fast-path queues");
+    LOG_ERROR("failed to allocate list for control-path to fast-path handles");
     goto free_sh_fast_control_list;
   }
-  cham_ctx.ctl_fast_handles = sf_handles;
+  cham_ctx.ctl_fast_handles = cf_handles;
+  
+  /* Allocate control tx queues */
+  txq_handles = malloc(sizeof(struct shm_handle *) * config->fp_cores_max);
+  if (txq_handles == NULL)
+  {
+    LOG_ERROR("failed to allocate list for tx queue handles");
+    goto free_sh_control_fast_list;
+  }
+  cham_ctx.ctxq_handles = txq_handles;
 
   /* Allocate memory for queues between the control path and the fast path */
   for (i = 0; i < config->fp_cores_max; i++)
@@ -120,10 +129,10 @@ int main (int argc, char **argv)
     {
       LOG_ERROR("failed to allocated memory in"
           "shared memory for fast to control queue");
-      goto free_sh_control_fast_list;
+      goto free_sh_txq_list;
     }
     memset(sh->addr, 0, config->cham_queue_len);
-    fs_handles[i] = sh;
+    fc_handles[i] = sh;
 
     ret = shmalloc_alloc(alloc, config->cham_queue_len * 
         sizeof(struct queue_entry), &sh);
@@ -131,14 +140,26 @@ int main (int argc, char **argv)
     {
       LOG_ERROR("failed to allocated memory in" 
           "shared memory for control to fast queue");
-      goto free_sh_control_fast_list;
+      goto free_sh_txq_list;
     }
     memset(sh->addr, 0, config->cham_queue_len);
-    sf_handles[i] = sh;
+    cf_handles[i] = sh;
+    
+    ret = shmalloc_alloc(alloc, 
+        config->control_txq_len * config->control_txq_pkt_len, &sh);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to allocate memory in"
+          "shared memory for control txqs");
+      goto free_sh_txq_list;
+    }
+    memset(sh->addr, 0, config->control_txq_len);
+    txq_handles[i] = sh;
   }
 
   /* Initialize control-path */
-  control_context_init(c_ctx, config, fs_handles, sf_handles);
+  control_context_init(c_ctx, &cham_ctx.nic_ctx, 
+      config, fc_handles, cf_handles, txq_handles);
   
   /* Start fast-path threads */
   threads_launched = fast_start(&cham_ctx.config);
@@ -155,13 +176,16 @@ int main (int argc, char **argv)
 free_shs:
   for (j = 0; j < i; j++)
   {
-    shmalloc_free(alloc, fs_handles[i]);
-    shmalloc_free(alloc, sf_handles[i]);
+    shmalloc_free(alloc, fc_handles[i]);
+    shmalloc_free(alloc, cf_handles[i]);
+    shmalloc_free(alloc, txq_handles[i]);
   }
+free_sh_txq_list:
+  free(txq_handles);
 free_sh_control_fast_list:
-  free(fs_handles);
+  free(fc_handles);
 free_sh_fast_control_list:
-  free(sf_handles);
+  free(cf_handles);
 free_sctx:
   free(c_ctx);
 free_alloc:
@@ -241,7 +265,8 @@ static int fast_thread(void *arg)
   /* initialize data plane context */
   ret = fast_context_init(f_ctx, &cham_ctx.nic_ctx, id,
       cham_ctx.fast_ctl_handles[id], cham_ctx.ctl_fast_handles[id],
-      &cham_ctx.config, cham_ctx.shm_fd_internal, cham_ctx.shm_base_internal);
+      cham_ctx.ctxq_handles[id], &cham_ctx.config, 
+      cham_ctx.shm_fd_internal, cham_ctx.shm_base_internal);
   if (ret != 0) 
   {
     LOG_ERROR("failed to initialize fast path context");
