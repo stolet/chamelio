@@ -208,7 +208,6 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   __u64 part;
   struct udp_pkt *p = (struct udp_pkt *) ctx->pkt;
   
-  bpf_print(0);
   qe = (struct udp_queue_entry *) ctx->qe;
   sock_map = ctx->maps[SOCK_MAP_IDX].addr;
   bump_cham = &qe->data.bump_cham_tx;
@@ -238,20 +237,6 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     + sizeof(struct udp_hdr) + opt_len;
 
   /* Set ETH header */
-  p->eth.src.addr[0] = 184;
-  p->eth.src.addr[1] = 89;
-  p->eth.src.addr[2] = 159;
-  p->eth.src.addr[3] = 196;
-  p->eth.src.addr[4] = 175;
-  p->eth.src.addr[5] = 102;
-  
-  p->eth.dst.addr[0] = 184;
-  p->eth.dst.addr[1] = 89;
-  p->eth.dst.addr[2] = 159;
-  p->eth.dst.addr[3] = 196;
-  p->eth.dst.addr[4] = 175;
-  p->eth.dst.addr[5] = 230;
-
   p->eth.type = t_beui16(ETH_TYPE_IP);
 
   /* Set IP header */

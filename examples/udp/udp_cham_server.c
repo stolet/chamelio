@@ -13,10 +13,12 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <stdio.h>
+#include <unistd.h>
+
 
 int main(int argc, char **argv)
 {
-  int i, ret, fd, port;
+  int i, n, m, ret, fd, port;
   size_t buf_size;
   struct sockaddr_in src_addr, dst_addr;
   socklen_t dstlen;
@@ -88,12 +90,21 @@ int main(int argc, char **argv)
       bind_ip, port, buf_size);
   fflush(stdout);
   
+  /* Send ARP request */
+  while(udp_poll_fast() == 0){}
+  dstlen = sizeof(dst_addr);
+  n = udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&dst_addr, dstlen);
+  while(udp_poll_fast() == 0){};
+  udp_sendto(fd, buf, (size_t)n, (struct sockaddr *)&dst_addr, dstlen);
+  udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&dst_addr, dstlen);
+  sleep(1);
+  
   while(1)
   {
     dstlen = sizeof(dst_addr);
     
     udp_poll_fast();
-    ssize_t n = udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&dst_addr, dstlen);
+    n = udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&dst_addr, dstlen);
     if (n < 0)
     {
       if (errno == EINTR || errno == EAGAIN) continue;
@@ -102,12 +113,15 @@ int main(int argc, char **argv)
       return EXIT_FAILURE;
     }
 
-    udp_poll_fast();
-    ssize_t m = udp_sendto(fd, buf, (size_t)n, (struct sockaddr *)&dst_addr, dstlen);
-    if (m < 0 && errno != EAGAIN)
+    if (n > 0)
     {
-      if (errno == EINTR) 
+      udp_poll_fast();
+      m = udp_sendto(fd, buf, (size_t)n, (struct sockaddr *)&dst_addr, dstlen);
+      if (m < 0 && errno != EAGAIN)
+      {
+        if (errno == EINTR) 
         continue;
+      }
     }
   }
 

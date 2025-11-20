@@ -18,6 +18,8 @@ struct nic_fast_context {
   __u16 queue_id;
   /* Memory pool for this fast-path core */
   struct rte_mempool *pool;
+  /* Ethernet address of the NIC port */
+  struct rte_ether_addr eth_addr;
 };
 
 /* Initialises NIC queue and memory pool for this core */

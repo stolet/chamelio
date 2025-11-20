@@ -276,8 +276,7 @@ static void print_stats(__u64 now)
 
 int main(int argc, char **argv)
 {
-  int ret, burst;
-  ssize_t s;
+  int r, s, ret, burst;
   struct sockaddr_in dst;
   __u8 *txbuf, *rxbuf;
   __u64 now, rtt_us;
@@ -314,7 +313,6 @@ int main(int argc, char **argv)
     fprintf(stderr, "failed to connect to Chamelio");
     exit(EXIT_FAILURE);
   }
-  
     
   ret = udp_ctx_new();
   if (ret != 0)
@@ -391,7 +389,7 @@ int main(int argc, char **argv)
     while(1)
     {
       udp_poll_fast();
-      ssize_t r = udp_recvfrom(fd, rxbuf, msg_size, NULL, 0);
+      r = udp_recvfrom(fd, rxbuf, msg_size, NULL, 0);
       if (r < 0)
       {
         if (errno == EAGAIN || errno == EWOULDBLOCK) break;

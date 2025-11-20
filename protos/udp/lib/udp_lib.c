@@ -544,7 +544,7 @@ int udp_poll_fast()
     }
   }
 
-  return 0;
+  return n;
 }
 
 int udp_poll_slow()
@@ -582,7 +582,7 @@ int udp_poll_slow()
     }
   }
 
-  return 0;  
+  return n;  
 }
 
 static int handle_new_sock_res(struct udp_queue_entry *qe)

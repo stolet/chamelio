@@ -32,6 +32,7 @@ int nic_fast_init(struct nic_context *nic_ctx,
   
   nic_fast_ctx->port_id = nic_ctx->port_id;
   nic_fast_ctx->queue_id = queue_id;
+  nic_fast_ctx->eth_addr = nic_ctx->eth_addr;
 
   /* Allocate memory pool that will hold packets */
   if ((nic_fast_ctx->pool = mempool_alloc(queue_id)) == NULL) 

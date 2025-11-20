@@ -244,7 +244,7 @@ int poll_queues(struct fast_context *ctx)
       if (deq_ret > 0)
       {
         /* Add destination MAC address */
-        ret = process_infra_tx(ctx, mbs[ntx]);
+        process_infra_tx(ctx, mbs[ntx]);
         
         /* Add to TX buffer if infra protos were successful */
         if (ret == 0)
@@ -446,8 +446,9 @@ static inline int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb
   if (ae->pending)
     return -1;
   
-  /* Copy destination MAC address to packet */
+  /* Copy MAC addresses to packet */
   memcpy(eth->dst.addr, ae->mac, ETH_ADDR_LEN);
+  memcpy(eth->src.addr, ctx->nic_ctx.eth_addr.addr_bytes, ETH_ADDR_LEN);
 
   return 0;
 }
