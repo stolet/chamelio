@@ -372,7 +372,7 @@ static int handle_arp_rep(struct control_context *ctx,
   struct queue_entry *arp_up;
   struct queue_arp_rx_rep *arp_rep = &qe->data.arp_pkt_rx_rep;
   
-  ret = arp_insert(&ctx->arp_table, arp_rep->tpa, (__u8 *) &arp_rep->tha);
+  ret = arp_insert(&ctx->arp_table, arp_rep->spa, (__u8 *) &arp_rep->spa);
   if (ret != 0)
     LOG_ERROR("ARP table full");
 
@@ -386,8 +386,8 @@ static int handle_arp_rep(struct control_context *ctx,
       return -1;
     }
     
-    arp_up->data.arp_update.ip = arp_rep->tpa;
-    memcpy(&arp_up->data.arp_update.mac, &arp_rep->tha, ETH_ADDR_LEN);
+    arp_up->data.arp_update.ip = arp_rep->spa;
+    memcpy(&arp_up->data.arp_update.mac, &arp_rep->sha, ETH_ADDR_LEN);
     
     ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_ARP_UPDATE);
     if (ret != 0)

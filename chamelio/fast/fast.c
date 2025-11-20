@@ -460,7 +460,6 @@ static inline void process_arp_rx_req(struct fast_context *ctx,
   qe->data.arp_pkt_rx_req.spa = f_beui32(pkt->arp.spa);
   qe->data.arp_pkt_rx_req.tpa = f_beui32(pkt->arp.tpa);
   rte_memcpy(&qe->data.arp_pkt_rx_req.sha, &pkt->arp.sha, ETH_ADDR_LEN);
-  rte_memcpy(&qe->data.arp_pkt_rx_req.tha, &pkt->arp.tha, ETH_ADDR_LEN);
   
   ret = queue_enqueue(ctx->fast_ctl_q, QUEUE_ARP_RX_REQ);
   if (ret != 0)
@@ -474,8 +473,8 @@ static inline void process_arp_rx_rep(struct fast_context *ctx,
 {
   int ret;
   
-  qe->data.arp_pkt_rx_rep.tpa = f_beui32(pkt->arp.tpa);
-  rte_memcpy(&qe->data.arp_pkt_rx_rep.tha, &pkt->arp.tha, ETH_ADDR_LEN);
+  qe->data.arp_pkt_rx_rep.spa = f_beui32(pkt->arp.spa);
+  rte_memcpy(&qe->data.arp_pkt_rx_rep.sha, &pkt->arp.sha, ETH_ADDR_LEN);
   
   ret = queue_enqueue(ctx->fast_ctl_q, QUEUE_ARP_RX_REP);
   if (ret != 0)

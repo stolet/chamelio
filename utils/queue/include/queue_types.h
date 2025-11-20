@@ -245,22 +245,20 @@ struct queue_arp_update {
 
 /* Message sent to control indicating an ARP request was received */
 struct queue_arp_rx_req {
-  /* Source IP */
+  /* Remote IP */
   __u32 spa;
-  /* Target IP */
+  /* Local IP */
   __u32 tpa;
-  /* Source MAC address */
+  /* Remote MAC address */
   __u64 sha;
-  /* Target MAC address */
-  __u64 tha;
 } __attribute__((packed));
 
 /* Message sent to control indicating an ARP reply was received */
 struct queue_arp_rx_rep {
-  /* Target IP */
-  __u32 tpa;
-  /* Target MAC address */
-  __u64 tha;
+  /* Remote IP */
+  __u32 spa;
+  /* Remote MAC address */
+  __u64 sha;
 };
 
 /* Message sent to fast indicating an ARP request should be transmitted */
