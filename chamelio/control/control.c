@@ -23,6 +23,10 @@ static int poll_guests(struct control_context *ctx);
 
 static int handle_arp_lookup(struct control_context *ctx, 
     struct queue_entry *qe);
+static int handle_arp_req(struct control_context *ctx,
+  struct queue_entry *qe);
+static int handle_arp_rep(struct control_context *ctx,
+  struct queue_entry *qe);
 
 static int handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
@@ -213,6 +217,14 @@ static int poll_fast(struct control_context *ctx)
         handle_arp_lookup(ctx, qe);
         queue_dequeue(q);
         break;
+      case QUEUE_ARP_RX_REQ:
+        handle_arp_req(ctx, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_ARP_RX_REP:
+        handle_arp_rep(ctx, qe);
+        queue_dequeue(q);
+        break;
       default:
         LOG_ERROR("unknown queue entry type from "
                   "fast path to control path type=%d",
@@ -306,6 +318,7 @@ static int poll_guests(struct control_context *ctx)
 static int handle_arp_lookup(struct control_context *ctx, 
     struct queue_entry *qe)
 {
+  int ret;
   struct arp_entry *ae;
   struct queue_arp_lookup *le;
   
@@ -317,10 +330,73 @@ static int handle_arp_lookup(struct control_context *ctx,
   if (ae == NULL)
   {
     /* Enqueue ARP request to fast-path */
-    arp_request(ctx->txqs[0], ctx->ctl_fast_qs[0], le->ip,
+    ret = arp_request(ctx->txqs[0], ctx->ctl_fast_qs[0], le->ip,
         (__u8 *) &ctx->nic_ctx->eth_addr.addr_bytes, ctx->config->ip);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue ARP request");
+      return -1;
+    }
   }
       
+  return 0;
+}
+
+static int handle_arp_req(struct control_context *ctx,
+  struct queue_entry *qe)
+{
+  int ret;
+  struct queue_arp_rx_req *arp_req = &qe->data.arp_pkt_rx_req;
+  
+  /* Check if ARP request was for me*/
+  if (arp_req->tpa != ctx->config->ip)
+    return -1;
+  
+  /* Enqueue ARP reply for fast-path */
+  ret = arp_reply(ctx->txqs[0], ctx->ctl_fast_qs[0],
+      (__u8 *) &ctx->nic_ctx->eth_addr.addr_bytes,
+      ctx->config->ip, (__u8 *) &arp_req->sha, arp_req->spa);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue ARP reply");
+    return -1;
+  }
+  
+  return 0;
+}
+
+static int handle_arp_rep(struct control_context *ctx,
+  struct queue_entry *qe)
+{
+  int i, ret;
+  struct queue_entry *arp_up;
+  struct queue_arp_rx_rep *arp_rep = &qe->data.arp_pkt_rx_rep;
+  
+  ret = arp_insert(&ctx->arp_table, arp_rep->tpa, (__u8 *) &arp_rep->tha);
+  if (ret != 0)
+    LOG_ERROR("ARP table full");
+
+  /* Send message to each fast-path to update their ARP tables */
+  for (i = 0; i < ctx->config->fp_cores_max; i++)
+  {
+    arp_up = queue_tail(ctx->ctl_fast_qs[i]);
+    if (arp_up == NULL)
+    {
+      LOG_ERROR("failed to get tail of control->fast queue");
+      return -1;
+    }
+    
+    arp_up->data.arp_update.ip = arp_rep->tpa;
+    memcpy(&arp_up->data.arp_update.mac, &arp_rep->tha, ETH_ADDR_LEN);
+    
+    ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_ARP_UPDATE);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue ARP update to control->fast queue");
+      return -1;
+    }
+  }
+    
   return 0;
 }
 

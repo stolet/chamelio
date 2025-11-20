@@ -48,9 +48,11 @@ enum queue_type {
   /* Message from control to fast so fast-path can update ARP table copy */
   QUEUE_ARP_UPDATE,
   /* Message from fast to control signalling ARP request received */
-  QUEUE_ARP_PKT_RX,
-  /* Message from control to fast signalling ARP pkt ready for transmission */
-  QUEUE_ARP_PKT_TX,
+  QUEUE_ARP_RX_REQ,
+  /* Message from fast to control signalling ARP response received */
+  QUEUE_ARP_RX_REP,
+  /* Message from control to fast signalling ARP request ready for transmission */
+  QUEUE_ARP_TX_PKT,
   /* Packet data in transmit queue from control-path */
   QUEUE_ARP_PKT,
 };
@@ -242,13 +244,27 @@ struct queue_arp_update {
 } __attribute__((packed));
 
 /* Message sent to control indicating an ARP request was received */
-struct queue_arp_pkt_rx {
-  /* IP requested in ARP packet */
-  __u32 ip;
+struct queue_arp_rx_req {
+  /* Source IP */
+  __u32 spa;
+  /* Target IP */
+  __u32 tpa;
+  /* Source MAC address */
+  __u64 sha;
+  /* Target MAC address */
+  __u64 tha;
 } __attribute__((packed));
 
-/* Message sent to control indicating an ARP request was received */
-struct queue_arp_pkt_tx {
+/* Message sent to control indicating an ARP reply was received */
+struct queue_arp_rx_rep {
+  /* Target IP */
+  __u32 tpa;
+  /* Target MAC address */
+  __u64 tha;
+};
+
+/* Message sent to fast indicating an ARP request should be transmitted */
+struct queue_arp_tx_req {
   /* IP requested in ARP packet */
   __u32 ip;
 } __attribute__((packed));
@@ -282,8 +298,9 @@ struct queue_entry {
     struct queue_free_ebpf_res free_ebpf_res;
     
     struct queue_arp_lookup arp_lookup;
-    struct queue_arp_pkt_rx arp_pkt_rx;
-    struct queue_arp_pkt_tx arp_pkt_tx;
+    struct queue_arp_rx_req arp_pkt_rx_req;
+    struct queue_arp_rx_rep arp_pkt_rx_rep;
+    struct queue_arp_tx_req arp_pkt_tx_req;
     struct queue_arp_update arp_update;
     
     /* Keeps queue entry the size of a cache line */

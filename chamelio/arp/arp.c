@@ -92,7 +92,7 @@ int arp_insert_pending(struct arp_table *at, __u32 ip)
 }
 
 int arp_request(struct equeue *txq, struct equeue *cfq,  
-    __u32 target_ip, __u8 *src_mac, __u32 src_ip)
+    __u32 remote_ip, __u8 *local_mac, __u32 local_ip)
 {
   int ret;
   struct queue_entry *qe;
@@ -109,15 +109,15 @@ int arp_request(struct equeue *txq, struct equeue *cfq,
   pkt = (void *) &qe->data;
   
   /* Fill ethernet headers */
-  memcpy(&pkt->eth.src.addr, src_mac, ETH_ADDR_LEN);
+  memcpy(&pkt->eth.src.addr, local_mac, ETH_ADDR_LEN);
   memcpy(&pkt->eth.dst.addr, &dst_mac, ETH_ADDR_LEN);
   pkt->eth.type = t_beui16(ETH_TYPE_ARP);
   
   /* Fill ARP headers */
-  memcpy(&pkt->arp.sha.addr, src_mac, ETH_ADDR_LEN);
+  memcpy(&pkt->arp.sha.addr, local_mac, ETH_ADDR_LEN);
   memcpy(&pkt->arp.tha.addr, &dst_mac, ETH_ADDR_LEN);
-  pkt->arp.spa = t_beui32(src_ip);
-  pkt->arp.tpa = t_beui32(target_ip);
+  pkt->arp.spa = t_beui32(local_ip);
+  pkt->arp.tpa = t_beui32(remote_ip);
   pkt->arp.htype = t_beui16(ARP_HTYPE_ETHERNET);
   pkt->arp.ptype = t_beui16(ARP_PTYPE_IPV4);
   pkt->arp.hlen = 6;
@@ -132,11 +132,62 @@ int arp_request(struct equeue *txq, struct equeue *cfq,
     return -1;
   }
   
-  /* Send message to fast that ARP request is ready for transmission */
-  ret = queue_enqueue(cfq, QUEUE_ARP_PKT_TX);
+  /* Send message to fast signalling that ARP request is ready for transmission */
+  ret = queue_enqueue(cfq, QUEUE_ARP_TX_PKT);
   if (ret != 0)
   {
-    LOG_ERROR("failed to notify fast-path that ARP packet is ready for TX");
+    LOG_ERROR("failed to notify fast-path that ARP request is ready for TX");
+    return -1;
+  }
+  
+  return 0;
+}
+
+int arp_reply(struct equeue *txq, struct equeue *cfq,
+    __u8 *local_mac, __u32 local_ip, __u8 *remote_mac, __u32 remote_ip)
+{
+  int ret;
+  struct queue_entry *qe;
+  struct pkt_arp *pkt;
+
+  qe = queue_tail(txq);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get tail of control txq");
+    return -1;
+  }
+  
+  pkt = (void *) &qe->data;
+  
+  /* Fill ethernet headers */
+  memcpy(&pkt->eth.src.addr, local_mac, ETH_ADDR_LEN);
+  memcpy(&pkt->eth.dst.addr, remote_mac, ETH_ADDR_LEN);
+  pkt->eth.type = t_beui16(ETH_TYPE_ARP);
+  
+  /* Fill ARP headers */
+  memcpy(&pkt->arp.sha.addr, local_mac, ETH_ADDR_LEN);
+  memcpy(&pkt->arp.tha.addr, remote_mac, ETH_ADDR_LEN);
+  pkt->arp.spa = t_beui32(local_ip);
+  pkt->arp.tpa = t_beui32(remote_ip);
+  pkt->arp.htype = t_beui16(ARP_HTYPE_ETHERNET);
+  pkt->arp.ptype = t_beui16(ARP_PTYPE_IPV4);
+  pkt->arp.hlen = 6;
+  pkt->arp.plen = 4;
+  pkt->arp.oper = t_beui16(ARP_OPER_REPLY);
+  
+  /* Enqueue packet in transmit queue */
+  ret = queue_enqueue(txq, QUEUE_ARP_PKT);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue a packet to transmit queue");
+    return -1;
+  }
+  
+  /* Send message to fast signalling that ARP request is ready for transmission */
+  ret = queue_enqueue(cfq, QUEUE_ARP_TX_PKT);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to notify fast-path that ARP reply is ready for TX");
     return -1;
   }
   

@@ -1,8 +1,9 @@
 #include <linux/types.h>
 
 #include "fast.h"
+#include "utils.h"
 
-void txcache_alloc(struct fast_context *ctx, 
+int txcache_alloc(struct fast_context *ctx, 
     struct rte_mbuf ***mbs, __u16 num)
 {
   __u16 grow, tail, g;
@@ -30,10 +31,13 @@ void txcache_alloc(struct fast_context *ctx,
     ctx->tx_cache_n += grow;
   }
 
+  num = MIN(num, (ctx->tx_cache_head + ctx->tx_cache_n <= TX_CACHE_SIZE ?
+        ctx->tx_cache_n : TX_CACHE_SIZE - ctx->tx_cache_head));
   *mbs = ctx->tx_cache_mbs + ctx->tx_cache_head;
 
   ctx->tx_cache_head = (ctx->tx_cache_head + num) & (TX_CACHE_SIZE - 1);
   ctx->tx_cache_n -= num;
+  return num;
 }
 
 void txcache_free(struct fast_context *ctx, struct rte_mbuf *mb)
@@ -52,7 +56,7 @@ void txcache_free(struct fast_context *ctx, struct rte_mbuf *mb)
   else
   {
     /* The cache is full so return to the DPDK mempool */
-    rte_pktmbuf_free(mb);
     mb->ol_flags = 0;
+    rte_pktmbuf_free(mb);
   }
 }

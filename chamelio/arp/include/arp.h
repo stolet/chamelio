@@ -33,6 +33,9 @@ int arp_insert(struct arp_table *at, __u32 ip, __u8 *mac);
 int arp_insert_pending(struct arp_table *at, __u32 ip);
 /* Sends an ARP request to fast-path for transmission */
 int arp_request(struct equeue *txq, struct equeue *cfq,  
-    __u32 target_ip, __u8 *src_mac, __u32 src_ip);
+    __u32 remote_ip, __u8 *local_mac, __u32 local_ip);
+/* Sends an ARP reply to fast-path for transmission */
+int arp_reply(struct equeue *txq, struct equeue *cfq,
+    __u8 *local_mac, __u32 local_ip, __u8 *remote_mac, __u32 remote_ip);
 
 #endif

@@ -11,7 +11,9 @@ static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe);
 static void handle_upload_ebpf(struct fast_context *ctx, struct queue_entry *qe);
-static void handle_arp_pkt(struct fast_context *ctx, struct queue_entry *qe);
+
+static void handle_arp_tx_pkt(struct fast_context *ctx, struct queue_entry *qe);
+static void handle_arp_update(struct fast_context *ctx, struct queue_entry *qe);
 
 int controlif_poll(struct fast_context *ctx)
 {
@@ -63,8 +65,12 @@ int controlif_poll(struct fast_context *ctx)
         handle_upload_ebpf(ctx, qe);
         queue_dequeue(q);
         break;
-      case QUEUE_ARP_PKT_TX:
-        handle_arp_pkt(ctx, qe);
+      case QUEUE_ARP_TX_PKT:
+        handle_arp_tx_pkt(ctx, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_ARP_UPDATE:
+        handle_arp_update(ctx, qe);
         queue_dequeue(q);
         break;
       default:
@@ -223,7 +229,7 @@ static void handle_upload_ebpf(struct fast_context *ctx, struct queue_entry *qe)
   p->event_deq_vm = req->event_deq_vm;
 }
 
-static void handle_arp_pkt(struct fast_context *ctx, struct queue_entry *qe)
+static void handle_arp_tx_pkt(struct fast_context *ctx, struct queue_entry *qe)
 {
   int ret;
   struct queue_entry *txqe;
@@ -238,7 +244,7 @@ static void handle_arp_pkt(struct fast_context *ctx, struct queue_entry *qe)
   } 
   
   /* TODO: Might want to look into doing this allocation in bulk */
-  /* Allocate buffer for transmission */
+  /* Allocate mbuf for transmission */
   txcache_alloc(ctx, &mb, 1);
   
   /* Copy packet data from shared memory to mbuf */
@@ -255,6 +261,19 @@ static void handle_arp_pkt(struct fast_context *ctx, struct queue_entry *qe)
   if (ret != 0)
   {
     LOG_ERROR("failed to dequeue control tx queue");
+    return;
+  }
+}
+
+static void handle_arp_update(struct fast_context *ctx, struct queue_entry *qe)
+{
+  int ret;
+  struct queue_arp_update *arp_up = &qe->data.arp_update;
+  
+  ret = arp_insert(&ctx->arp_table, arp_up->ip, arp_up->mac);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to insert new entry into ARP table");
     return;
   }
 }

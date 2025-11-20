@@ -3,7 +3,7 @@
 
 #include <linux/types.h>
 
-void txcache_alloc(struct fast_context *ctx, 
+int txcache_alloc(struct fast_context *ctx, 
     struct rte_mbuf ***mbs, __u16 num);
 void txcache_free(struct fast_context *ctx, struct rte_mbuf *mb);
 

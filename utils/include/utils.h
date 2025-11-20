@@ -3,6 +3,8 @@
 
 #include <linux/types.h>
 
+#define MIN(a,b) ((b) < (a) ? (b) : (a))
+#define MAX(a,b) ((b) > (a) ? (b) : (a))
 #define MEM_BARRIER() __asm__ volatile("" ::: "memory")
 #define STATIC_ASSERT(COND,MSG) typedef char static_assertion_##MSG[(COND)?1:-1]
 

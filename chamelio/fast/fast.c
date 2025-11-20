@@ -11,6 +11,7 @@
 #include "queue_types.h"
 #include "ip_hdr.h"
 #include "eth_hdr.h"
+#include "arp_hdr.h"
 #include "arp.h"
 #include "udp.h"
 #include "log.h"
@@ -22,8 +23,12 @@
 
 struct guest_fast * init_guest(__u8 id, __u64 shm_len);
 
-struct guest_fast * process_infra_rx(struct fast_context *ctx, struct rte_mbuf *mbuf);
-int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb);
+static inline struct guest_fast * process_infra_rx(struct fast_context *ctx, struct rte_mbuf *mbuf);
+static inline int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb);
+static inline void process_arp_rx_req(struct fast_context *ctx,
+    struct queue_entry *qe, struct pkt_arp *pkt);
+static inline void process_arp_rx_rep(struct fast_context *ctx,
+    struct queue_entry *qe, struct pkt_arp *pkt);
 
 int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
@@ -191,26 +196,26 @@ int poll_rx(struct fast_context *ctx)
 
 int poll_queues(struct fast_context *ctx)
 {
-  int i, n, ret, deq_ret, ndeq, ntx;
+  int i, max, ret, deq_ret, ndeq, ntx;
   __u16 qid;
   struct guest_fast *g;
   struct cham_dqueue *q;
   struct queue_entry *qe;
   struct rte_mbuf **mbs;
 
-  n = BATCH_SIZE;
-  if (TXBUF_SIZE - ctx->tx_n < n)
-    n = TXBUF_SIZE - ctx->tx_n;
+  max = BATCH_SIZE;
+  if (TXBUF_SIZE - ctx->tx_n < max)
+    max = TXBUF_SIZE - ctx->tx_n;
 
   /* Allocate mbufs in case a message wants to transmit something already */
-  txcache_alloc(ctx, &mbs, n);
+  max = txcache_alloc(ctx, &mbs, max);
 
   ntx = ndeq = 0;
-  for (i = 0; i < ctx->n_guests && ndeq < n; i++)
+  for (i = 0; i < ctx->n_guests && ndeq < max; i++)
   {
     g = &ctx->guests[i];
     qid = g->proto.dqueues_head;
-    while (qid != PROTOQ_ID_INVALID && ndeq < n)
+    while (qid != PROTOQ_ID_INVALID && ndeq < max)
     {
       q = &g->proto.dqueues[qid];
         
@@ -266,7 +271,7 @@ int poll_queues(struct fast_context *ctx)
   }
 
   /* Free buffers that were not used */
-  for (i = ntx; i < n; i++)
+  for (i = ntx; i < max; i++)
     txcache_free(ctx, mbs[i]);
 
   return 0;
@@ -274,7 +279,7 @@ int poll_queues(struct fast_context *ctx)
 
 int poll_tx(struct fast_context *ctx)
 {
-  unsigned n;
+  unsigned max;
   int i, tx_ret, ntx, ret;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
@@ -283,22 +288,22 @@ int poll_tx(struct fast_context *ctx)
   if (ctx->guests == NULL)
     return 0;
 
-  n = BATCH_SIZE;
-  if (TXBUF_SIZE - ctx->tx_n < n)
-    n = TXBUF_SIZE - ctx->tx_n;
+  max = BATCH_SIZE;
+  if (TXBUF_SIZE - ctx->tx_n < max)
+    max = TXBUF_SIZE - ctx->tx_n;
 
   /* Allocate mbufs to use for transmission from mempool cache */
-  txcache_alloc(ctx, &mbs, n);
+  max = txcache_alloc(ctx, &mbs, max);
 
   g = ctx->guests;
   ntx = 0;
-  for (i = 0; i < n_guests && g != NULL && ntx < n; i++)
+  for (i = 0; i < n_guests && g != NULL && ntx < max; i++)
   {
     g = &ctx->guests[i];
     if (g->proto.event_tx_vm == NULL)
       continue;
     
-    for (;ntx < n;)
+    for (;ntx < max;)
     {
       /* Prepare packet */
       mbs[ntx]->data_off = 0;
@@ -332,7 +337,7 @@ int poll_tx(struct fast_context *ctx)
   }
 
   /* Free buffers that were not used */
-  for (i = ntx; i < n; i++)
+  for (i = ntx; i < max; i++)
     txcache_free(ctx, mbs[i]);
 
   return 0;
@@ -367,13 +372,38 @@ int poll_control(struct fast_context *ctx)
   return controlif_poll(ctx);
 }
 
-struct guest_fast * process_infra_rx(struct fast_context *ctx, struct rte_mbuf *mb)
+static inline struct guest_fast * process_infra_rx(struct fast_context *ctx, struct rte_mbuf *mb)
 {
+  __u16 eth_type;
+  struct pkt_arp *pkt;
+  struct queue_entry *qe;
+  
+  pkt = (struct pkt_arp *) rte_pktmbuf_mtod(mb, __u8 *);
+  eth_type = f_beui16(pkt->eth.type);
+  
+  /* Send ARP packet to control */
+  if (eth_type == ETH_TYPE_ARP)
+  {
+    qe = queue_tail(ctx->fast_ctl_q);
+    if (qe == NULL)
+    {
+      LOG_ERROR("failed to get tail from fast->control queue");
+      return NULL;
+    }
+    
+    if (f_beui16(pkt->arp.oper) == ARP_OPER_REQUEST)
+      process_arp_rx_req(ctx, qe, pkt);
+    else if (f_beui16(pkt->arp.oper) == ARP_OPER_REPLY)
+      process_arp_rx_rep(ctx, qe, pkt);
+    
+    return NULL;
+  }
+  
   /* TODO: Use GRE headers to identify guest and protocol */
   return &ctx->guests[0];
 }
 
-int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb)
+static inline int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb)
 {
   int ret;
   struct eth_hdr *eth;
@@ -420,5 +450,37 @@ int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb)
   memcpy(eth->dst.addr, ae->mac, ETH_ADDR_LEN);
 
   return 0;
+}
+
+static inline void process_arp_rx_req(struct fast_context *ctx,
+    struct queue_entry *qe, struct pkt_arp *pkt)
+{
+  int ret;
+  
+  qe->data.arp_pkt_rx_req.spa = f_beui32(pkt->arp.spa);
+  qe->data.arp_pkt_rx_req.tpa = f_beui32(pkt->arp.tpa);
+  rte_memcpy(&qe->data.arp_pkt_rx_req.sha, &pkt->arp.sha, ETH_ADDR_LEN);
+  rte_memcpy(&qe->data.arp_pkt_rx_req.tha, &pkt->arp.tha, ETH_ADDR_LEN);
+  
+  ret = queue_enqueue(ctx->fast_ctl_q, QUEUE_ARP_RX_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("ARP request RX enqueue to fast->control failed");
+  }
+}
+
+static inline void process_arp_rx_rep(struct fast_context *ctx,
+    struct queue_entry *qe, struct pkt_arp *pkt)
+{
+  int ret;
+  
+  qe->data.arp_pkt_rx_rep.tpa = f_beui32(pkt->arp.tpa);
+  rte_memcpy(&qe->data.arp_pkt_rx_rep.tha, &pkt->arp.tha, ETH_ADDR_LEN);
+  
+  ret = queue_enqueue(ctx->fast_ctl_q, QUEUE_ARP_RX_REP);
+  if (ret != 0)
+  {
+    LOG_ERROR("ARP reply RX enqueue to fast->control failed");
+  }
 }
 
