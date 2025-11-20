@@ -285,14 +285,6 @@ int main(int argc, char **argv)
   __u64 seq = 1;
   socklen_t dstlen = sizeof(dst);
   
-  tx_bytes_interval = 0;
-  tx_pkts_interval  = 0;
-  total_sent_pkts   = 0;
-  t_start_ns = now_ns();
-  t_last_report_ns = t_start_ns;
-  t_next_report_ns = t_start_ns + 1000000000ULL;
-  t_end_ns = t_start_ns + (__u64) duration_sec * 1000000000ULL;
-  
   ret = parse_args(argc, argv);
   if (ret != 0)
   {
@@ -355,8 +347,21 @@ int main(int argc, char **argv)
    * TSC frequency maps to real time 
    */
   calibrate_tsc();
+  
+  /* Send ARP request */
+  udp_sendto(fd, txbuf, msg_size, (struct sockaddr *) &dst, dstlen);
+  sleep(1);
+  udp_sendto(fd, txbuf, msg_size, (struct sockaddr *) &dst, dstlen);
+  sleep(1);
 
   burst = 0;
+  tx_bytes_interval = 0;
+  tx_pkts_interval  = 0;
+  total_sent_pkts   = 0;
+  t_start_ns = now_ns();
+  t_last_report_ns = t_start_ns;
+  t_next_report_ns = t_start_ns + 1000000000ULL;
+  t_end_ns = t_start_ns + (__u64) duration_sec * 1000000000ULL;
   while (true)
   {
     now = now_ns();
