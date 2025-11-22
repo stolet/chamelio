@@ -353,6 +353,8 @@ int main(int argc, char **argv)
   sleep(1);
   udp_sendto(fd, txbuf, msg_size, (struct sockaddr *) &dst, dstlen);
   sleep(1);
+  printf("Sent ARP request\n");
+  fflush(stdout);
 
   burst = 0;
   tx_bytes_interval = 0;
