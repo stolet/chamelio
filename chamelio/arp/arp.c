@@ -46,7 +46,7 @@ struct arp_entry * arp_lookup(struct arp_table *at, __u32 ip)
   return NULL;
 }
 
-int arp_insert(struct arp_table *at, __u32 ip, __u8 *mac) 
+struct arp_entry * arp_insert(struct arp_table *at, __u32 ip, __u8 *mac) 
 {
   int i;
   __u32 hash, idx;
@@ -62,14 +62,14 @@ int arp_insert(struct arp_table *at, __u32 ip, __u8 *mac)
       at->buckets[idx].ip = ip;
       at->buckets[idx].pending = 0;
       memcpy(at->buckets[idx].mac, mac, 6);
-      return 0;
+      return &at->buckets[idx];
     }
   }
   
-  return -1;
+  return NULL;
 }
 
-int arp_insert_pending(struct arp_table *at, __u32 ip) 
+struct arp_entry * arp_insert_pending(struct arp_table *at, __u32 ip) 
 {
   int i;
   __u32 hash, idx;
@@ -84,11 +84,11 @@ int arp_insert_pending(struct arp_table *at, __u32 ip)
     {
       at->buckets[idx].ip = ip;
       at->buckets[idx].pending = 1;
-      return 0;
+      return &at->buckets[idx];
     }
   }
   
-  return -1;
+  return NULL;
 }
 
 int arp_request(struct equeue *txq, struct equeue *cfq,  

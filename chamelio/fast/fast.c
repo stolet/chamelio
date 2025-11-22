@@ -439,7 +439,12 @@ static inline int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb
     }
     
     /* Mark ARP entry as pending */
-    arp_insert_pending(&ctx->arp_table, f_beui32(ip->dst));
+    ae = arp_insert_pending(&ctx->arp_table, f_beui32(ip->dst));
+    if (ae == NULL)
+    {
+      LOG_ERROR("failed to insert pending ARP entry");
+      return -1;
+    }
     
     return -1;
   }
@@ -477,7 +482,9 @@ static inline void process_arp_rx_rep(struct fast_context *ctx,
   int ret;
   
   qe->data.arp_pkt_rx_rep.spa = f_beui32(pkt->arp.spa);
+  qe->data.arp_pkt_rx_rep.tpa = f_beui32(pkt->arp.tpa);
   rte_memcpy(&qe->data.arp_pkt_rx_rep.sha, &pkt->arp.sha, ETH_ADDR_LEN);
+  rte_memcpy(&qe->data.arp_pkt_rx_rep.tha, &pkt->arp.tha, ETH_ADDR_LEN);
   
   ret = queue_enqueue(ctx->fast_ctl_q, QUEUE_ARP_RX_REP);
   if (ret != 0)

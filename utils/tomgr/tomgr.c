@@ -47,7 +47,6 @@ struct to_entry *tomgr_insert(struct tomgr *mgr, __u8 type, __u64 to, void *data
   return entry;
 }
 
-#include <stdio.h>
 int tomgr_cancel(struct tomgr *mgr, struct to_entry *e)
 {
   int heap_idx = e->heap_idx;

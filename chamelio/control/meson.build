@@ -25,6 +25,8 @@ deps = [
   dependency('arp_dep'),
   dependency('queue_dep'),
   dependency('uxsocket_dep'),
+  dependency('tomgr_dep'),
+  dependency('clock_dep'),
   dependency('cham_lib'),
   llvm_dep,
   llvmbpf_dep,

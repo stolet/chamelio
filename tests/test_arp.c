@@ -17,15 +17,14 @@
 
 static void test_single_insert()
 {
-  int ret;
   struct arp_entry *entry;
   struct arp_table at = {0};
   __u8 mac1[6] = TEST_MAC_1;
   
   printf(ANSI_COLOR_BLUE "Testing single ARP insert..." ANSI_COLOR_RESET "\n");
 
-  ret = arp_insert(&at, TEST_IP_1, mac1);
-  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  entry = arp_insert(&at, TEST_IP_1, mac1);
+  TEST_ASSERT(entry != NULL, "Failed to insert IP");
   
   entry = arp_lookup(&at, TEST_IP_1);
 
@@ -39,7 +38,6 @@ static void test_single_insert()
 
 static void test_multiple_inserts()
 {
-  int ret;
   struct arp_entry *entry1, *entry2;
   struct arp_table at = {0};
   __u8 mac1[6] = TEST_MAC_1;
@@ -48,11 +46,11 @@ static void test_multiple_inserts()
   printf(ANSI_COLOR_BLUE "Testing multiple ARP inserts..." 
       ANSI_COLOR_RESET "\n");
 
-  ret = arp_insert(&at, TEST_IP_1, mac1);
-  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  entry1 = arp_insert(&at, TEST_IP_1, mac1);
+  TEST_ASSERT(entry1 != NULL, "Failed to insert IP");
   
-  ret = arp_insert(&at, TEST_IP_2, mac2);
-  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  entry2 = arp_insert(&at, TEST_IP_2, mac2);
+  TEST_ASSERT(entry2 != NULL, "Failed to insert IP");
 
   entry1 = arp_lookup(&at, TEST_IP_1);
   entry2 = arp_lookup(&at, TEST_IP_2);
@@ -73,7 +71,6 @@ static void test_multiple_inserts()
 
 static void test_collision_handling()
 {
-  int ret;
   struct arp_entry *entry1, *entry_collision;
   struct arp_table at = {0};
   __u8 mac1[6] = TEST_MAC_1;
@@ -82,10 +79,10 @@ static void test_collision_handling()
   printf(ANSI_COLOR_BLUE "Testing ARP collision handling..." 
       ANSI_COLOR_RESET "\n");
 
-  ret = arp_insert(&at, TEST_IP_1, mac1);
-  TEST_ASSERT(ret == 0, "Failed to insert IP");
-  ret = arp_insert(&at, TEST_IP_COLLISION, mac_collision);
-  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  entry1 = arp_insert(&at, TEST_IP_1, mac1);
+  TEST_ASSERT(entry1 != NULL, "Failed to insert IP");
+  entry_collision = arp_insert(&at, TEST_IP_COLLISION, mac_collision);
+  TEST_ASSERT(entry_collision != NULL, "Failed to insert IP");
   
   entry1 = arp_lookup(&at, TEST_IP_1);
   entry_collision = arp_lookup(&at, TEST_IP_COLLISION);
@@ -121,7 +118,6 @@ static void test_lookup_nonexistent()
 
 static void test_insert_and_overwrite()
 {
-  int ret;
   struct arp_entry *entry;
   struct arp_table at = {0};
   __u8 mac1[6] = TEST_MAC_1;
@@ -130,8 +126,8 @@ static void test_insert_and_overwrite()
   printf(ANSI_COLOR_BLUE "Testing ARP insert and overwrite..." 
       ANSI_COLOR_RESET "\n");
 
-  ret = arp_insert(&at, TEST_IP_1, mac1);
-  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  entry = arp_insert(&at, TEST_IP_1, mac1);
+  TEST_ASSERT(entry != NULL, "Failed to insert IP");
   
   entry = arp_lookup(&at, TEST_IP_1);
   TEST_ASSERT(entry != NULL, "Failed to find inserted ARP entry");
@@ -139,8 +135,8 @@ static void test_insert_and_overwrite()
       "MAC address mismatch for initial insert");
   TEST_ASSERT(entry->pending == 0, "Pending value mismatch");
 
-  ret = arp_insert(&at, TEST_IP_1, mac2);
-  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  entry = arp_insert(&at, TEST_IP_1, mac2);
+  TEST_ASSERT(entry != NULL, "Failed to insert IP");
   
   entry = arp_lookup(&at, TEST_IP_1);
   TEST_ASSERT(entry != NULL, "Failed to find overwritten ARP entry");
@@ -154,14 +150,14 @@ static void test_insert_and_overwrite()
 
 static void test_insert_pending()
 {
-  int ret;
   struct arp_entry *entry;
   struct arp_table at = {0};
   
   printf(ANSI_COLOR_BLUE "Testing ARP insert pending.." ANSI_COLOR_RESET "\n");
 
-  ret = arp_insert_pending(&at, TEST_IP_1);
-  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  entry = arp_insert_pending(&at, TEST_IP_1);
+  TEST_ASSERT(entry != NULL, "Failed to insert IP");
+  TEST_ASSERT(entry->pending, "Entry is not pending");
   
   entry = arp_lookup(&at, TEST_IP_1);
 
@@ -174,7 +170,6 @@ static void test_insert_pending()
 
 static void test_insert_pending_overwrite()
 {
-  int ret;
   struct arp_entry *entry;
   struct arp_table at = {0};
   __u8 mac2[6] = TEST_MAC_2;
@@ -182,15 +177,16 @@ static void test_insert_pending_overwrite()
   printf(ANSI_COLOR_BLUE "Testing ARP insert pending and overwrite..." 
       ANSI_COLOR_RESET "\n");
 
-  ret = arp_insert_pending(&at, TEST_IP_1);
-  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  entry = arp_insert_pending(&at, TEST_IP_1);
+  TEST_ASSERT(entry != NULL, "Failed to insert IP");
+  TEST_ASSERT(entry->pending, "Entry is not pending");
   
   entry = arp_lookup(&at, TEST_IP_1);
   TEST_ASSERT(entry != NULL, "Failed to find inserted ARP entry");
   TEST_ASSERT(entry->pending == 1, "Pending value mismatch");
 
-  ret = arp_insert(&at, TEST_IP_1, mac2);
-  TEST_ASSERT(ret == 0, "Failed to insert IP");
+  entry = arp_insert(&at, TEST_IP_1, mac2);
+  TEST_ASSERT(entry != NULL, "Failed to insert IP");
   
   entry = arp_lookup(&at, TEST_IP_1);
   TEST_ASSERT(entry != NULL, "Failed to find overwritten ARP entry");
@@ -204,9 +200,9 @@ static void test_insert_pending_overwrite()
 
 static void test_arp_table_full()
 {
-  int ret;
   __u32 ip;
   struct arp_table at = {0};
+  struct arp_entry *entry;
   __u8 mac[6] = TEST_MAC_1;
   
   printf(ANSI_COLOR_BLUE "Testing ARP table full condition..." ANSI_COLOR_RESET "\n");
@@ -215,13 +211,13 @@ static void test_arp_table_full()
   for (int i = 0; i < ARP_TABLE_SIZE; i++)
   {
     ip = 0xC0A80000 + i;
-    ret = arp_insert(&at, ip, mac);
-    TEST_ASSERT(ret == 0, "Failed to insert entry into ARP table");
+    entry = arp_insert(&at, ip, mac);
+    TEST_ASSERT(entry != NULL, "Failed to insert entry into ARP table");
   }
 
   /* Attempt to insert into a full table */
-  ret = arp_insert(&at, 0xDEADBEEF, mac);
-  TEST_ASSERT(ret == -1, "ARP insert should fail when table is full");
+  entry = arp_insert(&at, 0xDEADBEEF, mac);
+  TEST_ASSERT(entry == NULL, "ARP insert should fail when table is full");
 
   printf(ANSI_COLOR_GREEN "PASSED: ARP table full condition test" ANSI_COLOR_RESET "\n");
 }

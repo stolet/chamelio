@@ -267,11 +267,11 @@ static void handle_arp_tx_pkt(struct fast_context *ctx, struct queue_entry *qe)
 
 static void handle_arp_update(struct fast_context *ctx, struct queue_entry *qe)
 {
-  int ret;
+  struct arp_entry *ae;
   struct queue_arp_update *arp_up = &qe->data.arp_update;
   
-  ret = arp_insert(&ctx->arp_table, arp_up->ip, arp_up->mac);
-  if (ret != 0)
+  ae = arp_insert(&ctx->arp_table, arp_up->ip, arp_up->mac);
+  if (ae == NULL)
   {
     LOG_ERROR("failed to insert new entry into ARP table");
     return;

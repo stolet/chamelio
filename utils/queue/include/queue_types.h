@@ -259,6 +259,10 @@ struct queue_arp_rx_rep {
   __u32 spa;
   /* Remote MAC address */
   __u64 sha;
+  /* Local IP */
+  __u32 tpa;
+  /* Local MAC address */
+  __u64 tha;
 };
 
 /* Message sent to fast indicating an ARP request should be transmitted */

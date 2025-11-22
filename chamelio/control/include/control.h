@@ -5,6 +5,7 @@
 #include "queue.h"
 #include "arp.h"
 #include "shmalloc.h"
+#include "tomgr.h"
 
 #define CORE_INVALID UINT16_MAX
 #define BATCH_SIZE 16
@@ -64,17 +65,20 @@ struct control_context {
   struct nic_context *nic_ctx;
   /* Next fast-path core to poll */
   __u16 next_core;
+  /* Timeout manager */
+  struct tomgr *tomgr;
+  
   /* Queues from the fast-path to control-path. One per core. */
   struct dqueue **fast_ctl_qs;
   /* Queues from the control-path to the fast-path. One per core */
   struct equeue **ctl_fast_qs;
-
+  /* Queue that pushes packets from control to fast. One per core. */
+  struct equeue **txqs;
+  
   /* File descriptor for internal shared memory */
   int shm_fd_internal;
   /* Base pointer for internal shared memory region */
   void *shm_base_internal;
-  /* Queue that pushes packets from control to fast. One per core. */
-  struct equeue **txqs;
 
   /* ARP table. This is also replicated in fast-path */
   struct arp_table arp_table;

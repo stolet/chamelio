@@ -7,6 +7,8 @@
 #include <rte_ip4.h>
 
 #include "control.h"
+#include "tomgr.h"
+#include "clock.h"
 #include "shmalloc.h"
 #include "nic.h"
 #include "ivshmemif.h"
@@ -20,6 +22,7 @@
 
 static int poll_fast(struct control_context *ctx);
 static int poll_guests(struct control_context *ctx);
+static int poll_timeouts(struct control_context *ctx);
 
 static int handle_arp_lookup(struct control_context *ctx, 
     struct queue_entry *qe);
@@ -27,6 +30,8 @@ static int handle_arp_req(struct control_context *ctx,
   struct queue_entry *qe);
 static int handle_arp_rep(struct control_context *ctx,
   struct queue_entry *qe);
+static int handle_arp_timeout(struct control_context *ctx,
+    struct to_entry *ae);
 
 static int handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
@@ -54,6 +59,7 @@ int control_context_init(struct control_context *ctrl_ctx,
     struct shm_handle **txq_handles)
 {
   int i;
+  struct tomgr *tomgr;
   struct guest_control *guests;
   struct equeue *cfq, *txq;
   struct dqueue *fcq;
@@ -72,12 +78,28 @@ int control_context_init(struct control_context *ctrl_ctx,
   /* Initialize ARP table to default values */
   arp_table_init(&ctrl_ctx->arp_table);
   
+  /* Initialize timeout manager */
+  tomgr = tomgr_init();
+  if (tomgr == NULL)
+  {
+    LOG_ERROR("failed to initialise timeout manager");
+    return -1;
+  }
+  ctrl_ctx->tomgr = tomgr;
+
+  /* Calibrate tsc so we can get accurate time */
+  if (clock_calibrate_tsc() != 0)
+  {
+    LOG_ERROR("failed to calibrate tsc");
+    return -1;
+  }
+  
   /* Allocate pointer list for queues from fast to control */
   fast_ctl_qs = malloc(sizeof(struct dqueue *) * config->fp_cores_max);
   if (fast_ctl_qs == NULL)
   {
     LOG_ERROR("failed to allocate list of fast->control queues");
-    return -1;
+    goto free_tomgr;
   }
   ctrl_ctx->fast_ctl_qs = fast_ctl_qs;
   ctrl_ctx->next_core = 0;
@@ -150,6 +172,8 @@ free_control_fast_list:
   free(ctl_fast_qs);
 free_fast_control_list:
   free(fast_ctl_qs);
+free_tomgr:
+  free(tomgr);
   return -1;
 }
 
@@ -177,6 +201,7 @@ int control_loop(struct control_context *ctx)
     guestif_poll(ctx);
     poll_fast(ctx);
     poll_guests(ctx);
+    poll_timeouts(ctx);
   }
 }
 
@@ -315,11 +340,78 @@ static int poll_guests(struct control_context *ctx)
   return 0;
 }
 
+static int poll_timeouts(struct control_context *ctx)
+{
+  int i;
+  struct to_entry *te;
+  
+  for (i = 0; i < BATCH_SIZE; i++)
+  {
+    te = tomgr_peek(ctx->tomgr);
+    if (te == NULL)
+      break;
+      
+    /* This entry timed out */
+    if (te->to < clock_rdtsc())
+    {
+      switch (te->type)
+      {
+      case TO_ARP:
+        handle_arp_timeout(ctx, te);
+        break;
+      default:
+        break;
+      }
+      
+      te = tomgr_pop(ctx->tomgr);
+      if (te == NULL)
+      {
+        LOG_ERROR("failed to pop timeout manager");
+        return -1;
+      }
+    }
+  }
+  
+  return 0;
+}
+
+static int handle_arp_timeout(struct control_context *ctx, 
+    struct to_entry *te)
+{
+  int ret;
+  struct arp_entry *ae = (struct arp_entry *) te->data;
+  
+  /* If this entry is not pending anymore return */
+  if (!ae->pending)
+    return 0;
+    
+  /* Send another ARP request */
+  ret = arp_request(ctx->txqs[0], ctx->ctl_fast_qs[0], ae->ip,
+        (__u8 *) &ctx->nic_ctx->eth_addr.addr_bytes, ctx->config->ip);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue ARP request");
+    return -1;
+  }
+  
+  /* Enqueue a new timeout */
+  te = tomgr_insert(ctx->tomgr, TO_ARP, clock_tsc_after_us(ARP_TIMEOUT), ae);
+  if (te == NULL)
+  {
+    LOG_ERROR("failed to insert ARP timeout");
+    return -1;
+  }
+  ae->te = te;
+  
+  return 0;
+}
+
 static int handle_arp_lookup(struct control_context *ctx, 
     struct queue_entry *qe)
 {
   int ret;
   struct arp_entry *ae;
+  struct to_entry *te;
   struct queue_arp_lookup *le;
   
   le = &qe->data.arp_lookup;
@@ -329,6 +421,9 @@ static int handle_arp_lookup(struct control_context *ctx,
   
   if (ae == NULL)
   {
+    /* Insert as pending to ARP table */
+    ae = arp_insert_pending(&ctx->arp_table, le->ip);
+    
     /* Enqueue ARP request to fast-path */
     ret = arp_request(ctx->txqs[0], ctx->ctl_fast_qs[0], le->ip,
         (__u8 *) &ctx->nic_ctx->eth_addr.addr_bytes, ctx->config->ip);
@@ -337,7 +432,17 @@ static int handle_arp_lookup(struct control_context *ctx,
       LOG_ERROR("failed to enqueue ARP request");
       return -1;
     }
+    
+    /* Insert timeout for ARP request */
+    te = tomgr_insert(ctx->tomgr, TO_ARP, clock_tsc_after_us(ARP_TIMEOUT), ae);
+    if (te == NULL)
+    {
+      LOG_ERROR("failed to insert timeout for ARP request");
+      return -1;
+    }
+    ae->te = te;
   }
+  
       
   return 0;
 }
@@ -370,11 +475,24 @@ static int handle_arp_rep(struct control_context *ctx,
 {
   int i, ret;
   struct queue_entry *arp_up;
+  struct arp_entry *ae;
   struct queue_arp_rx_rep *arp_rep = &qe->data.arp_pkt_rx_rep;
   
-  ret = arp_insert(&ctx->arp_table, arp_rep->spa, (__u8 *) &arp_rep->spa);
-  if (ret != 0)
+  /* Check if this ARP reply is for us and is pending */
+  ae = arp_lookup(&ctx->arp_table, arp_rep->spa);
+  if (ae == NULL)
+    return -1;
+  
+  ae = arp_insert(&ctx->arp_table, arp_rep->spa, (__u8 *) &arp_rep->spa);
+  if (ae == NULL)
     LOG_ERROR("ARP table full");
+    
+  /* Cancel timeout */
+  if (ae->te != NULL)
+  {
+    tomgr_cancel(ctx->tomgr, ae->te);
+    ae->te = NULL;
+  }
 
   /* Send message to each fast-path to update their ARP tables */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
@@ -902,7 +1020,6 @@ static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
   
   return vm;
 }
-
 
 static void * bpf_memcpy(void *dst, void *src, size_t n)
 {
