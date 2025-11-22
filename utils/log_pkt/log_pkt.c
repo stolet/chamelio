@@ -6,12 +6,43 @@
 #include "eth_hdr.h"
 #include "ip_hdr.h"
 #include "udp_hdr.h"
+#include "arp_hdr.h"
 
 static inline const char *ip4_to_str(ip_addr_t a, char buf[INET_ADDRSTRLEN]);
 static inline const char *eth_type_name(uint16_t t);
 static inline const char *ip_proto_name(uint8_t p);
+static inline const char *arp_ptype_name(__u16 p);
+static inline const char *arp_htype_name(__u16 h);
+static inline const char *arp_oper_name(__u16 o);
 static inline void mac_to_str(const struct eth_addr *a, char out[18]);
 static inline const char *ecn_name(__u8 e);
+
+void log_arp(const struct arp_hdr *arp)
+{
+  const __u16 htype = f_beui16(arp->htype);
+  const __u16 ptype = f_beui16(arp->ptype);
+  const __u8  hlen  = arp->hlen;
+  const __u8  plen  = arp->plen;
+  const __u16 oper  = f_beui16(arp->oper);
+
+  char sha[18], tha[18];
+  mac_to_str(&arp->sha, sha);
+  mac_to_str(&arp->tha, tha);
+
+  char spa_buf[INET_ADDRSTRLEN], tpa_buf[INET_ADDRSTRLEN];
+  ip4_to_str(arp->spa, spa_buf);
+  ip4_to_str(arp->tpa, tpa_buf);
+
+  fprintf(stderr,
+          "[ARP] htype=%u (%s) ptype=0x%04x (%s) "
+          "hlen=%u plen=%u oper=%u (%s) "
+          "sha=%s spa=%s tha=%s tpa=%s\n",
+          (unsigned)htype, arp_htype_name(htype),
+          (unsigned)ptype, arp_ptype_name(ptype),
+          (unsigned)hlen, (unsigned)plen,
+          (unsigned)oper, arp_oper_name(oper),
+          sha, spa_buf, tha, tpa_buf);
+}
 
 void log_eth(const struct eth_hdr *eth)
 {
@@ -81,6 +112,12 @@ void log_udp_pkt(const struct udp_pkt *p)
   log_udp(&p->udp);
 }
 
+void log_arp_pkt(const struct pkt_arp *p)
+{
+  log_eth(&p->eth);
+  log_arp(&p->arp);
+}
+
 static inline const char *ip4_to_str(ip_addr_t a, char buf[INET_ADDRSTRLEN])
 {
   struct in_addr ina;
@@ -128,5 +165,30 @@ static inline const char *ecn_name(__u8 e)
     case CHAM_IP_ECN_ECT1: return "ECN:ECT(1)";
     case CHAM_IP_ECN_CE:   return "ECN:CE";
     default:               return "ECN:?";
+  }
+}
+
+static inline const char *arp_oper_name(__u16 o)
+{
+  switch (o) {
+    case ARP_OPER_REQUEST: return "request";
+    case ARP_OPER_REPLY:   return "reply";
+    default:               return "unknown";
+  }
+}
+
+static inline const char *arp_htype_name(__u16 h)
+{
+  switch (h) {
+    case ARP_HTYPE_ETHERNET: return "Ethernet";
+    default:                  return "unknown";
+  }
+}
+
+static inline const char *arp_ptype_name(__u16 p)
+{
+  switch (p) {
+    case ARP_PTYPE_IPV4: return "IPv4";
+    default:             return "unknown";
   }
 }
