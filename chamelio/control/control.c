@@ -450,12 +450,48 @@ static int handle_arp_lookup(struct control_context *ctx,
 static int handle_arp_req(struct control_context *ctx,
   struct queue_entry *qe)
 {
-  int ret;
+  int ret, i;
+  struct queue_entry *arp_up;
+  struct arp_entry *ae;
   struct queue_arp_rx_req *arp_req = &qe->data.arp_pkt_rx_req;
   
   /* Check if ARP request was for me*/
   if (arp_req->tpa != ctx->config->ip)
     return -1;
+    
+  ae = arp_lookup(&ctx->arp_table, arp_req->spa);
+  if (ae == NULL || ae->pending)
+  {
+    /* Add sender to ARP table */
+    if (arp_insert(&ctx->arp_table, arp_req->spa, 
+        (__u8 *) &arp_req->sha) == NULL)
+    {
+      LOG_ERROR("failed to add sender to ARP table");
+      return -1;
+    }
+    
+    /* TODO: Don't duplicate this code */
+    /* Tell fast-path to update ARP tables */
+    for (i = 0; i < ctx->config->fp_cores_max; i++)
+    {
+      arp_up = queue_tail(ctx->ctl_fast_qs[i]);
+      if (arp_up == NULL)
+      {
+        LOG_ERROR("failed to get tail of control->fast queue");
+        return -1;
+      }
+      
+      arp_up->data.arp_update.ip = arp_req->spa;
+      memcpy(&arp_up->data.arp_update.mac, &arp_req->sha, ETH_ADDR_LEN);
+      
+      ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_ARP_UPDATE);
+      if (ret != 0)
+      {
+        LOG_ERROR("failed to enqueue ARP update to control->fast queue");
+        return -1;
+      }
+    }
+  }
   
   /* Enqueue ARP reply for fast-path */
   ret = arp_reply(ctx->txqs[0], ctx->ctl_fast_qs[0],
@@ -480,10 +516,10 @@ static int handle_arp_rep(struct control_context *ctx,
   
   /* Check if this ARP reply is for us and is pending */
   ae = arp_lookup(&ctx->arp_table, arp_rep->spa);
-  if (ae == NULL)
+  if (ae == NULL || !ae->pending)
     return -1;
   
-  ae = arp_insert(&ctx->arp_table, arp_rep->spa, (__u8 *) &arp_rep->spa);
+  ae = arp_insert(&ctx->arp_table, arp_rep->spa, (__u8 *) &arp_rep->sha);
   if (ae == NULL)
     LOG_ERROR("ARP table full");
     

@@ -456,7 +456,6 @@ static inline int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb
   /* Copy MAC addresses to packet */
   memcpy(eth->dst.addr, ae->mac, ETH_ADDR_LEN);
   memcpy(eth->src.addr, ctx->nic_ctx.eth_addr.addr_bytes, ETH_ADDR_LEN);
-
   return 0;
 }
 
