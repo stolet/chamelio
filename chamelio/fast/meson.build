@@ -9,6 +9,7 @@ fast_srcs = files(
 deps = [
   dependency('config_dep'),
   dependency('utils_dep'),
+  dependency('log_pkt_dep'),
   dependency('nic_dep'),
   dependency('queue_dep'),
   dependency('chamelio_dep'),

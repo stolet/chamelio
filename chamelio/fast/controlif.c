@@ -251,7 +251,7 @@ static void handle_arp_tx_pkt(struct fast_context *ctx, struct queue_entry *qe)
   mb[0]->data_off = 0;
   mb[0]->pkt_len = mb[0]->data_len = sizeof(struct pkt_arp);
   rte_memcpy(rte_pktmbuf_mtod(mb[0], __u8 *), &txqe->data, mb[0]->data_len);
-
+  
   /* Add packet to transmit buffer */
   ctx->tx_mbs[ctx->tx_n] = mb[0];
   ctx->tx_n++;

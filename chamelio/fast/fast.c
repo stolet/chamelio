@@ -15,6 +15,7 @@
 #include "arp.h"
 #include "udp.h"
 #include "log.h"
+#include "log_pkt.h"
 #include "config.h"
 #include "controlif.h"
 #include "ebpf.h"
@@ -319,9 +320,11 @@ int poll_tx(struct fast_context *ctx)
       {
         /* Add destination MAC address */
         ret = process_infra_tx(ctx, mbs[ntx]);
-
+            
+        /* TODO: Don't drop packet if ARP lookup hasn't resolved */
         if (ret == 0)
         {
+          log_udp_pkt((struct udp_pkt *) rte_pktmbuf_mtod(mbs[ntx], __u8 *));
           /* Add to transmission buffer if packet processed for TX */
           mbs[ntx]->pkt_len = mbs[ntx]->data_len = tx_ret;
           ctx->tx_mbs[ctx->tx_n] = mbs[ntx];

@@ -94,10 +94,8 @@ int main(int argc, char **argv)
   while(udp_poll_fast() == 0){}
   dstlen = sizeof(dst_addr);
   n = udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&dst_addr, dstlen);
-  while(udp_poll_fast() == 0){};
   udp_sendto(fd, buf, (size_t)n, (struct sockaddr *)&dst_addr, dstlen);
-  udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&dst_addr, dstlen);
-  sleep(1);
+  printf("ARP initialized\n");
   
   while(1)
   {
@@ -105,6 +103,7 @@ int main(int argc, char **argv)
     
     udp_poll_fast();
     n = udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&dst_addr, dstlen);
+    if (n > 0)
     if (n < 0)
     {
       if (errno == EINTR || errno == EAGAIN) continue;
