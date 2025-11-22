@@ -88,3 +88,4 @@ Chamelio tests
 - `scheduler-test`: Tests scheduler that implements a priority list
 - `queue-test`: Tests shared memory queues
 - `arp-test` : Tests arp table inserts and lookups
+- `tomgr-test` : Tests the timeout manager
