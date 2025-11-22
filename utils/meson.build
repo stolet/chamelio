@@ -27,4 +27,5 @@ utils_dep = declare_dependency(
 meson.override_dependency('utils_dep', utils_dep)
 
 subdir('pkt_hdrs')
+subdir('log_pkt')
 subdir('queue')
