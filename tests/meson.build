@@ -2,6 +2,7 @@ test_lib_srcs = files('test_lib.c','test_utils.c')
 test_scheduler_srcs = files('test_scheduler.c', 'test_utils.c')
 test_queue_srcs = files('test_queue.c', 'test_utils.c')
 test_arp_srcs = files('test_arp.c', 'test_utils.c')
+test_tomgr_srcs = files('test_tomgr.c', 'test_utils.c')  # Added test_tomgr.c
 
 deps = [
   dependency('cham_lib'),
@@ -27,7 +28,6 @@ test_lib = executable(
   test_lib_srcs,
   dependencies: deps,
 )
-
 test('lib-test', test_lib, depends: ebpf_obj)
 
 test_scheduler = executable(
@@ -35,7 +35,6 @@ test_scheduler = executable(
   test_scheduler_srcs,
   dependencies: deps,
 )
-
 test('scheduler-test', test_scheduler, depends: ebpf_obj)
 
 test_queue = executable(
@@ -43,7 +42,6 @@ test_queue = executable(
   test_queue_srcs,
   dependencies: deps,
 )
-
 test('queue-test', test_queue, depends: ebpf_obj)
 
 test_arp = executable(
@@ -51,5 +49,11 @@ test_arp = executable(
   test_arp_srcs,
   dependencies: deps,
 )
-
 test('arp-test', test_arp)
+
+test_tomgr = executable(
+  'test_tomgr',
+  test_tomgr_srcs,
+  dependencies: deps,
+)
+test('tomgr-test', test_tomgr)  # Added tomgr-test
