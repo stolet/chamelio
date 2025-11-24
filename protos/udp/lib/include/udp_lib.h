@@ -58,8 +58,6 @@ struct udp_socket {
 struct udp_context_lib {
   /* ID for this context */
   __u16 id;
-  /* ID for this context in slow-path */
-  __u16 id_slow;
 
   /* Queue from app context to slow-path */
   struct equeue *app_slow_q;  

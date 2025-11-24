@@ -35,7 +35,7 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   __u8 *ebpf_bytecode;
   struct guest_lib *g;
   struct proto_lib *p;
-  struct proto_map_lib *port_sock_map;
+  struct proto_map_lib *port_sock_map, *socks_map;
   int *port_socks;
 
   g = cham_connect_guest();
@@ -91,6 +91,15 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   }
   ctx->port_sock_map = port_sock_map;
 
+  /* Create map used to hold sockets */
+  socks_map = cham_new_map(p, MAX_SOCKETS, sizeof(struct udp_sock));
+  if (socks_map == NULL)
+  {
+    LOG_ERROR("failed to create map to hold sockets");
+    abort();
+  }
+  ctx->socks_map = socks_map;
+
   /* Populate map with invalid socket IDs */
   port_socks = p->shm_base + port_sock_map->off;
   for (i = 0; i < MAX_SOCKETS; i++)
@@ -102,6 +111,7 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   ctx->proto = p;
   ctx->n_apps = 0;
   ctx->next_app = 0;
+  ctx->n_socks = 0;
 
   return 0;
 }
@@ -125,10 +135,13 @@ int poll_apps(struct udp_slow_context *ctx)
     {
       apps_polled++;
       ctx->next_app = (ctx->next_app + 1) % ctx->n_apps;
+      a = &ctx->apps[ctx->next_app];
     }
   
-    if (apps_polled >= ctx->n_apps)
+    if (apps_polled >= ctx->n_apps || a->n_ctxs == 0)
+    {
       break;
+    }
     
     actx = &a->ctxs[a->next_ctx];
     q = actx->app_slow_q;
@@ -140,7 +153,7 @@ int poll_apps(struct udp_slow_context *ctx)
       a->next_ctx = (a->next_ctx + 1) % a->n_ctxs;
       continue;
     }
-    
+
     msgs_i++;
     type = qe->type;
     switch (type)
@@ -180,10 +193,9 @@ int handle_new_sock(struct udp_slow_context *ctx,
   struct udp_queue_new_sock_req *req;
   struct udp_queue_new_sock_res *res;
 
-  struct udp_sock *socks_map = ctx->proto->shm_base + 
-      actx->app->socks_map->off;
+  struct udp_sock *socks_map = ctx->proto->shm_base + ctx->socks_map->off;
 
-  if (actx->app->n_socks >= MAX_SOCKETS)
+  if (ctx->n_socks >= MAX_SOCKETS)
   {
     LOG_ERROR("Socket map is full");
     return -1;
@@ -198,7 +210,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
   }
   res = &qe_res->data.new_sock_res;
   res->opaque = req->opaque;
-  res->sock_id = actx->app->n_socks;
+  res->sock_id = ctx->n_socks;
   res->core = 0;
 
   sock = &socks_map[res->sock_id];
@@ -244,6 +256,9 @@ int handle_new_sock(struct udp_slow_context *ctx,
     LOG_ERROR("failed to enqueue new socket response");
     return -1;
   }
+
+  /* Increment number of socks registered in protocol */
+  ctx->n_socks++;
 
   return 0;
 }
@@ -295,7 +310,7 @@ int handle_bind(struct udp_slow_context *ctx,
     return -1;
   }
 
-  socks_map = ctx->proto->shm_base + actx->app->socks_map->off;
+  socks_map = ctx->proto->shm_base + ctx->socks_map->off;
   sock = &socks_map[req->sock_id];
   sock->local_ip = req->local_ip;
   sock->local_port = req->local_port;

@@ -176,7 +176,6 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   struct epoll_event ev;
   struct udp_app_slow *a;
   struct app_event *aev;
-  struct proto_map_lib *socks_map;  
 
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));
@@ -210,18 +209,7 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   a = &ctx->apps[ctx->n_apps];
   a->id = ctx->n_apps;
   a->n_ctxs = 0;
-  a->n_socks = 0;
   a->next_ctx = 0;
-
-  /* Create map used to hold sockets */
-  socks_map = cham_new_map(ctx->proto, MAX_SOCKETS, 
-      sizeof(struct udp_sock));
-  if (socks_map == NULL)
-  {
-    LOG_ERROR("failed to create map to hold sockets");
-    goto free_aev;
-  }
-  a->socks_map = socks_map;
 
   /* Add connection to epoll */
   aev->type = EP_APP;
@@ -254,6 +242,8 @@ close_cfd:
 static void uxsocket_error(struct udp_slow_context *ctx, struct app_event *aev)
 {
   LOG_WARN("removing cfd=%d from app epfd", ctx->app_epfd);
+  
+  /* TODO: Disable queues enabled for this app */
   epoll_ctl(ctx->app_epfd, EPOLL_CTL_DEL, aev->fd, NULL);
   close(aev->fd);
   free(aev);
@@ -295,7 +285,7 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
     goto error_uxsocket;
   }
 
-  if(msg.msg_controllen > 0) 
+  if (msg.msg_controllen > 0) 
   {
     struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
     assert(cmsg->cmsg_len == CMSG_LEN(sizeof(int)));

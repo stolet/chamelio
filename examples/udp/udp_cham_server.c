@@ -55,11 +55,11 @@ int main(int argc, char **argv)
   ret = udp_connect_slow();
   if (ret != 0)
     abort();
-  
+
   ret = udp_ctx_new();
   if (ret != 0)
     abort();
-    
+
   fd = udp_socket();
   if (fd < 0)
     abort();
@@ -94,7 +94,8 @@ int main(int argc, char **argv)
   while(udp_poll_fast() == 0){}
   dstlen = sizeof(dst_addr);
   n = udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&dst_addr, dstlen);
-  printf("ARP initialized\n");
+  udp_sendto(fd, buf, (size_t)n, (struct sockaddr *)&dst_addr, dstlen);
+  printf("ARP initialized n=%d\n", n);
   
   while(1)
   {

@@ -959,7 +959,7 @@ static int verify_ebpf(void *ebpf_bytecode, size_t size)
 
 static void bpf_print(int a)
 {
-  LOG_DEBUG("HERE %d", a);
+  LOG_DEBUG("HERE %lld", a);
 }
 
 /* Pointer to the memory with the jitted code inside 

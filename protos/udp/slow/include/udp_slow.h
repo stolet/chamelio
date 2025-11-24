@@ -42,10 +42,6 @@ struct udp_app_slow {
   __u8 next_ctx;
   /* List of application contexts */
   struct udp_app_context_slow ctxs[MAX_CTXS];
-  /* Number of sockets registered */
-  __u32 n_socks;
-  /* Chamelio socket map */
-  struct proto_map_lib *socks_map;
 };
 
 struct udp_slow_context {
@@ -53,6 +49,8 @@ struct udp_slow_context {
   int app_uxfd;
   /* Epoll object used by UX application socket */
   int app_epfd;
+  /* Number of sockets registered */
+  __u32 n_socks;
 
   /* Chamelio library guest structure */
   struct guest_lib *guest;
@@ -66,6 +64,8 @@ struct udp_slow_context {
   /* Apps that have registered with chamelio */
   struct udp_app_slow apps[MAX_APPS];
 
+  /* Chamelio socket map */
+  struct proto_map_lib *socks_map;
   /* Translation from local port to sockets ID. 
     Socket ID by itself is not unique but 
     app id + socket id will give a unique ID */

@@ -145,7 +145,7 @@ static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)
   m->nelems = req->nelems;
   m->off = req->off;
   m->addr = g->shm_base + req->off;
-  LOG_DEBUG("created map qid=%d in fast-path", req->mid);
+  LOG_DEBUG("created map mid=%d in fast-path", req->mid);
 }
 
 static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe)

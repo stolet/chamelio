@@ -593,7 +593,7 @@ static int handle_new_sock_res(struct udp_queue_entry *qe)
   res = &qe->data.new_sock_res;
   sock = (struct udp_socket *) res->opaque;
   sock->core = res->core;
-  sock->sock_id = sock->sock_id;
+  sock->sock_id = res->sock_id;
   sock->rx_qid = res->rx_qid;
   sock->rx_len = res->rx_len;
   sock->rx_buf = udp->shm_base + res->rx_off;
