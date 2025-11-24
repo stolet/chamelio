@@ -276,7 +276,7 @@ static void print_stats(__u64 now)
 
 int main(int argc, char **argv)
 {
-  int r, s, ret, burst;
+  int r, s, ret, pending;
   struct sockaddr_in dst;
   __u8 *txbuf, *rxbuf;
   __u64 now, rtt_us;
@@ -313,8 +313,6 @@ int main(int argc, char **argv)
     exit(EXIT_FAILURE);
   }
   
-  fprintf(stderr, "created udp context\n");
-
   int fd = udp_socket();
   if (fd < 0)
   {
@@ -322,8 +320,6 @@ int main(int argc, char **argv)
     exit(EXIT_FAILURE);
   }
   
-  fprintf(stderr, "created chamelio socket\n");
-
   memset(&dst, 0, sizeof(dst));
   dst.sin_family = AF_INET;
   dst.sin_port   = htons((__u16)port);
@@ -353,10 +349,12 @@ int main(int argc, char **argv)
   sleep(1);
   udp_sendto(fd, txbuf, msg_size, (struct sockaddr *) &dst, dstlen);
   sleep(1);
+  while(udp_poll_fast() == 0);
+  while(udp_recvfrom(fd, rxbuf, msg_size, NULL, 0) == 0);
   printf("Sent ARP request\n");
   fflush(stdout);
 
-  burst = 0;
+  pending = 0;
   tx_bytes_interval = 0;
   tx_pkts_interval  = 0;
   total_sent_pkts   = 0;
@@ -372,7 +370,7 @@ int main(int argc, char **argv)
 
     /* Send bursts */
     udp_poll_fast();
-    for (; burst < max_pending; burst++)
+    for (; pending < max_pending; pending++)
     {
       ph = (struct payload_hdr *) txbuf;
       ph->tsc = util_rdtsc();
@@ -393,14 +391,17 @@ int main(int argc, char **argv)
     }
       
     /* Drain replies */
-    while(1)
+    while(pending > 0)
     {
       udp_poll_fast();
       r = udp_recvfrom(fd, rxbuf, msg_size, NULL, 0);
       if (r < 0)
       {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-        if (errno == EINTR) continue;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) 
+          break;
+        
+        if (errno == EINTR) 
+          continue;
 
         perror("recvfrom");
         exit(EXIT_FAILURE);
@@ -412,8 +413,8 @@ int main(int argc, char **argv)
       ph = (struct payload_hdr *)rxbuf;
       rtt_us = us_since_tsc(ph->tsc);
       hist_add(rtt_us);
-      burst--;
-      assert(burst >= 0);
+      pending--;
+      assert(pending >= 0);
     }
 
     /* Once per elapsed second */
