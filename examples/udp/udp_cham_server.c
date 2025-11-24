@@ -2,7 +2,7 @@
  *   ./udp_linux_server <bind_ip> <port> [--buf-size N]
  *
  * Example:
- *   ./udp_linux_server 0.0.0.0 9000 --buf-size 2048
+ *   ./udp_linux_server 0.0.0.0 9000 --msize 64
  */
 
 #define _GNU_SOURCE
@@ -19,13 +19,13 @@
 int main(int argc, char **argv)
 {
   int i, n, m, ret, fd, port;
-  size_t buf_size;
+  size_t msize;
   struct sockaddr_in src_addr, dst_addr;
   socklen_t dstlen;
   
   if (argc < 3)
   {
-    fprintf(stderr, "Usage: %s <bind_ip> <port> [--buf-size N]\n", argv[0]);
+    fprintf(stderr, "Usage: %s <bind_ip> <port> [--msize N]\n", argv[0]);
     return EXIT_FAILURE;
   }
 
@@ -37,13 +37,13 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
-  buf_size = 65536;
+  msize = 64;
 
   for (i = 3; i < argc; i++)
   {
-    if (strcmp(argv[i], "--buf-size") == 0 && i + 1 < argc)
+    if (strcmp(argv[i], "--msize") == 0 && i + 1 < argc)
     {
-      buf_size = (size_t)strtoul(argv[++i], NULL, 10);
+      msize = (size_t)strtoul(argv[++i], NULL, 10);
     }
     else
     {
@@ -79,31 +79,30 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
-  __u8 *buf = (__u8 *)malloc(buf_size);
+  __u8 *buf = (__u8 *)malloc(msize);
   if (!buf) 
   {
     perror("malloc");
     return EXIT_FAILURE;
   }
 
-  printf("UDP echo server listening on %s:%d (buf-size=%zu)\n", 
-      bind_ip, port, buf_size);
+  printf("UDP echo server listening on %s:%d (msize=%zu)\n", 
+      bind_ip, port, msize);
   fflush(stdout);
   
   /* Send ARP request */
   while(udp_poll_fast() == 0){}
   dstlen = sizeof(dst_addr);
-  n = udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&dst_addr, dstlen);
+  n = udp_recvfrom(fd, buf, msize, (struct sockaddr *)&dst_addr, dstlen);
   udp_sendto(fd, buf, (size_t)n, (struct sockaddr *)&dst_addr, dstlen);
-  printf("ARP initialized n=%d\n", n);
+  printf("ARP initialized\n");
   
   while(1)
   {
     dstlen = sizeof(dst_addr);
     
     udp_poll_fast();
-    n = udp_recvfrom(fd, buf, buf_size, (struct sockaddr *)&dst_addr, dstlen);
-    if (n > 0)
+    n = udp_recvfrom(fd, buf, msize, (struct sockaddr *)&dst_addr, dstlen);
     if (n < 0)
     {
       if (errno == EINTR || errno == EAGAIN) continue;
@@ -115,7 +114,7 @@ int main(int argc, char **argv)
     if (n > 0)
     {
       udp_poll_fast();
-      m = udp_sendto(fd, buf, (size_t)n, (struct sockaddr *)&dst_addr, dstlen);
+      m = udp_sendto(fd, buf, (size_t) n, (struct sockaddr *) &dst_addr, dstlen);
       if (m < 0 && errno != EAGAIN)
       {
         if (errno == EINTR) 
