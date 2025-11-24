@@ -26,9 +26,9 @@ newgrp docker
 ```
 
 To open the repository folder in a container select "Dev Containers: Open Folder in Container""
-from the VSCode quick action status bar item.
+from the VSCode quick action status bar item (Ctrl + Shift + P).
 
-After the container finished building build Chamelio inside the container
+After the container finished building compile Chamelio inside the container
 ```
 meson setup build
 cd build
