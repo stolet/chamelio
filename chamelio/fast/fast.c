@@ -172,6 +172,7 @@ int poll_rx(struct fast_context *ctx)
   /* Receive packets from the NIC */
   n = nic_fast_rx(&ctx->nic_ctx, n, mbs);
 
+  /* Return if we received no packets */
   if (n <= 0)
     return 0;
 
@@ -179,17 +180,17 @@ int poll_rx(struct fast_context *ctx)
   {
     /* Process infrastructure protocols */
     g = process_infra_rx(ctx, mbs[i]);
-
+    
+    /* Execute custom protocol rx procedure */
     if (g != NULL)
     {
-      // g->proto.event_rx(rte_pktmbuf_mtod(mbs[i], __u8 *), 
-          // &g->proto.handle);
       g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[i], __u8 *);
       ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx, 
           sizeof(struct cham_ebpf_ctx), &ret);
     }
   }
 
+  /* Return used mbufs to the mbuf pool */
   rte_pktmbuf_free_bulk(mbs, n);
 
   return n;
@@ -197,10 +198,10 @@ int poll_rx(struct fast_context *ctx)
 
 int poll_queues(struct fast_context *ctx)
 {
-  int i, max, ret, deq_ret, ndeq, ntx;
-  __u16 qid;
+  int i, j, max, ret, ret_tx, deq_ret, ndeq, ntx;
+  __u8 qcur_empty;
   struct guest_fast *g;
-  struct cham_dqueue *q;
+  struct cham_dqueue *qcur;
   struct queue_entry *qe;
   struct rte_mbuf **mbs;
 
@@ -208,47 +209,59 @@ int poll_queues(struct fast_context *ctx)
   if (TXBUF_SIZE - ctx->tx_n < max)
     max = TXBUF_SIZE - ctx->tx_n;
 
-  /* Allocate mbufs in case a message wants to transmit something already */
+  /* Allocate mbufs for transmission */
   max = txcache_alloc(ctx, &mbs, max);
+  if (max <= 0)
+    return 0;
 
-  ntx = ndeq = 0;
+  ntx = 0;
+  ndeq = 0;
+  qcur_empty = 0;
   for (i = 0; i < ctx->n_guests && ndeq < max; i++)
   {
+    /* Continue if there are no activated queues for this protocol */
     g = &ctx->guests[i];
-    qid = g->proto.dqueues_head;
-    while (qid != PROTOQ_ID_INVALID && ndeq < max)
+    if (g->proto.dqueues_head == PROTOQ_ID_INVALID)
+      continue;
+
+    for (j = 0; j < g->proto.ndqueues; j++)
     {
-      q = &g->proto.dqueues[qid];
-        
-      /* If there are no messages in queue continue */
-      qe = queue_head(&q->dq);
+      qcur_empty = 0;
+      qcur = &g->proto.dqueues[g->proto.dqueues_head];
+      qe = queue_head(&qcur->dq);
+
+      /* If there are no messages in queue, continue to next */
       if (qe == NULL)
       {
-        qid = q->next;
+        g->proto.dqueues[g->proto.dqueues_tail].next = qcur->id;
+        g->proto.dqueues_tail = qcur->id;
+        g->proto.dqueues_head = qcur->next;
+        qcur->next = PROTOQ_ID_INVALID;
+        qcur_empty = 1;
         continue;
       }
 
-      /* Prepare packet */
+      /* Prepare packet buffer for potential TX */
       mbs[ntx]->data_off = 0;
       g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[ntx], __u8 *);
 
-      /* Add queue entry to ebpf context */
+      /* Add queue entry to eBPF context */
       g->proto.ebpf_ctx.qe = qe;
-      g->proto.ebpf_ctx.qid = q->id;
+      g->proto.ebpf_ctx.qid = qcur->id;
 
       /* Execute custom dequeue procedure */
-      ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx, 
+      ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx,
         sizeof(struct cham_ebpf_ctx), &deq_ret);
       ndeq++;
 
       /* Add to transmission buffer if packet processed for TX */
       if (deq_ret > 0)
       {
-        /* Add destination MAC address */
-        process_infra_tx(ctx, mbs[ntx]);
-        
+        /* Add destination MAC address and run infra processing */
+        ret_tx = process_infra_tx(ctx, mbs[ntx]);
+
         /* Add to TX buffer if infra protos were successful */
-        if (ret == 0)
+        if (ret_tx == 0)
         {
           mbs[ntx]->pkt_len = mbs[ntx]->data_len = deq_ret;
           ctx->tx_mbs[ctx->tx_n] = mbs[ntx];
@@ -256,18 +269,23 @@ int poll_queues(struct fast_context *ctx)
           ntx++;
         }
       }
-      
-      // g->proto.event_deq(q->id, qe, &g->proto.handle);
 
-      /* Pop the queue */
-      ret = queue_dequeue(&q->dq);
+      ret = queue_dequeue(&qcur->dq);
       if (ret != 0)
       {
         LOG_ERROR("failed to dequeue queue for proto=%d", g->id);
         return -1;
       }
+    }
 
-      qid = q->next;
+    /* Rotate head if last polled queue didn't increment head */
+    if (!qcur_empty)
+    {
+      qcur = &g->proto.dqueues[g->proto.dqueues_head];
+      g->proto.dqueues[g->proto.dqueues_tail].next = qcur->id;
+      g->proto.dqueues_tail = qcur->id;
+      g->proto.dqueues_head = qcur->next;
+      qcur->next = PROTOQ_ID_INVALID;
     }
   }
 
@@ -286,6 +304,7 @@ int poll_tx(struct fast_context *ctx)
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
   
+  /* Return if no guests have registered */
   if (ctx->guests == NULL)
     return 0;
 
@@ -300,6 +319,7 @@ int poll_tx(struct fast_context *ctx)
   ntx = 0;
   for (i = 0; i < n_guests && g != NULL && ntx < max; i++)
   {
+    /* Return if ebpf code hasn't been uploaded yet */
     g = &ctx->guests[i];
     if (g->proto.event_tx_vm == NULL)
       continue;
@@ -309,10 +329,8 @@ int poll_tx(struct fast_context *ctx)
       /* Prepare packet */
       mbs[ntx]->data_off = 0;
       g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[ntx], __u8 *);
-      // ret = g->proto.event_tx(rte_pktmbuf_mtod(mbs[n_used], __u8 *), 
-          // &guest->proto.handle);
       
-      /* Execute custom TX procedure */
+      /* Execute custom protocol tx procedure */
       ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx.pkt, 
           sizeof(struct cham_ebpf_ctx), &tx_ret);
 
