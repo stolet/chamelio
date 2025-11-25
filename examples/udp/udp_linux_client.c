@@ -33,7 +33,7 @@ struct payload_hdr {
 
 /* Default arg values */
 size_t msg_size = 64; // Total payload bytes: includes payload_hdr
-int duration_sec = 30;
+int duration = 30;
 int max_pending = 1;
 const char *server_ip;
 int port;
@@ -51,7 +51,7 @@ static double tsc_per_us = 0.0;
 /* Clamp histogram at 1 second */
 #define MAX_RTT_US 1000000u  
 static __u64 *rtt_hist = NULL;
-static __u64 rtt_samples = 0;
+static __u64 total_rx = 0;
 
 static inline __u64 util_rdtsc(void)
 {
@@ -120,14 +120,14 @@ static inline void hist_add(__u64 rtt_us)
 {
   if (rtt_us > MAX_RTT_US) rtt_us = MAX_RTT_US;
   rtt_hist[rtt_us]++;
-  rtt_samples++;
+  total_rx++;
 }
 
 static bool hist_percentiles(__u64 *p50, __u64 *p99, __u64 *p999)
 {
-  if (rtt_samples == 0) return false;
+  if (total_rx == 0) return false;
 
-  __u64 N = rtt_samples;
+  __u64 N = total_rx;
   __u64 t50  = (N * 50  + 100 - 1) / 100;
   __u64 t99  = (N * 99  + 100 - 1) / 100;
   __u64 t999 = (N * 999 + 1000 - 1) / 1000;
@@ -215,7 +215,7 @@ static int parse_args(int argc, char **argv)
     }
     else if (strcmp(argv[i], "--duration") == 0 && i + 1 < argc)
     {
-      duration_sec = atoi(argv[++i]);
+      duration = atoi(argv[++i]);
     }
     else if (strcmp(argv[i], "--max-pending") == 0 && i + 1 < argc)
     {
@@ -267,7 +267,7 @@ static void print_stats(__u64 now)
 
   printf("[ %3lus ] pps=%10.2f | %8.2f MB/s | rtt_samples=%llu | ",
           (unsigned long)((t_next_report_ns - t_start_ns) / 1000000000ULL),
-          pps, MBps, (unsigned long long)rtt_samples);
+          pps, MBps, (unsigned long long)total_rx);
   if (have)
   {
     printf("p50=%llu us  p99=%llu us  p99.9=%llu us\n",
@@ -311,7 +311,7 @@ int main(int argc, char **argv)
   t_start_ns = now_ns();
   t_last_report_ns = t_start_ns;
   t_next_report_ns = t_start_ns + 1000000000ULL;
-  t_end_ns = t_start_ns + (__u64) duration_sec * 1000000000ULL;
+  t_end_ns = t_start_ns + (__u64) duration * 1000000000ULL;
   
   ret = parse_args(argc, argv);
   if (ret != 0)
@@ -363,7 +363,7 @@ int main(int argc, char **argv)
   while (true)
   {
     now = now_ns();
-    if (duration_sec > 0 && now >= t_end_ns) 
+    if (duration > 0 && now >= t_end_ns) 
       break;
 
     /* Send bursts */
@@ -421,7 +421,7 @@ int main(int argc, char **argv)
   bool have = hist_percentiles(&p50, &p99, &p999);
   printf("\n=== Summary ===\n");
   printf("Sent packets: %llu\n", (unsigned long long) total_sent_pkts);
-  printf("RTT samples : %llu\n", (unsigned long long) rtt_samples);
+  printf("RTT samples : %llu\n", (unsigned long long) total_rx);
   if (have)
   {
     printf("RTT percentiles (us): p50=%llu  p99=%llu  p99.9=%llu\n",
