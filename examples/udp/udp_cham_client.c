@@ -31,7 +31,7 @@ struct payload_hdr {
 }__attribute__((packed));
 
 /* Per-core context */
-struct core_ctx {
+struct core {
   int id;
   int fd;
   __u8 *txbuf;
@@ -75,7 +75,7 @@ static __u64 *rtt_hist = NULL;
 
 static pthread_barrier_t start_barrier;
 static pthread_t *threads = NULL;
-static struct core_ctx *cores = NULL;
+static struct core *cores = NULL;
 
 
 static inline __u64 util_rdtsc(void)
@@ -155,7 +155,7 @@ static inline void hist_add(__u64 rtt_us)
   __atomic_fetch_add(&total_rx, 1, __ATOMIC_RELAXED);
 }
 
-static bool hist_percentiles(__u64 *p50, __u64 *p99, __u64 *p999)
+static inline bool hist_percentiles(__u64 *p50, __u64 *p99, __u64 *p999)
 {
   __u64 samples = __atomic_load_n(&total_rx, __ATOMIC_RELAXED);
   if (samples == 0) 
@@ -204,7 +204,7 @@ static bool hist_percentiles(__u64 *p50, __u64 *p99, __u64 *p999)
   return true;
 }
 
-static int parse_args(int argc, char **argv)
+static inline int parse_args(int argc, char **argv)
 {
   if (argc < 3)
   {
@@ -269,7 +269,7 @@ static int parse_args(int argc, char **argv)
   return 0;
 }
 
-static int init_hist(void)
+static inline int init_hist(void)
 {
   rtt_hist = (__u64 *) calloc((size_t) MAX_RTT_US + 1, sizeof(__u64));
   if (!rtt_hist)
@@ -281,11 +281,10 @@ static int init_hist(void)
   return 0;
 }
 
-static void print_stats(__u64 now)
+static inline void print_stats(__u64 now)
 {
   double interval_s, rps_load, mbps_load, rps_tp, mbps_tp;
   bool have;
-
   __u64 p50 = 0, p99 = 0, p999 = 0;
 
   interval_s = (double) (t_next_report_ns - t_last_report_ns) / 1e9;
@@ -342,18 +341,73 @@ static void print_stats(__u64 now)
   }
 }
 
-static void *core_thread(void *arg)
+static inline void core_tx(struct core *c, struct payload_hdr *ph)
 {
-  struct core_ctx *c = (struct core_ctx *) arg;
-  int r, s;
-  __u64 start_tsc, elapsed, rtt_us;
-  struct payload_hdr *ph;
+  int s;
+  
+  while (c->tokens >= (double) msg_size)
+  {
+    ph = (struct payload_hdr *) c->txbuf;
+    ph->tsc = util_rdtsc();
 
-  if (c->id != 0)
-    sleep(1);
+    udp_poll_fast();
+    s = udp_sendto(c->fd, c->txbuf, msg_size,
+                  (struct sockaddr *) &c->dst, c->dstlen);
+    if (s < 0)
+    {
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+        break;
+      if (errno == EINTR)
+        continue;
+
+      perror("sendto");
+      pthread_exit((void *)(intptr_t) -1);
+    }
+
+    c->tokens -= msg_size;
+
+    c->txb_load_interval += (__u64) s;
+    c->txp_load_interval++;
+    c->total_tx_pkts++;
+  }
+}
+
+static inline void core_rx(struct core *c, struct payload_hdr *ph)
+{
+  int r;
+  __u64 rtt_us;
+
+  while (1)
+  {
+    udp_poll_fast();
+    r = udp_recvfrom(c->fd, c->rxbuf, msg_size, NULL, 0);
+    if (r < 0)
+    {
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+        break;
+
+      perror("recvfrom");
+      pthread_exit((void *) (intptr_t) -1);
+    }
+
+    if ((size_t) r < sizeof(struct payload_hdr))
+      continue;
+
+    ph = (struct payload_hdr *) c->rxbuf;
+    rtt_us = us_since_tsc(ph->tsc);
+    c->txb_tp_interval += (__u64) r;
+    c->txp_tp_interval++;
+    c->total_rx_pkts++;
+    hist_add(rtt_us);
+  }
+}
+
+static inline void core_init(struct core *c)
+{
+  int ret;
 
   /* Each core has its own UDP context and socket */
-  int ret = udp_ctx_new();
+  ret = udp_ctx_new();
   if (ret != 0)
   {
     fprintf(stderr, "core %d: failed to create UDP context\n", c->id);
@@ -380,17 +434,16 @@ static void *core_thread(void *arg)
   /* Core 0 resolves ARP */
   if (c->id == 0)
   {
-    udp_sendto(c->fd, c->txbuf, msg_size, (struct sockaddr *) &c->dst, c->dstlen);
+    udp_sendto(c->fd, c->txbuf, msg_size, 
+        (struct sockaddr *) &c->dst, c->dstlen);
     sleep(1);
-    udp_sendto(c->fd, c->txbuf, msg_size, (struct sockaddr *) &c->dst, c->dstlen);
+    udp_sendto(c->fd, c->txbuf, msg_size, 
+        (struct sockaddr *) &c->dst, c->dstlen);
     sleep(1);
     while(udp_poll_fast() == 0);
     while(udp_recvfrom(c->fd, c->rxbuf, msg_size, NULL, 0) == 0);
     fprintf(stderr, "Resolved ARP\n");
-  }  
-
-  /* Synchronize start with all other cores and main */
-  pthread_barrier_wait(&start_barrier);
+  }
 
   c->txb_load_interval = 0;
   c->txp_load_interval = 0;
@@ -399,8 +452,20 @@ static void *core_thread(void *arg)
   c->total_tx_pkts = 0;
   c->total_rx_pkts = 0;
   c->tokens  = 0.0;
-  c->last_tsc = util_rdtsc();
+}
 
+static inline void * core_thread(void *arg)
+{
+  struct core *c = (struct core *) arg;
+  __u64 start_tsc, elapsed;
+  double bytes_per_us, delta_cycles, delta_us, max_tokens;
+  struct payload_hdr *ph;
+
+  core_init(c);
+  /* Synchronize start with all other cores and main */
+  pthread_barrier_wait(&start_barrier);
+
+  c->last_tsc = util_rdtsc();
   start_tsc = util_rdtsc();
   for (;;)
   {
@@ -410,76 +475,91 @@ static void *core_thread(void *arg)
 
     /* Update token bucket using TSC */
     __u64 tsc_now = util_rdtsc();
-    double delta_cycles = (double)(tsc_now - c->last_tsc);
-    double delta_us = delta_cycles / tsc_per_us;
+    delta_cycles = (double)(tsc_now - c->last_tsc);
+    delta_us = delta_cycles / tsc_per_us;
     if (delta_us < 0.0)
       delta_us = 0.0;
 
-    double bytes_per_us = c->rate / 8.0;
+    bytes_per_us = c->rate / 8.0;
     c->tokens += delta_us * bytes_per_us;
 
     /* Cap bucket to 1 ms worth of traffic to avoid unbounded bursts */
-    double max_tokens = bytes_per_us * 1000.0;
+    max_tokens = bytes_per_us * 1000.0;
     if (c->tokens > max_tokens)
       c->tokens = max_tokens;
 
     c->last_tsc = tsc_now;
 
     /* Send as many packets as tokens allow */
-    while (c->tokens >= (double) msg_size)
-    {
-      ph = (struct payload_hdr *) c->txbuf;
-      ph->tsc = util_rdtsc();
-
-      udp_poll_fast();
-      s = udp_sendto(c->fd, c->txbuf, msg_size,
-                    (struct sockaddr *) &c->dst, c->dstlen);
-      if (s < 0)
-      {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-          break;
-        if (errno == EINTR)
-          continue;
-
-        perror("sendto");
-        pthread_exit((void *)(intptr_t) -1);
-      }
-
-      c->tokens -= msg_size;
-
-      c->txb_load_interval += (__u64) s;
-      c->txp_load_interval++;
-      c->total_tx_pkts++;
-    }
-
+    core_tx(c, ph);
     /* Drain replies */
-    while (1)
-    {
-      udp_poll_fast();
-      r = udp_recvfrom(c->fd, c->rxbuf, msg_size, NULL, 0);
-      if (r < 0)
-      {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-          break;
-
-        perror("recvfrom");
-        pthread_exit((void *) (intptr_t) -1);
-      }
-
-      if ((size_t) r < sizeof(struct payload_hdr))
-        continue;
-
-      ph = (struct payload_hdr *) c->rxbuf;
-      rtt_us = us_since_tsc(ph->tsc);
-      c->txb_tp_interval += (__u64) r;
-      c->txp_tp_interval++;
-      c->total_rx_pkts++;
-      hist_add(rtt_us);
-    }
+    core_rx(c, ph);
   }
 
-
   pthread_exit((void *)(intptr_t)0);
+}
+
+static inline void prepare_cores()
+{
+  int i;
+  
+  for (i = 0; i < ncores; i++)
+  {
+    memset(&cores[i], 0, sizeof(struct core));
+    cores[i].id = i;
+    cores[i].rate = rate;
+    cores[i].tokens = 0.0;
+    cores[i].last_tsc = 0;
+
+    memset(&cores[i].dst, 0, sizeof(cores[i].dst));
+    cores[i].dst.sin_family = AF_INET;
+    cores[i].dst.sin_port   = htons((__u16) port);
+    if (inet_pton(AF_INET, server_ip, &cores[i].dst.sin_addr) != 1)
+    {
+      fprintf(stderr, "Invalid server_ip\n");
+      abort();
+    }
+    cores[i].dstlen = sizeof(cores[i].dst);
+  }
+}
+
+static inline void start_cores()
+{
+  /* Spawn core threads */
+  for (int i = 0; i < ncores; i++)
+  {
+    int rc = pthread_create(&threads[i], NULL, core_thread, &cores[i]);
+    if (rc != 0)
+    {
+      errno = rc;
+      perror("pthread_create");
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+
+static inline void init_client()
+{
+  /* Calibrate tsc */
+  calibrate_tsc();
+
+  /* Allocate cores and thread handles */
+  cores = (struct core *) calloc((size_t) ncores, 
+      sizeof(struct core));
+  threads = (pthread_t *) calloc((size_t) ncores, sizeof(pthread_t));
+  if (!cores || !threads)
+  {
+    perror("calloc cores/threads");
+    exit(EXIT_FAILURE);
+  }
+  
+  /* Barrier for all cores + main (to synchronize start of sending) */
+  if (pthread_barrier_init(&start_barrier, NULL, 
+      (unsigned) ncores + 1) != 0)
+  {
+    perror("pthread_barrier_init");
+    exit(EXIT_FAILURE);
+  }
 }
 
 int main(int argc, char **argv)
@@ -507,67 +587,17 @@ int main(int argc, char **argv)
     exit(EXIT_FAILURE);
   }
   
-  /* Calibrate tsc */
-  calibrate_tsc();
+  init_client();
+  prepare_cores();
+  start_cores();
 
-  /* Allocate cores and thread handles */
-  cores = (struct core_ctx *) calloc((size_t) ncores, 
-      sizeof(struct core_ctx));
-  threads = (pthread_t *) calloc((size_t) ncores, sizeof(pthread_t));
-  if (!cores || !threads)
-  {
-    perror("calloc cores/threads");
-    exit(EXIT_FAILURE);
-  }
-
-  /* Prepare cores */
-  for (int i = 0; i < ncores; i++)
-  {
-    memset(&cores[i], 0, sizeof(struct core_ctx));
-    cores[i].id = i;
-    cores[i].rate = rate;
-    cores[i].tokens = 0.0;
-    cores[i].last_tsc = 0;
-
-    memset(&cores[i].dst, 0, sizeof(cores[i].dst));
-    cores[i].dst.sin_family = AF_INET;
-    cores[i].dst.sin_port   = htons((__u16) port);
-    if (inet_pton(AF_INET, server_ip, &cores[i].dst.sin_addr) != 1)
-    {
-      fprintf(stderr, "Invalid server_ip\n");
-      return EXIT_FAILURE;
-    }
-    cores[i].dstlen = sizeof(cores[i].dst);
-  }
-
-  /* Barrier for all cores + main (to synchronize start of sending) */
-  if (pthread_barrier_init(&start_barrier, NULL, 
-      (unsigned) ncores + 1) != 0)
-  {
-    perror("pthread_barrier_init");
-    exit(EXIT_FAILURE);
-  }
-
-  /* Spawn core threads */
-  for (int i = 0; i < ncores; i++)
-  {
-    int rc = pthread_create(&threads[i], NULL, core_thread, &cores[i]);
-    if (rc != 0)
-    {
-      errno = rc;
-      perror("pthread_create");
-      exit(EXIT_FAILURE);
-    }
-  }
-
-  printf("Initialized %d core(s). Waiting for synchronized start...\n", 
-      ncores);
+  printf("Initialized %d core(s). Waiting for barrier\n", ncores);
   fflush(stdout);
 
   /* Wait for work threads before continuing */
   pthread_barrier_wait(&start_barrier);
   
-  /* Establish timebase and reporting windows, then release the barrier */
+  /* Establish timebase and reporting windows */
   t_start_ns = now_ns();
   t_last_report_ns = t_start_ns;
   t_next_report_ns = t_start_ns + 1000000000ULL;
@@ -616,16 +646,12 @@ int main(int argc, char **argv)
   printf("TX packets : %llu\n", (unsigned long long) total_tx);
   printf("RX packets : %llu\n", (unsigned long long) total_rx);
   if (have)
-  {
     printf("RTT percentiles (us): p50=%llu  p99=%llu  p99.9=%llu\n",
            (unsigned long long) p50,
            (unsigned long long) p99,
            (unsigned long long) p999);
-  }
   else
-  {
     printf("No RTT samples collected.\n");
-  }
 
   /* Cleanup */
   for (int i = 0; i < ncores; i++)
@@ -633,6 +659,7 @@ int main(int argc, char **argv)
     if (cores[i].txbuf) free(cores[i].txbuf);
     if (cores[i].rxbuf) free(cores[i].rxbuf);
   }
+
   free(cores);
   free(threads);
   free(rtt_hist);
