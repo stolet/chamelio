@@ -229,7 +229,6 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   if (payload_len > UDP_MSS)
     payload_len = UDP_MSS;
 
-  /* TODO: Opt len */
   opt_len = 0;
   udp_hdrs_len = sizeof(struct udp_hdr) + opt_len;
   ip_hdrs_len = sizeof(struct ip_hdr);

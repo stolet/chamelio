@@ -5,15 +5,23 @@
 #include "arp_hdr.h"
 #include "txcache.h"
 
-static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe);
-static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe);
-static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe);
-static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe);
-static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe);
-static void handle_upload_ebpf(struct fast_context *ctx, struct queue_entry *qe);
+static inline void handle_new_guest(struct fast_context *ctx, 
+    struct queue_entry *qe);
+static inline void handle_new_queue(struct fast_context *ctx, 
+    struct queue_entry *qe);
+static inline void handle_new_map(struct fast_context *ctx, 
+    struct queue_entry *qe);
+static inline void handle_enableq(struct fast_context *ctx, 
+    struct queue_entry *qe);
+static inline void handle_disableq(struct fast_context *ctx, 
+    struct queue_entry *qe);
+static inline void handle_upload_ebpf(struct fast_context *ctx, 
+    struct queue_entry *qe);
 
-static void handle_arp_tx_pkt(struct fast_context *ctx, struct queue_entry *qe);
-static void handle_arp_update(struct fast_context *ctx, struct queue_entry *qe);
+static inline void handle_arp_tx_pkt(struct fast_context *ctx, 
+    struct queue_entry *qe);
+static inline void handle_arp_update(struct fast_context *ctx, 
+    struct queue_entry *qe);
 
 int controlif_poll(struct fast_context *ctx)
 {
@@ -23,7 +31,7 @@ int controlif_poll(struct fast_context *ctx)
   struct queue_entry *qe;
  
   /* TODO: Might be good to decouple messages with control
-     information from from messages that want to send packets */
+     information from messages that want to send packets */
   n = BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < n)
     n = TXBUF_SIZE - ctx->tx_n;
@@ -83,7 +91,8 @@ int controlif_poll(struct fast_context *ctx)
   return 0;
 }
 
-static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
+static inline void handle_new_guest(struct fast_context *ctx, 
+    struct queue_entry *qe)
 {
   struct guest_fast *g;
   struct queue_new_guest_req *req = &qe->data.new_guest_req;
@@ -110,7 +119,8 @@ static void handle_new_guest(struct fast_context *ctx, struct queue_entry *qe)
   ctx->n_guests++;
 }
 
-static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe)
+static inline void handle_new_queue(struct fast_context *ctx, 
+    struct queue_entry *qe)
 {
   struct guest_fast *g;
   struct proto_fast *p;
@@ -127,7 +137,8 @@ static void handle_new_queue(struct fast_context *ctx, struct queue_entry *qe)
   LOG_DEBUG("created queue qid=%d in fast-path", req->qid);
 }
 
-static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)
+static inline void handle_new_map(struct fast_context *ctx, 
+    struct queue_entry *qe)
 {
   struct guest_fast *g;
   struct proto_fast *p;
@@ -148,7 +159,8 @@ static void handle_new_map(struct fast_context *ctx, struct queue_entry *qe)
   LOG_DEBUG("created map mid=%d in fast-path", req->mid);
 }
 
-static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe)
+static inline void handle_enableq(struct fast_context *ctx, 
+    struct queue_entry *qe)
 {
   struct guest_fast *g;
   struct proto_fast *p;
@@ -184,7 +196,8 @@ static void handle_enableq(struct fast_context *ctx, struct queue_entry *qe)
   LOG_DEBUG("enabled queue qid=%d in core=%d", req->qid, req->core);
 }
 
-static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe)
+static inline void handle_disableq(struct fast_context *ctx, 
+    struct queue_entry *qe)
 {
   struct guest_fast *g;
   struct proto_fast *p;
@@ -214,7 +227,8 @@ static void handle_disableq(struct fast_context *ctx, struct queue_entry *qe)
   p->ndqueues--;
 }
 
-static void handle_upload_ebpf(struct fast_context *ctx, struct queue_entry *qe)
+static inline void handle_upload_ebpf(struct fast_context *ctx, 
+    struct queue_entry *qe)
 {
   struct guest_fast *g;
   struct proto_fast *p;
@@ -229,7 +243,8 @@ static void handle_upload_ebpf(struct fast_context *ctx, struct queue_entry *qe)
   p->event_deq_vm = req->event_deq_vm;
 }
 
-static void handle_arp_tx_pkt(struct fast_context *ctx, struct queue_entry *qe)
+static inline void handle_arp_tx_pkt(struct fast_context *ctx, 
+    struct queue_entry *qe)
 {
   int ret;
   struct queue_entry *txqe;
@@ -265,7 +280,8 @@ static void handle_arp_tx_pkt(struct fast_context *ctx, struct queue_entry *qe)
   }
 }
 
-static void handle_arp_update(struct fast_context *ctx, struct queue_entry *qe)
+static inline void handle_arp_update(struct fast_context *ctx, 
+    struct queue_entry *qe)
 {
   struct arp_entry *ae;
   struct queue_arp_update *arp_up = &qe->data.arp_update;

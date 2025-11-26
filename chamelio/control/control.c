@@ -20,35 +20,38 @@
 #include "scheduler_fns.h"
 #include "ebpf.h"
 
-static int poll_fast(struct control_context *ctx);
-static int poll_guests(struct control_context *ctx);
-static int poll_timeouts(struct control_context *ctx);
+static inline int poll_fast(struct control_context *ctx);
+static inline int poll_guests(struct control_context *ctx);
+static inline int poll_timeouts(struct control_context *ctx);
 
-static int handle_arp_lookup(struct control_context *ctx, 
+static inline void handle_arp_lookup(struct control_context *ctx, 
     struct queue_entry *qe);
-static int handle_arp_req(struct control_context *ctx,
+static inline void handle_arp_req(struct control_context *ctx,
   struct queue_entry *qe);
-static int handle_arp_rep(struct control_context *ctx,
+static inline void handle_arp_rep(struct control_context *ctx,
   struct queue_entry *qe);
-static int handle_arp_timeout(struct control_context *ctx,
+static inline void handle_arp_timeout(struct control_context *ctx,
     struct to_entry *ae);
 
-static int handle_new_queue_req(struct control_context *ctx,
+static inline void handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
-static int handle_new_map_req(struct control_context *ctx,
+static inline void handle_new_map_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
-static int handle_enableq_req(struct control_context *ctx,
+static inline void handle_enableq_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe);
-static int handle_disableq_req(struct control_context *ctx,
+static inline void handle_disableq_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe);
-static int handle_allocate_ebpf_req(struct guest_control *g, 
+    
+static inline void handle_allocate_ebpf_req(struct guest_control *g, 
     struct queue_entry *qe_req);
-static int handle_free_ebpf_req(struct guest_control *g, 
+static inline void handle_free_ebpf_req(struct guest_control *g, 
     struct queue_entry *qe_req);
-static int handle_upload_ebpf_req(struct control_context *ctx,
+static inline void handle_upload_ebpf_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
-static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size);
+static inline struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, 
+    size_t size);
 
+static void bpf_print(int a);
 static void * bpf_memcpy(void *dst, void *src, size_t n);
 static __u16 ipv4_checksum(void *ip_hdr);
 static __u16 ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr);
@@ -206,7 +209,7 @@ int control_loop(struct control_context *ctx)
 }
 
 /* Polls for messages from fast-path */
-static int poll_fast(struct control_context *ctx)
+static inline int poll_fast(struct control_context *ctx)
 {
   int i, cores_polled, increment_core;
   struct dqueue *q;
@@ -266,7 +269,7 @@ static int poll_fast(struct control_context *ctx)
 }
 
 /* Polls for messages from guests */
-static int poll_guests(struct control_context *ctx)
+static inline int poll_guests(struct control_context *ctx)
 {
   struct dqueue *q;
   struct queue_entry *qe;
@@ -340,7 +343,7 @@ static int poll_guests(struct control_context *ctx)
   return 0;
 }
 
-static int poll_timeouts(struct control_context *ctx)
+static inline int poll_timeouts(struct control_context *ctx)
 {
   int i;
   struct to_entry *te;
@@ -375,7 +378,7 @@ static int poll_timeouts(struct control_context *ctx)
   return 0;
 }
 
-static int handle_arp_timeout(struct control_context *ctx, 
+static inline void handle_arp_timeout(struct control_context *ctx, 
     struct to_entry *te)
 {
   int ret;
@@ -383,7 +386,7 @@ static int handle_arp_timeout(struct control_context *ctx,
   
   /* If this entry is not pending anymore return */
   if (!ae->pending)
-    return 0;
+    return;
     
   /* Send another ARP request */
   ret = arp_request(ctx->txqs[0], ctx->ctl_fast_qs[0], ae->ip,
@@ -391,7 +394,7 @@ static int handle_arp_timeout(struct control_context *ctx,
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue ARP request");
-    return -1;
+    return;
   }
   
   /* Enqueue a new timeout */
@@ -399,14 +402,14 @@ static int handle_arp_timeout(struct control_context *ctx,
   if (te == NULL)
   {
     LOG_ERROR("failed to insert ARP timeout");
-    return -1;
+    return;
   }
   ae->te = te;
   
-  return 0;
+  return;
 }
 
-static int handle_arp_lookup(struct control_context *ctx, 
+static inline void handle_arp_lookup(struct control_context *ctx, 
     struct queue_entry *qe)
 {
   int ret;
@@ -430,7 +433,7 @@ static int handle_arp_lookup(struct control_context *ctx,
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue ARP request");
-      return -1;
+      return;
     }
     
     /* Insert timeout for ARP request */
@@ -438,16 +441,16 @@ static int handle_arp_lookup(struct control_context *ctx,
     if (te == NULL)
     {
       LOG_ERROR("failed to insert timeout for ARP request");
-      return -1;
+      return;
     }
     ae->te = te;
   }
   
       
-  return 0;
+  return;
 }
 
-static int handle_arp_req(struct control_context *ctx,
+static inline void handle_arp_req(struct control_context *ctx,
   struct queue_entry *qe)
 {
   int ret, i;
@@ -457,7 +460,7 @@ static int handle_arp_req(struct control_context *ctx,
   
   /* Check if ARP request was for me*/
   if (arp_req->tpa != ctx->config->ip)
-    return -1;
+    return;
     
   ae = arp_lookup(&ctx->arp_table, arp_req->spa);
   if (ae == NULL || ae->pending)
@@ -467,7 +470,7 @@ static int handle_arp_req(struct control_context *ctx,
         (__u8 *) &arp_req->sha) == NULL)
     {
       LOG_ERROR("failed to add sender to ARP table");
-      return -1;
+      return;
     }
     
     /* TODO: Don't duplicate this code */
@@ -478,7 +481,7 @@ static int handle_arp_req(struct control_context *ctx,
       if (arp_up == NULL)
       {
         LOG_ERROR("failed to get tail of control->fast queue");
-        return -1;
+        return;
       }
       
       arp_up->data.arp_update.ip = arp_req->spa;
@@ -488,7 +491,7 @@ static int handle_arp_req(struct control_context *ctx,
       if (ret != 0)
       {
         LOG_ERROR("failed to enqueue ARP update to control->fast queue");
-        return -1;
+        return;
       }
     }
   }
@@ -500,13 +503,13 @@ static int handle_arp_req(struct control_context *ctx,
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue ARP reply");
-    return -1;
+    return;
   }
   
-  return 0;
+  return;
 }
 
-static int handle_arp_rep(struct control_context *ctx,
+static inline void handle_arp_rep(struct control_context *ctx,
   struct queue_entry *qe)
 {
   int i, ret;
@@ -517,7 +520,7 @@ static int handle_arp_rep(struct control_context *ctx,
   /* Check if this ARP reply is for us and is pending */
   ae = arp_lookup(&ctx->arp_table, arp_rep->spa);
   if (ae == NULL || !ae->pending)
-    return -1;
+    return;
   
   ae = arp_insert(&ctx->arp_table, arp_rep->spa, (__u8 *) &arp_rep->sha);
   if (ae == NULL)
@@ -537,7 +540,7 @@ static int handle_arp_rep(struct control_context *ctx,
     if (arp_up == NULL)
     {
       LOG_ERROR("failed to get tail of control->fast queue");
-      return -1;
+      return;
     }
     
     arp_up->data.arp_update.ip = arp_rep->spa;
@@ -547,14 +550,14 @@ static int handle_arp_rep(struct control_context *ctx,
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue ARP update to control->fast queue");
-      return -1;
+      return;
     }
   }
     
-  return 0;
+  return;
 }
 
-static int handle_new_queue_req(struct control_context *ctx,
+static inline void handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
   int i, ret;
@@ -579,7 +582,7 @@ static int handle_new_queue_req(struct control_context *ctx,
     res->nelems = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
 
   /* Allocate requested queue */
@@ -591,7 +594,7 @@ static int handle_new_queue_req(struct control_context *ctx,
     res->nelems = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
   memset(sh->addr, 0, sh->len);
 
@@ -627,10 +630,10 @@ static int handle_new_queue_req(struct control_context *ctx,
   ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
   assert(ret == 0);
   
-  return 0;
+  return;
 }
 
-static int handle_new_map_req(struct control_context *ctx,
+static inline void handle_new_map_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
   int i, ret;
@@ -652,7 +655,7 @@ static int handle_new_map_req(struct control_context *ctx,
     res->elsize = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_MAP_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
 
   /* Allocate requested map */
@@ -664,7 +667,7 @@ static int handle_new_map_req(struct control_context *ctx,
     res->elsize = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_MAP_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
 
   res->id = g->proto.nmaps;
@@ -693,10 +696,10 @@ static int handle_new_map_req(struct control_context *ctx,
   /* Send response back to guest */
   ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_MAP_RES);
   assert(ret == 0);
-  return 0;
+  return;
 }
 
-static int handle_enableq_req(struct control_context *ctx,
+static inline void handle_enableq_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe)
 {
   int ret;
@@ -709,13 +712,13 @@ static int handle_enableq_req(struct control_context *ctx,
   if (req->core >= ctx->config->fp_cores_max)
   {
     LOG_WARN("tried to enable queue in nonexistent core");
-    return -1;
+    return;
   }
 
   if (req->qid >= g->proto.nqueues)
   {
     LOG_WARN("tried to access nonexistent queue");
-    return -1;
+    return;
   }
 
   q = ctx->ctl_fast_qs[req->core];
@@ -736,10 +739,10 @@ static int handle_enableq_req(struct control_context *ctx,
   ret = queue_enqueue(q, QUEUE_ENABLEQ_REQ);
   assert(ret == 0);
 
-  return 0;
+  return;
 }
 
-static int handle_disableq_req(struct control_context *ctx,
+static inline void handle_disableq_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe)
 {
   int ret;
@@ -751,13 +754,13 @@ static int handle_disableq_req(struct control_context *ctx,
   if (req->core >= ctx->config->fp_cores_max)
   {
     LOG_WARN("tried to disable queue in nonexistent core");
-    return -1;
+    return;
   }
 
   if (req->qid >= g->proto.nqueues)
   {
     LOG_WARN("tried to access nonexistent queue");
-    return -1;
+    return;
   }
 
   q = ctx->ctl_fast_qs[req->core];
@@ -775,10 +778,10 @@ static int handle_disableq_req(struct control_context *ctx,
   ret = queue_enqueue(q, QUEUE_DISABLEQ_REQ);
   assert(ret == 0);
 
-  return 0;
+  return;
 }
 
-static int handle_allocate_ebpf_req(struct guest_control *g, 
+static inline void handle_allocate_ebpf_req(struct guest_control *g, 
     struct queue_entry *qe_req)
 {
   int ret;
@@ -800,7 +803,7 @@ static int handle_allocate_ebpf_req(struct guest_control *g,
     res->opaque = req->opaque;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_ALLOCATE_EBPF_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
   
   memset(g->ebpf_shm_handle->addr, 0, g->ebpf_shm_handle->len);
@@ -810,10 +813,10 @@ static int handle_allocate_ebpf_req(struct guest_control *g,
   ret = queue_enqueue(g->cham_guest_q, QUEUE_ALLOCATE_EBPF_RES);
   assert(ret == 0);
   
-  return 0;
+  return;
 }
 
-static int handle_upload_ebpf_req(struct control_context *ctx,
+static inline void handle_upload_ebpf_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
   int ret, i;
@@ -840,7 +843,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
   
   event_rx_prog = bpf_object__find_program_by_name(bpf_obj, "event_rx");
@@ -850,7 +853,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
   
   event_rx_insns = bpf_program__insns(event_rx_prog);
@@ -862,7 +865,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
   
   event_tx_prog = bpf_object__find_program_by_name(bpf_obj, "event_tx");
@@ -872,7 +875,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
   
   event_tx_insns = bpf_program__insns(event_tx_prog);
@@ -884,7 +887,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
   
   event_deq_prog = bpf_object__find_program_by_name(bpf_obj, "event_deq");
@@ -894,7 +897,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
   
   event_deq_insns = bpf_program__insns(event_deq_prog);
@@ -906,7 +909,7 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
     res->success = 0;
     ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
     assert(ret == 0);
-    return -1;
+    return;
   }
 
   /* Send jitted VMs for functions to fast-path  */
@@ -929,10 +932,10 @@ static int handle_upload_ebpf_req(struct control_context *ctx,
   res->success = 1;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
   assert(ret == 0);
-  return 0;
+  return;
 }
 
-static int handle_free_ebpf_req(struct guest_control *g, 
+static inline void handle_free_ebpf_req(struct guest_control *g, 
     struct queue_entry *qe_req)
 {
   int ret;
@@ -949,22 +952,12 @@ static int handle_free_ebpf_req(struct guest_control *g,
   res->success = 1;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_FREE_EBPF_RES);
   assert(ret == 0);
-  return 0;
-}
-
-static int verify_ebpf(void *ebpf_bytecode, size_t size)
-{ 
-  return 0;
-}
-
-static void bpf_print(int a)
-{
-  LOG_DEBUG("HERE %lld", a);
+  return;
 }
 
 /* Pointer to the memory with the jitted code inside 
    the ebpf_vm_c struct: ebpf_jitted_fn */
-static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
+static inline struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
 {
   __u64 res;
   struct ebpf_vm_c *vm;
@@ -1055,6 +1048,11 @@ static struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
   }
   
   return vm;
+}
+
+static void bpf_print(int a)
+{
+  LOG_DEBUG("HERE %lld", a);
 }
 
 static void * bpf_memcpy(void *dst, void *src, size_t n)

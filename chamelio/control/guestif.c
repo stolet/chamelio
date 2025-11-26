@@ -21,11 +21,13 @@
 #define EP_LISTEN_GUEST 1
 #define EP_GUEST 2
 
-static int uxsocket_init(struct control_context *ctx);
-static int uxsocket_init_fd(struct control_context *ctx);
-static int uxsocket_accept(struct control_context *ctx);
-static void uxsocket_error(struct control_context *ctx, struct guest_event *gev);
-static void uxsocket_receive(struct control_context *ctx, struct guest_event *gev);
+static inline int uxsocket_init(struct control_context *ctx);
+static inline int uxsocket_init_fd(struct control_context *ctx);
+static inline int uxsocket_accept(struct control_context *ctx);
+static inline void uxsocket_error(struct control_context *ctx, 
+    struct guest_event *gev);
+static inline void uxsocket_receive(struct control_context *ctx, 
+    struct guest_event *gev);
 
 int guestif_init(struct control_context *ctx)
 {
@@ -75,7 +77,7 @@ int guestif_poll(struct control_context *ctx)
   return n;
 }
 
-static int uxsocket_init(struct control_context *ctx)
+static inline int uxsocket_init(struct control_context *ctx)
 {
   int epfd, ret;
 
@@ -103,7 +105,7 @@ error_close_ep:
   return -1;
 }
 
-static int uxsocket_init_fd(struct control_context *ctx)
+static inline int uxsocket_init_fd(struct control_context *ctx)
 {
   int fd, ret;
   struct epoll_event ev;
@@ -173,7 +175,7 @@ error_close:
   return -1;
 }
 
-static int uxsocket_accept(struct control_context *ctx)
+static inline int uxsocket_accept(struct control_context *ctx)
 {
   int i, ret, cfd, sfd;
   void *shm_base;
@@ -346,7 +348,8 @@ close_cfd:
   return -1;
 } 
 
-static void uxsocket_error(struct control_context *ctx, struct guest_event *gev)
+static inline void uxsocket_error(struct control_context *ctx, 
+    struct guest_event *gev)
 {
   LOG_WARN("removing cfd=%d from guest epfd", ctx->guest_epfd);
   epoll_ctl(ctx->guest_epfd, EPOLL_CTL_DEL, gev->fd, NULL);
@@ -354,7 +357,8 @@ static void uxsocket_error(struct control_context *ctx, struct guest_event *gev)
   free(gev);
 }
 
-static void uxsocket_receive(struct control_context *ctx, struct guest_event *gev)
+static inline void uxsocket_receive(struct control_context *ctx, 
+    struct guest_event *gev)
 {
   int n;
   size_t res_sz;

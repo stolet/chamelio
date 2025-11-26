@@ -24,8 +24,10 @@
 
 struct guest_fast * init_guest(__u8 id, __u64 shm_len);
 
-static inline struct guest_fast * process_infra_rx(struct fast_context *ctx, struct rte_mbuf *mbuf);
-static inline int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb);
+static inline struct guest_fast * process_infra_rx(struct fast_context *ctx,
+    struct rte_mbuf *mbuf);
+static inline int process_infra_tx(struct fast_context *ctx,
+    struct rte_mbuf *mb);
 static inline void process_arp_rx_req(struct fast_context *ctx,
     struct queue_entry *qe, struct pkt_arp *pkt);
 static inline void process_arp_rx_rep(struct fast_context *ctx,
@@ -34,7 +36,6 @@ static inline void process_arp_rx_rep(struct fast_context *ctx,
 int poll_rx(struct fast_context *ctx);
 int poll_queues(struct fast_context *ctx);
 int poll_tx(struct fast_context *ctx);
-int poll_control(struct fast_context *ctx);
 int tx_flush(struct fast_context *ctx);
 
 int fast_context_init(struct fast_context *f_ctx, 
@@ -148,13 +149,13 @@ int fast_loop(struct fast_context *ctx)
     /* Flush entries in transmit buffer added by poll_tx */
     tx_flush(ctx);
 
-    ret = poll_control(ctx);
+    ret = controlif_poll(ctx);
     if (ret < 0)
     {
-      LOG_ERROR("poll_control failed");
+      LOG_ERROR("controlif_poll failed");
     }
     
-    /* Flush entries in transmit buffer added by poll_control */
+    /* Flush entries in transmit buffer added by controlif_poll */
     tx_flush(ctx);
   }
 }
@@ -385,11 +386,6 @@ int tx_flush(struct fast_context *ctx)
   }
 
   return ret;
-}
-
-int poll_control(struct fast_context *ctx)
-{
-  return controlif_poll(ctx);
 }
 
 static inline struct guest_fast * process_infra_rx(struct fast_context *ctx, struct rte_mbuf *mb)

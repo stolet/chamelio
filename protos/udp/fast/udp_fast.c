@@ -220,7 +220,6 @@ int udp_event_tx(void *pkt, struct cham_proto_handle *handle)
   if (payload_len > UDP_MSS)
     payload_len = UDP_MSS;
 
-  /* TODO: Opt len */
   opt_len = 0;
   udp_hdrs_len = sizeof(struct udp_hdr) + opt_len;
   ip_hdrs_len = sizeof(struct ip_hdr);
