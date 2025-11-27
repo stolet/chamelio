@@ -24,7 +24,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx);
 static void * (*queue_tail)(struct equeue *q) = (void *) 1001;
 static int (*queue_enqueue)(struct equeue *q, __u8 type) = (void *) 1002;
 
-static void * (*bpf_memcpy)(void *src, void *dst, size_t len) = (void *) 1003;
+static void * (*bpf_memcpy)(void *dst, void *src, size_t len) = (void *) 1003;
 static void (*bpf_print)(int a) = (void *) 1004;
 
 static __u16 (*ipv4_checksum)(void *ip_hdr) = (void *) 1005;

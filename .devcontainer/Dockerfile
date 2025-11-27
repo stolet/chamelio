@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Update apt and install basic packages
 RUN apt-get -y update
-RUN apt-get -y install build-essential wget xz-utils git vim gdb clang
+RUN apt-get -y install build-essential wget xz-utils git vim gdb clang linux-perf
 
 # Install meson and ninja
 RUN apt-get -y install meson ninja-build python3-pip python3-pyelftools

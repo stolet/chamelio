@@ -366,10 +366,13 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
     LOG_ERROR("bad socket file descriptor");
     return -1;
   }
+  
+  if (len == 0)
+    return 0;
 
   n = len;
   if (len > sock->tx_len - sock->tx_avail)
-  n = sock->tx_len - sock->tx_avail;
+    n = sock->tx_len - sock->tx_avail;
   
   /* No space available in tx buffer */
   if (n == 0)
@@ -507,40 +510,39 @@ int udp_recvfrom(int sockfd, void *buf, size_t len,
 
 int udp_poll_fast()
 {
-  int i, n;
+  int i, n, ncores;
   struct dqueue *q;
   struct udp_queue_bump_entry *qe;
+  struct dqueue **fast_app_qs;
+  
+  /* Accessing TLS is expensive so copy it to local variable */
+  ncores = udp_ctx->ncores;
+  fast_app_qs = udp_ctx->fast_app_qs;
 
   /* Poll for messages from each fast-path core */
   n = 0;
-  for (i = 0; i < udp_ctx->ncores && n < POLL_BATCH; i++)
+  for (i = 0; i < ncores && n < POLL_BATCH; i++)
   {
-    q = udp_ctx->fast_app_qs[i];
-    while (n < POLL_BATCH)
-    {
-      qe = queue_head(q);
-    
-      /* Queue is empty */
-      if (qe == NULL)
-        break;;
-        
+    q = fast_app_qs[i];
+    while (n < POLL_BATCH && (qe = queue_head(q)) != NULL)
+    {       
       n++;
     
       switch (qe->type)
       {
         case UDP_QUEUE_BUMP_APP_TX:
           handle_tx_bump(qe);
-          queue_dequeue(q);
           break;
         case UDP_QUEUE_BUMP_APP_RX:
           handle_rx_bump(qe);
-          queue_dequeue(q);
           break;
         default:
           LOG_ERROR("unknown queue entry type from "
               "fast-path to app type=%d", qe->type);
           abort();
       }
+      
+      queue_dequeue(q);      
     }
   }
 
@@ -600,7 +602,7 @@ static int handle_new_sock_res(struct udp_queue_entry *qe)
   sock->tx_qid = res->tx_qid;
   sock->tx_len = res->tx_len;
   sock->tx_buf = udp->shm_base +
- res->tx_off;
+  res->tx_off;
 
   return 0;  
 }

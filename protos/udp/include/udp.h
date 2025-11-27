@@ -59,7 +59,7 @@ struct udp_sock {
   __u32 tx_head;
   /* Offset to the start of the TX buffer in shared memory */
   __u64 tx_off;
-};
+} __attribute__((packed));
 
 /* Entry for app bump map */ 
 struct udp_app_bump_mape {
