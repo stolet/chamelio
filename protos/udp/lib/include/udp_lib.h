@@ -91,20 +91,23 @@ struct udp_lib {
 /* Connects to the slow-path */
 int udp_connect_slow();
 /* Creates a new context for a thread */
-int udp_ctx_new();
+struct udp_context_lib * udp_ctx_new();
 /* Polls message queue for slow-path messages */
-int udp_poll_slow();
+int udp_poll_slow(struct udp_context_lib *ctx);
 /* Polls message queue for fast-path messages*/
-int udp_poll_fast();
+int udp_poll_fast(struct udp_context_lib *ctx);
 /* Creates a new UDP socket */
-int udp_socket();
+int udp_socket(struct udp_context_lib *ctx);
 /* Binds src address to UDP socket */
-int udp_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+int udp_bind(struct udp_context_lib *ctx, int sockfd, 
+    const struct sockaddr *addr, socklen_t addrlen);
 /* Sends data in buffer to the specified address */
-int udp_sendto(int sockfd, const void *buf, size_t len, 
+int udp_sendto(struct udp_context_lib *ctx, int sockfd, 
+    const void *buf, size_t len, 
     const struct sockaddr *addr, socklen_t addr_len);
 /* Reads data from socket buffer */
-int udp_recvfrom(int sockfd, void *buf, size_t len, 
+int udp_recvfrom(struct udp_context_lib *ctx, int sockfd, 
+    void *buf, size_t len, 
     struct sockaddr *addr, socklen_t addr_len);
 
 #endif

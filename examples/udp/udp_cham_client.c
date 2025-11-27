@@ -338,19 +338,19 @@ static inline void print_stats(__u64 now)
   }
 }
 
-static inline void core_init(struct core *c)
+static inline struct udp_context_lib * core_init(struct core *c)
 {
-  int ret;
+  struct udp_context_lib *udp_ctx;
 
   /* Each core has its own UDP context and socket */
-  ret = udp_ctx_new();
-  if (ret != 0)
+  udp_ctx = udp_ctx_new();
+  if (udp_ctx == NULL)
   {
     fprintf(stderr, "core %d: failed to create UDP context\n", c->id);
     pthread_exit((void *) (intptr_t) -1);
   }
 
-  c->fd = udp_socket();
+  c->fd = udp_socket(udp_ctx);
   if (c->fd < 0)
   {
     perror("udp_socket");
@@ -370,14 +370,14 @@ static inline void core_init(struct core *c)
   /* Core 0 resolves ARP */
   if (c->id == 0)
   {
-    udp_sendto(c->fd, c->txbuf, msg_size, 
+    udp_sendto(udp_ctx, c->fd, c->txbuf, msg_size, 
         (struct sockaddr *) &c->dst, c->dstlen);
     sleep(1);
-    udp_sendto(c->fd, c->txbuf, msg_size, 
+    udp_sendto(udp_ctx, c->fd, c->txbuf, msg_size, 
         (struct sockaddr *) &c->dst, c->dstlen);
     sleep(1);
-    while(udp_poll_fast() == 0);
-    while(udp_recvfrom(c->fd, c->rxbuf, msg_size, NULL, 0) == 0);
+    while(udp_poll_fast(udp_ctx) == 0);
+    while(udp_recvfrom(udp_ctx, c->fd, c->rxbuf, msg_size, NULL, 0) == 0);
     fprintf(stderr, "Resolved ARP\n");
   }
 
@@ -388,9 +388,10 @@ static inline void core_init(struct core *c)
   c->total_tx_pkts = 0;
   c->total_rx_pkts = 0;
   c->tokens  = 0.0;
+  return udp_ctx;
 }
 
-static inline void core_tx(struct core *c)
+static inline void core_tx(struct udp_context_lib *udp_ctx, struct core *c)
 {
   int ntx;
   struct payload_hdr *ph;
@@ -400,7 +401,7 @@ static inline void core_tx(struct core *c)
     ph = (struct payload_hdr *) c->txbuf;
     ph->tsc = util_rdtsc();
 
-    ntx = udp_sendto(c->fd, c->txbuf, msg_size,
+    ntx = udp_sendto(udp_ctx, c->fd, c->txbuf, msg_size,
                   (struct sockaddr *) &c->dst, c->dstlen);
     assert(ntx == msg_size || ntx <= 0);
     assert(c->tokens >= msg_size);
@@ -415,7 +416,7 @@ static inline void core_tx(struct core *c)
   }
 }
 
-static inline void core_rx(struct core *c)
+static inline void core_rx(struct udp_context_lib *udp_ctx, struct core *c)
 {
   int nrx;
   __u64 rtt_us;
@@ -423,7 +424,7 @@ static inline void core_rx(struct core *c)
 
   while (1)
   {
-    nrx = udp_recvfrom(c->fd, c->rxbuf, msg_size, NULL, 0);
+    nrx = udp_recvfrom(udp_ctx, c->fd, c->rxbuf, msg_size, NULL, 0);
     assert(nrx == msg_size || nrx < 0);
     
     if (nrx <= 0)
@@ -441,11 +442,12 @@ static inline void core_rx(struct core *c)
 static inline void * core_thread(void *arg)
 {
   struct core *c;
+  struct udp_context_lib *udp_ctx;
   __u64 start_tsc, elapsed, tsc_now;
   double bytes_per_us, delta_cycles, delta_us, max_tokens;
 
   c = (struct core *) arg;
-  core_init(c);
+  udp_ctx = core_init(c);
   
   /* Synchronize start with all other cores and main */
   pthread_barrier_wait(&start_barrier);
@@ -474,12 +476,12 @@ static inline void * core_thread(void *arg)
     c->last_tsc = tsc_now;
 
     /* Poll bump messages */
-    udp_poll_fast();
+    udp_poll_fast(udp_ctx);
     /* Send as many packets as tokens allow */
-    core_tx(c);
+    core_tx(udp_ctx, c);
     /* Drain replies */
-    udp_poll_fast();
-    core_rx(c);
+    udp_poll_fast(udp_ctx);
+    core_rx(udp_ctx, c);
   }
 
   pthread_exit((void *) (intptr_t) 0);

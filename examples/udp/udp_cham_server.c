@@ -147,10 +147,11 @@ static inline void print_stats(__u64 now)
   }
 }
 
-static inline void core_init(struct core *c)
+static inline struct udp_context_lib * core_init(struct core *c)
 {
   __u8 *buf;
   int ret, fd, n;
+  struct udp_context_lib *udp_ctx;
 
   buf = (__u8 *) malloc(bsize);
   if (buf == NULL)
@@ -161,15 +162,15 @@ static inline void core_init(struct core *c)
   c->buf = buf;
   memset(c->buf, 0, bsize);
 
-  ret = udp_ctx_new();
-  if (ret != 0)
+  udp_ctx = udp_ctx_new();
+  if (udp_ctx == NULL)
     abort();
 
-  fd = udp_socket();
+  fd = udp_socket(udp_ctx);
   if (fd < 0)
     abort();
 
-  ret = udp_bind(fd, (struct sockaddr *) &src_addr, sizeof(src_addr));
+  ret = udp_bind(udp_ctx, fd, (struct sockaddr *) &src_addr, sizeof(src_addr));
   if (ret < 0)
   {
     perror("bind");
@@ -179,10 +180,10 @@ static inline void core_init(struct core *c)
   /* Core 0 resolves ARP */
   if (c->id == 0)
   {
-    while(udp_poll_fast() == 0){}
-    n = udp_recvfrom(fd, c->buf, msize, 
+    while(udp_poll_fast(udp_ctx) == 0){}
+    n = udp_recvfrom(udp_ctx, fd, c->buf, msize, 
         (struct sockaddr *) &c->dst_addr, sizeof(c->dst_addr));
-    udp_sendto(fd, c->buf, (size_t) n, 
+    udp_sendto(udp_ctx, fd, c->buf, (size_t) n, 
       (struct sockaddr *) &c->dst_addr, sizeof(c->dst_addr));
     printf("ARP initialized\n");
   }
@@ -194,16 +195,17 @@ static inline void core_init(struct core *c)
   c->rxp_interval = 0;
   c->txb_interval = 0;
   c->txp_interval = 0;
+  return udp_ctx;
 }
 
-static inline void core_rx(struct core *c)
+static inline void core_rx(struct udp_context_lib *udp_ctx, struct core *c)
 {
   int nrx;
   
   while (c->nrx < bsize)
   {
     assert(msize <= bsize - c->nrx);
-    nrx = udp_recvfrom(c->fd, c->buf + c->nrx, msize, 
+    nrx = udp_recvfrom(udp_ctx, c->fd, c->buf + c->nrx, msize, 
         (struct sockaddr *) &c->dst_addr, sizeof(c->dst_addr));
     assert(nrx == msize || nrx < 0);
     
@@ -216,14 +218,14 @@ static inline void core_rx(struct core *c)
   }
 }
 
-static inline void core_tx(struct core *c)
+static inline void core_tx(struct udp_context_lib *udp_ctx, struct core *c)
 {
   int ntx;
   
   while (c->ntx < c->nrx)
   {
     assert(msize <= c->nrx - c->ntx);
-    ntx = udp_sendto(c->fd, c->buf + c->ntx, msize, 
+    ntx = udp_sendto(udp_ctx, c->fd, c->buf + c->ntx, msize, 
         (struct sockaddr *) &c->dst_addr, sizeof(c->dst_addr));
     assert(ntx == msize || ntx < 0);
           
@@ -242,19 +244,20 @@ static inline void core_tx(struct core *c)
 static inline void * core_thread(void *arg)
 {
   struct core *c;
-
+  struct udp_context_lib *udp_ctx;
+  
   c = (struct core *) arg;
-  core_init(c);
+  udp_ctx = core_init(c);
 
   /* Synchronize start with all other cores and main */
   pthread_barrier_wait(&start_barrier);
 
   while (1)
   {
-    udp_poll_fast();
-    core_rx(c);
-    udp_poll_fast();
-    core_tx(c);
+    udp_poll_fast(udp_ctx);
+    core_rx(udp_ctx, c);
+    udp_poll_fast(udp_ctx);
+    core_tx(udp_ctx, c);
   }
   
 

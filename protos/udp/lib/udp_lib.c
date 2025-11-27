@@ -23,7 +23,6 @@
 static struct udp_lib *udp = NULL;
 
 /* One context per thread */
-static __thread struct udp_context_lib *udp_ctx = NULL;
 
 static int handle_new_sock_res(struct udp_queue_entry *qe);
 static int handle_tx_bump(struct udp_queue_bump_entry *qe);
@@ -100,7 +99,7 @@ close_sockfd:
   return -1;
 }
 
-int udp_ctx_new()
+struct udp_context_lib * udp_ctx_new()
 {
   int i;
   ssize_t sz, off;
@@ -113,13 +112,6 @@ int udp_ctx_new()
   struct udp_queue_new_actx_req req = {
     .req = 1,
   };
-  
-  /* Context was already initialised in this thread */
-  if (udp_ctx != NULL)
-  {
-    LOG_WARN("context was already initialised in this thread");
-    return -1;
-  }
   
   /* Send request on kernel socket */
   struct iovec iov = {
@@ -142,7 +134,7 @@ int udp_ctx_new()
   {
     LOG_ERROR("failed to send msg to register udp app ctx");
     perror("");
-    return -1;
+    return NULL;
   }
 
   /* Receive response on kernel socket */
@@ -155,7 +147,7 @@ int udp_ctx_new()
     {
       LOG_ERROR("read failed");
       perror("");
-      return -1;
+      return NULL;
     }
     off += sz;
   }
@@ -164,12 +156,11 @@ int udp_ctx_new()
   if (ctx == NULL)
   {
     LOG_ERROR("failed to allocate udp context struct");
-    return -1;
+    return NULL;
   }
   
   ctx->id = __sync_fetch_and_add(&udp->next_ctxid, 1);
   ctx->ncores = res->n_fp_cores;
-  udp_ctx = ctx;
   
   /* Map shared memory if this is the first context */
   if (ctx->id == 0)
@@ -179,7 +170,7 @@ int udp_ctx_new()
     if (shm_base == (void *) -1) 
     {
       LOG_ERROR("failed to map shm region");
-      return -1;;
+      return NULL;;
     }
     udp->shm_base = shm_base;
   }
@@ -193,7 +184,7 @@ int udp_ctx_new()
   if (eq == NULL)
   {
     LOG_ERROR("failed to create queue from app to slow-path");
-    return -1;
+    return NULL;
   }
   ctx->app_slow_q = eq;
   
@@ -203,7 +194,7 @@ int udp_ctx_new()
   if (dq == NULL)
   {
     LOG_ERROR("failed to create queue from slow-path to app");
-    return -1;
+    return NULL;
   }
   ctx->slow_app_q = dq;
 
@@ -212,17 +203,17 @@ int udp_ctx_new()
   if (eq_list == NULL)
   {
     LOG_ERROR("failed to allocate list for queues app->fast");
-    return -1;
+    return NULL;
   }
-  udp_ctx->app_fast_qs = eq_list;
+  ctx->app_fast_qs = eq_list;
 
   dq_list = malloc(sizeof(struct dqueue *) * res->n_fp_cores);
   if (dq == NULL)
   {
     LOG_ERROR("failed to allcoate list for queues fast->app");
-    return -1;
+    return NULL;
   }
-  udp_ctx->fast_app_qs = dq_list;
+  ctx->fast_app_qs = dq_list;
 
   /* Create each queue between app and fast-path core */
   for (i = 0; i < res->n_fp_cores; i++)
@@ -232,7 +223,7 @@ int udp_ctx_new()
     if (eq == NULL)
     {
       LOG_ERROR("failed to create app->fast bump queue");
-      return -1;
+      return NULL;
     }
     eq_list[i] = eq;
 
@@ -241,15 +232,15 @@ int udp_ctx_new()
     if (dq == NULL)
     {
       LOG_ERROR("failed to create fast->app bump queue");
-      return -1;
+      return NULL;
     }
     dq_list[i] = dq;
   }
 
-  return 0;
+  return ctx;
 }
 
-int udp_socket()
+int udp_socket(struct udp_context_lib *ctx)
 {
   int fd, ret;
   struct udp_socket *sock;
@@ -257,6 +248,12 @@ int udp_socket()
   struct udp_queue_entry *qe;
   struct udp_queue_new_sock_req *req;
 
+  if (ctx == NULL)
+  {
+    LOG_ERROR("passed NULL udp_context_lib");
+    return -1;
+  }
+  
   /* Find next free fd and get socket */
   fd = __sync_fetch_and_add(&udp->next_sockfd, 1);
   if (fd >= MAX_SOCKETS)
@@ -280,8 +277,7 @@ int udp_socket()
   sock->rx_len = 0;
 
   /* Create socket in slow-path */
-  assert(udp_ctx != NULL);
-  q = udp_ctx->app_slow_q;
+  q = ctx->app_slow_q;
   qe = queue_tail(q);
   if (qe == NULL)
   {
@@ -300,12 +296,13 @@ int udp_socket()
 
   /* Wait poll for response */
   while (sock->rx_len == 0)
-    udp_poll_slow();
+    udp_poll_slow(ctx);
 
   return sock->fd;
 }
 
-int udp_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
+int udp_bind(struct udp_context_lib *ctx, int sockfd, 
+    const struct sockaddr *addr, socklen_t addrlen)
 {
   int ret;
   struct equeue *q;
@@ -315,7 +312,7 @@ int udp_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
   struct udp_socket *sock;
   
   /* Send src ip and port to slow-path */
-  q = udp_ctx->app_slow_q;
+  q = ctx->app_slow_q;
   qe = queue_tail(q);
   if (qe == NULL)
   {
@@ -338,7 +335,7 @@ int udp_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
   }
 
   while (sock->bind_success == -1)
-    udp_poll_slow();
+    udp_poll_slow(ctx);
 
   if (!sock->bind_success)
     return -1;
@@ -349,7 +346,8 @@ int udp_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
   return 0;
 }
 
-int udp_sendto(int sockfd, const void *buf, size_t len, 
+int udp_sendto(struct udp_context_lib *ctx, int sockfd, 
+    const void *buf, size_t len, 
     const struct sockaddr *addr, socklen_t addrlen)
 {
   int n, ret;
@@ -404,7 +402,7 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
   sock->tx_port = ntohs(sin->sin_port);
     
   /* Send bump message to update TX available */
-  q = udp_ctx->app_fast_qs[sock->core];
+  q = ctx->app_fast_qs[sock->core];
   qe = queue_tail(q);
   if (qe == NULL)
   {
@@ -428,7 +426,8 @@ int udp_sendto(int sockfd, const void *buf, size_t len,
   return n;
 }
 
-int udp_recvfrom(int sockfd, void *buf, size_t len, 
+int udp_recvfrom(struct udp_context_lib *ctx, int sockfd, 
+    void *buf, size_t len, 
     struct sockaddr *addr, socklen_t addr_len)
 {
   int n, ret;
@@ -486,7 +485,7 @@ int udp_recvfrom(int sockfd, void *buf, size_t len,
   }
 
   /* Send bump message to update RX head */
-  q = udp_ctx->app_fast_qs[sock->core];
+  q = ctx->app_fast_qs[sock->core];
   qe = queue_tail(q);
   if (qe == NULL)
   {
@@ -508,19 +507,18 @@ int udp_recvfrom(int sockfd, void *buf, size_t len,
   return n;
 }
 
-int udp_poll_fast()
+int udp_poll_fast(struct udp_context_lib *ctx)
 {
   int i, n, ncores;
   struct dqueue *q;
   struct udp_queue_bump_entry *qe;
   struct dqueue **fast_app_qs;
   
-  /* Accessing TLS is expensive so copy it to local variable */
-  ncores = udp_ctx->ncores;
-  fast_app_qs = udp_ctx->fast_app_qs;
-
+  
   /* Poll for messages from each fast-path core */
   n = 0;
+  ncores = ctx->ncores;
+  fast_app_qs = ctx->fast_app_qs;
   for (i = 0; i < ncores && n < POLL_BATCH; i++)
   {
     q = fast_app_qs[i];
@@ -549,14 +547,14 @@ int udp_poll_fast()
   return n;
 }
 
-int udp_poll_slow()
+int udp_poll_slow(struct udp_context_lib *ctx)
 {
   int n;
   struct dqueue *q;
   struct udp_queue_entry *qe;
 
   n = 0;  
-  q = udp_ctx->slow_app_q;
+  q = ctx->slow_app_q;
   while (n < POLL_BATCH)
   {
     qe = queue_head(q);
