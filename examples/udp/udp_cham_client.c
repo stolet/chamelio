@@ -5,8 +5,7 @@
  *   ./udp_cham_client <server_ip> <port>
  *     [--msg-size N] [--duration S] [--rate R] [--ncores N]
  *
- * Notes:
- *   --msg-size TOTAL UDP payload bytes.
+ *   --msg-size Total UDP payload bytes.
  *   --duration Duration in seconds to run benchmark
  *   --rate Per-core send rate in megabits per second
  *   --ncores Number of cores to use
@@ -48,7 +47,6 @@ struct core {
   double tokens;
   __u64 last_tsc;
 };
-
 
 /* Default arg values */
 size_t msg_size = 64;
@@ -315,7 +313,7 @@ static inline void print_stats(__u64 now)
 
   have = hist_percentiles(&p50, &p99, &p999);
 
-  printf("[ %3lus ] load=%lld rps | load=%8.2f Mb/s | tp=%lld rps | tp=%8.2f Mb/s | ",
+  printf("[ %3lus ] load=%lld rps | load=%.2f Mb/s | tp=%lld rps | tp=%.2f Mb/s | ",
           (unsigned long)((t_next_report_ns - t_start_ns) / 1000000000ULL),
           (__u64) rps_load, mbps_load, (__u64) rps_tp, mbps_tp);
   if (have)
@@ -338,67 +336,6 @@ static inline void print_stats(__u64 now)
   {
     t_next_report_ns = now + 1000000000ULL;
     t_last_report_ns = now;
-  }
-}
-
-static inline void core_tx(struct core *c, struct payload_hdr *ph)
-{
-  int s;
-  
-  while (c->tokens >= (double) msg_size)
-  {
-    ph = (struct payload_hdr *) c->txbuf;
-    ph->tsc = util_rdtsc();
-
-    udp_poll_fast();
-    s = udp_sendto(c->fd, c->txbuf, msg_size,
-                  (struct sockaddr *) &c->dst, c->dstlen);
-    if (s < 0)
-    {
-      if (errno == EAGAIN || errno == EWOULDBLOCK)
-        break;
-      if (errno == EINTR)
-        continue;
-
-      perror("sendto");
-      pthread_exit((void *)(intptr_t) -1);
-    }
-
-    c->tokens -= msg_size;
-
-    c->txb_load_interval += (__u64) s;
-    c->txp_load_interval++;
-    c->total_tx_pkts++;
-  }
-}
-
-static inline void core_rx(struct core *c, struct payload_hdr *ph)
-{
-  int r;
-  __u64 rtt_us;
-
-  while (1)
-  {
-    udp_poll_fast();
-    r = udp_recvfrom(c->fd, c->rxbuf, msg_size, NULL, 0);
-    if (r < 0)
-    {
-      if (errno == EAGAIN || errno == EWOULDBLOCK)
-        break;
-
-      perror("recvfrom");
-      pthread_exit((void *) (intptr_t) -1);
-    }
-
-    if ((size_t) r < sizeof(struct payload_hdr))
-      continue;
-
-    ph = (struct payload_hdr *) c->rxbuf;
-    rtt_us = us_since_tsc(ph->tsc);
-    c->txb_tp_interval += (__u64) r;
-    c->txp_tp_interval++;
-    c->total_rx_pkts++;
-    hist_add(rtt_us);
   }
 }
 
@@ -454,17 +391,78 @@ static inline void core_init(struct core *c)
   c->tokens  = 0.0;
 }
 
-static inline void * core_thread(void *arg)
+static inline void core_tx(struct core *c)
 {
-  struct core *c = (struct core *) arg;
-  __u64 start_tsc, elapsed;
-  double bytes_per_us, delta_cycles, delta_us, max_tokens;
+  int s;
+  struct payload_hdr *ph;
+  
+  while (c->tokens >= (double) msg_size)
+  {
+    ph = (struct payload_hdr *) c->txbuf;
+    ph->tsc = util_rdtsc();
+
+    s = udp_sendto(c->fd, c->txbuf, msg_size,
+                  (struct sockaddr *) &c->dst, c->dstlen);
+    if (s < 0)
+    {
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+        break;
+      if (errno == EINTR)
+        continue;
+
+      perror("sendto");
+      pthread_exit((void *)(intptr_t) -1);
+    }
+
+    c->tokens -= msg_size;
+
+    c->txb_load_interval += (__u64) s;
+    c->txp_load_interval++;
+    c->total_tx_pkts++;
+  }
+}
+
+static inline void core_rx(struct core *c)
+{
+  int r;
+  __u64 rtt_us;
   struct payload_hdr *ph;
 
+  while (1)
+  {
+    r = udp_recvfrom(c->fd, c->rxbuf, msg_size, NULL, 0);
+    if (r < 0)
+    {
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+        break;
+
+      perror("recvfrom");
+      pthread_exit((void *) (intptr_t) -1);
+    }
+
+    if ((size_t) r < sizeof(struct payload_hdr))
+      continue;
+
+    ph = (struct payload_hdr *) c->rxbuf;
+    rtt_us = us_since_tsc(ph->tsc);
+    c->txb_tp_interval += (__u64) r;
+    c->txp_tp_interval++;
+    c->total_rx_pkts++;
+    hist_add(rtt_us);
+  }
+}
+
+static inline void * core_thread(void *arg)
+{
+  struct core *c;
+  __u64 start_tsc, elapsed;
+  double bytes_per_us, delta_cycles, delta_us, max_tokens;
+
+  c = (struct core *) arg;
   core_init(c);
+  
   /* Synchronize start with all other cores and main */
   pthread_barrier_wait(&start_barrier);
-
   c->last_tsc = util_rdtsc();
   start_tsc = util_rdtsc();
   for (;;)
@@ -490,10 +488,12 @@ static inline void * core_thread(void *arg)
 
     c->last_tsc = tsc_now;
 
+    /* Poll bump messages */
+    udp_poll_fast();
     /* Send as many packets as tokens allow */
-    core_tx(c, ph);
+    core_tx(c);
     /* Drain replies */
-    core_rx(c, ph);
+    core_rx(c);
   }
 
   pthread_exit((void *)(intptr_t)0);
@@ -590,11 +590,10 @@ int main(int argc, char **argv)
   init_client();
   prepare_cores();
   start_cores();
-
+  
+  /* Wait for work threads before continuing */
   printf("Initialized %d core(s). Waiting for barrier\n", ncores);
   fflush(stdout);
-
-  /* Wait for work threads before continuing */
   pthread_barrier_wait(&start_barrier);
   
   /* Establish timebase and reporting windows */
@@ -634,17 +633,23 @@ int main(int argc, char **argv)
   bool have = hist_percentiles(&p50, &p99, &p999);
 
   /* Sum total sent packets across cores */
-  __u64 total_tx = 0, total_rx = 0;
+  __u64 totalp_tx = 0, totalp_rx = 0;
   for (int i = 0; i < ncores; i++)
   {
-    total_tx += cores[i].total_tx_pkts;
-    total_rx += cores[i].total_rx_pkts;
+    totalp_tx += cores[i].total_tx_pkts;
+    totalp_rx += cores[i].total_rx_pkts;
   }
 
   printf("\n=== Summary ===\n");
-  printf("Cores      : %d\n", ncores);
-  printf("TX packets : %llu\n", (unsigned long long) total_tx);
-  printf("RX packets : %llu\n", (unsigned long long) total_rx);
+  printf("Cores       : %d\n", ncores);
+  printf("TX packets  : %llu\n", (unsigned long long) totalp_tx);
+  printf("RX packets  : %llu\n", (unsigned long long) totalp_rx);
+  printf("Avg Load    : %lld rps %.2f Mb/s\n", 
+      totalp_tx / duration, 
+      ((double) totalp_tx * msg_size ) / duration);
+  printf("Avg Throughput : %lld rps %.2f Mb/s\n", 
+      totalp_rx / duration, 
+      ((double) totalp_rx * msg_size) / duration);
   if (have)
     printf("RTT percentiles (us): p50=%llu  p99=%llu  p99.9=%llu\n",
            (unsigned long long) p50,
