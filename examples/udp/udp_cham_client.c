@@ -56,6 +56,7 @@ int ncores = 1;
 const char *server_ip;
 int port;
 
+/* Global time and stats variables */
 __u64 t_start_ns, t_end_ns;
 __u64 t_last_report_ns, t_next_report_ns;
 __u64 txb_load_interval_total, txp_load_interval_total;
@@ -85,18 +86,23 @@ static inline __u64 util_rdtsc(void)
 
 static inline void calibrate_tsc(void)
 {
-  if (tsc_per_us != 0.0) return;
-
   struct timespec ts_before, ts_after;
+  __u64 t0, t1;
+  __u64 us_before, us_after;
+  __u64 dt_cycles, dt_us;
+  
+  if (tsc_per_us != 0.0) 
+    return;
+
   if (clock_gettime(CLOCK_MONOTONIC_RAW, &ts_before) != 0)
   {
     perror("calibrate_tsc: clock_gettime before");
     exit(EXIT_FAILURE);
   }
 
-  __u64 t0 = util_rdtsc();
+  t0 = util_rdtsc();
   usleep(10000);
-  __u64 t1 = util_rdtsc();
+  t1 = util_rdtsc();
 
   if (clock_gettime(CLOCK_MONOTONIC_RAW, &ts_after) != 0)
   {
@@ -104,12 +110,12 @@ static inline void calibrate_tsc(void)
     exit(EXIT_FAILURE);
   }
 
-  __u64 dt_cycles = t1 - t0;
-  __u64 us_before = (__u64) ts_before.tv_sec * 1000000ULL
+  dt_cycles = t1 - t0;
+  us_before = (__u64) ts_before.tv_sec * 1000000ULL
       + (__u64) (ts_before.tv_nsec / 1000ULL);
-  __u64 us_after  = (__u64) ts_after.tv_sec  * 1000000ULL
+  us_after  = (__u64) ts_after.tv_sec  * 1000000ULL
       + (__u64) (ts_after.tv_nsec  / 1000ULL);
-  __u64 dt_us = us_after - us_before;
+  dt_us = us_after - us_before;
 
   if (dt_us == 0)
     dt_us = 1;
@@ -126,15 +132,11 @@ static inline __u64 us_since_tsc(__u64 tsc_then)
 {
   __u64 tsc_now = util_rdtsc();
   double delta = (double) (tsc_now - tsc_then);
-  
-  if (delta < 0.0) 
-    delta = 0.0;
+  assert(delta >= 0);
   double us = delta / tsc_per_us;
+  assert(us >= 0);
   
-  if (us < 0.0) 
-    us = 0.0;
-  
-  return (__u64) (us + 0.5);
+  return (__u64) us;
 }
 
 static inline __u64 now_ns(void)
@@ -149,28 +151,31 @@ static inline void hist_add(__u64 rtt_us)
   if (rtt_us > MAX_RTT_US) 
     rtt_us = MAX_RTT_US;
 
-  __atomic_fetch_add(&rtt_hist[rtt_us], 1, __ATOMIC_RELAXED);
-  __atomic_fetch_add(&total_rx, 1, __ATOMIC_RELAXED);
+  __sync_fetch_and_add(&rtt_hist[rtt_us], 1);
+  __sync_fetch_and_add(&total_rx, 1);
 }
 
 static inline bool hist_percentiles(__u64 *p50, __u64 *p99, __u64 *p999)
 {
-  __u64 samples = __atomic_load_n(&total_rx, __ATOMIC_RELAXED);
-  if (samples == 0) 
-    return false;
-
-  __u64 N = samples;
-  __u64 t50  = (N * 50  + 100 - 1) / 100;
-  __u64 t99  = (N * 99  + 100 - 1) / 100;
-  __u64 t999 = (N * 999 + 1000 - 1) / 1000;
-
+  __u32 i;
+  __u64 samples, N, c;
+  __u64 t50, t99, t999;
   __u64 acc = 0;
   __u64 v50 = 0, v99 = 0, v999 = 0;
-  bool got50 = false, got99 = false, got999 = false;
+  __u8 got50 = 0, got99 = 0, got999 = 0;
+  
+  samples = __sync_fetch_and_add(&total_rx, 0);
+  if (samples == 0) 
+    return 0;
 
-  for (__u32 i = 0; i <= MAX_RTT_US; i++)
+  N = samples;
+  t50  = (N * 50  + 100 - 1) / 100;
+  t99  = (N * 99  + 100 - 1) / 100;
+  t999 = (N * 999 + 1000 - 1) / 1000;
+
+  for (i = 0; i <= MAX_RTT_US; i++)
   {
-    __u64 c = __atomic_load_n(&rtt_hist[i], __ATOMIC_RELAXED);
+    c = __sync_fetch_and_add(&rtt_hist[i], 0);
     if (c == 0)
       continue;
 
@@ -179,19 +184,19 @@ static inline bool hist_percentiles(__u64 *p50, __u64 *p99, __u64 *p999)
     if (!got50 && acc >= t50)
     {
       v50 = i;
-      got50 = true;
+      got50 = 1;
     }
 
     if (!got99 && acc >= t99)
     {
       v99 = i;
-      got99 = true;
+      got99 = 1;
     }
 
     if (!got999 && acc >= t999)
     {
       v999 = i;
-      got999 = true;
+      got999 = 1;
     }
 
     if (got50 && got99 && got999)
@@ -199,7 +204,7 @@ static inline bool hist_percentiles(__u64 *p50, __u64 *p99, __u64 *p999)
   }
 
   *p50 = v50; *p99 = v99; *p999 = v999;
-  return true;
+  return 1;
 }
 
 static inline int parse_args(int argc, char **argv)
@@ -282,24 +287,25 @@ static inline int init_hist(void)
 static inline void print_stats(__u64 now)
 {
   double interval_s, rps_load, mbps_load, rps_tp, mbps_tp;
-  bool have;
   __u64 p50 = 0, p99 = 0, p999 = 0;
+  __u64 bytes_load = 0, pkts_load = 0, bytes_tp = 0, pkts_tp = 0;
 
   interval_s = (double) (t_next_report_ns - t_last_report_ns) / 1e9;
   if (interval_s <= 0.0) interval_s = 1.0;
 
   /* Aggregate per-core and reset per-core intervals */
-  __u64 bytes_load = 0, pkts_load = 0, bytes_tp = 0, pkts_tp = 0;
   for (int i = 0; i < ncores; i++)
   {
-    bytes_load += cores[i].txb_load_interval;
-    pkts_load  += cores[i].txp_load_interval;
-    bytes_tp += cores[i].txb_tp_interval;
-    pkts_tp  += cores[i].txp_tp_interval;
-    cores[i].txb_load_interval = 0;
-    cores[i].txp_load_interval  = 0;
-    cores[i].txb_tp_interval = 0;
-    cores[i].txp_tp_interval  = 0;
+    bytes_load += __sync_fetch_and_add(&cores[i].txb_load_interval, 0);
+    pkts_load  += __sync_fetch_and_add(&cores[i].txp_load_interval, 0);
+    bytes_tp += __sync_fetch_and_add(&cores[i].txb_tp_interval, 0);
+    pkts_tp  += __sync_fetch_and_add(&cores[i].txp_tp_interval, 0);
+    
+    /* Zero values safely */
+    __sync_fetch_and_and(&cores[i].txb_load_interval, 0);
+    __sync_fetch_and_and(&cores[i].txp_load_interval, 0);
+    __sync_fetch_and_and(&cores[i].txb_tp_interval, 0);
+    __sync_fetch_and_and(&cores[i].txp_tp_interval, 0);
   }
   txb_load_interval_total = bytes_load;
   txp_load_interval_total  = pkts_load;
@@ -311,22 +317,15 @@ static inline void print_stats(__u64 now)
   rps_tp  = (double) txp_tp_interval_total / interval_s;
   mbps_tp = ((double) txb_tp_interval_total * 8.0 / 1e6) / interval_s;
 
-  have = hist_percentiles(&p50, &p99, &p999);
+  hist_percentiles(&p50, &p99, &p999);
 
   printf("[ %3lus ] load=%lld rps | load=%.2f Mb/s | tp=%lld rps | tp=%.2f Mb/s | ",
           (unsigned long)((t_next_report_ns - t_start_ns) / 1000000000ULL),
           (__u64) rps_load, mbps_load, (__u64) rps_tp, mbps_tp);
-  if (have)
-  {
-    printf("p50=%llu us  p99=%llu us  p99.9=%llu us\n",
-            (unsigned long long) p50,
-            (unsigned long long) p99,
-            (unsigned long long) p999);
-  }
-  else
-  {
-    printf("p50=NA  p99=NA  p99.9=NA\n");
-  }
+  printf("p50=%llu us  p99=%llu us  p99.9=%llu us\n",
+          (unsigned long long) p50,
+          (unsigned long long) p99,
+          (unsigned long long) p999);
   fflush(stdout);
 
   t_last_report_ns  = t_next_report_ns;
@@ -393,7 +392,7 @@ static inline void core_init(struct core *c)
 
 static inline void core_tx(struct core *c)
 {
-  int s;
+  int ntx;
   struct payload_hdr *ph;
   
   while (c->tokens >= (double) msg_size)
@@ -401,53 +400,40 @@ static inline void core_tx(struct core *c)
     ph = (struct payload_hdr *) c->txbuf;
     ph->tsc = util_rdtsc();
 
-    s = udp_sendto(c->fd, c->txbuf, msg_size,
+    ntx = udp_sendto(c->fd, c->txbuf, msg_size,
                   (struct sockaddr *) &c->dst, c->dstlen);
-    if (s < 0)
-    {
-      if (errno == EAGAIN || errno == EWOULDBLOCK)
-        break;
-      if (errno == EINTR)
-        continue;
-
-      perror("sendto");
-      pthread_exit((void *)(intptr_t) -1);
-    }
-
+    assert(ntx == msg_size || ntx <= 0);
+    assert(c->tokens >= msg_size);
+    
+    if (ntx < 0)
+      break;
+      
     c->tokens -= msg_size;
-
-    c->txb_load_interval += (__u64) s;
-    c->txp_load_interval++;
     c->total_tx_pkts++;
+    __sync_fetch_and_add(&c->txb_load_interval, ntx);
+    __sync_fetch_and_add(&c->txp_load_interval, 1);
   }
 }
 
 static inline void core_rx(struct core *c)
 {
-  int r;
+  int nrx;
   __u64 rtt_us;
   struct payload_hdr *ph;
 
   while (1)
   {
-    r = udp_recvfrom(c->fd, c->rxbuf, msg_size, NULL, 0);
-    if (r < 0)
-    {
-      if (errno == EAGAIN || errno == EWOULDBLOCK)
-        break;
-
-      perror("recvfrom");
-      pthread_exit((void *) (intptr_t) -1);
-    }
-
-    if ((size_t) r < sizeof(struct payload_hdr))
-      continue;
-
+    nrx = udp_recvfrom(c->fd, c->rxbuf, msg_size, NULL, 0);
+    assert(nrx == msg_size || nrx < 0);
+    
+    if (nrx <= 0)
+      break;
+    
     ph = (struct payload_hdr *) c->rxbuf;
     rtt_us = us_since_tsc(ph->tsc);
-    c->txb_tp_interval += (__u64) r;
-    c->txp_tp_interval++;
     c->total_rx_pkts++;
+    __sync_fetch_and_add(&c->txb_tp_interval, nrx);
+    __sync_fetch_and_add(&c->txp_tp_interval, 1);
     hist_add(rtt_us);
   }
 }
@@ -455,7 +441,7 @@ static inline void core_rx(struct core *c)
 static inline void * core_thread(void *arg)
 {
   struct core *c;
-  __u64 start_tsc, elapsed;
+  __u64 start_tsc, elapsed, tsc_now;
   double bytes_per_us, delta_cycles, delta_us, max_tokens;
 
   c = (struct core *) arg;
@@ -465,24 +451,23 @@ static inline void * core_thread(void *arg)
   pthread_barrier_wait(&start_barrier);
   c->last_tsc = util_rdtsc();
   start_tsc = util_rdtsc();
-  for (;;)
+  
+  while(1)
   {
     elapsed = us_since_tsc(start_tsc);
     if (duration > 0 && elapsed >= (duration * 1000000))
       break;
 
     /* Update token bucket using TSC */
-    __u64 tsc_now = util_rdtsc();
-    delta_cycles = (double)(tsc_now - c->last_tsc);
+    tsc_now = util_rdtsc();
+    delta_cycles = (double) (tsc_now - c->last_tsc);
     delta_us = delta_cycles / tsc_per_us;
-    if (delta_us < 0.0)
-      delta_us = 0.0;
-
-    bytes_per_us = c->rate / 8.0;
+    assert(delta_us >= 0);
+    bytes_per_us = (c->rate / 8.0);
     c->tokens += delta_us * bytes_per_us;
-
+    
     /* Cap bucket to 1 ms worth of traffic to avoid unbounded bursts */
-    max_tokens = bytes_per_us * 1000.0;
+    max_tokens = bytes_per_us * 1000;
     if (c->tokens > max_tokens)
       c->tokens = max_tokens;
 
@@ -493,10 +478,11 @@ static inline void * core_thread(void *arg)
     /* Send as many packets as tokens allow */
     core_tx(c);
     /* Drain replies */
+    udp_poll_fast();
     core_rx(c);
   }
 
-  pthread_exit((void *)(intptr_t)0);
+  pthread_exit((void *) (intptr_t) 0);
 }
 
 static inline void prepare_cores()
@@ -525,10 +511,12 @@ static inline void prepare_cores()
 
 static inline void start_cores()
 {
+  int i, rc;
+  
   /* Spawn core threads */
-  for (int i = 0; i < ncores; i++)
+  for (i = 0; i < ncores; i++)
   {
-    int rc = pthread_create(&threads[i], NULL, core_thread, &cores[i]);
+    rc = pthread_create(&threads[i], NULL, core_thread, &cores[i]);
     if (rc != 0)
     {
       errno = rc;
@@ -564,7 +552,8 @@ static inline void init_client()
 
 int main(int argc, char **argv)
 {
-  int ret;
+  int i, ret;
+  __u64 now;
 
   ret = parse_args(argc, argv);
   if (ret != 0)
@@ -603,14 +592,17 @@ int main(int argc, char **argv)
   t_end_ns = t_start_ns + (__u64) duration * 1000000000ULL;
   
   /* Per-second reporting loop in main thread */
-  while (true)
+  while (1)
   {
-    __u64 now = now_ns();
+    now = now_ns();
     if (duration > 0 && now >= t_end_ns)
       break;
 
     if (now >= t_next_report_ns)
+    {
+      fprintf(stderr, "elapsed=%lld\n", now - t_last_report_ns);
       print_stats(now);
+    }
 
     /* Sleep a bit to avoid busy wait */
     struct timespec ts = { .tv_sec = 0, .tv_nsec = 2000000 };
@@ -619,18 +611,14 @@ int main(int argc, char **argv)
 
   /* Join all cores */
   for (int i = 0; i < ncores; i++)
-  {
-    void *rc = NULL;
-    pthread_join(threads[i], &rc);
-    (void) rc;
-  }
+    pthread_join(threads[i], NULL);
 
   /* One last print if we overshot the tick */
   print_stats(now_ns());
 
   /* Final summary */
   __u64 p50 = 0, p99 = 0, p999 = 0;
-  bool have = hist_percentiles(&p50, &p99, &p999);
+  hist_percentiles(&p50, &p99, &p999);
 
   /* Sum total sent packets across cores */
   __u64 totalp_tx = 0, totalp_rx = 0;
@@ -640,26 +628,22 @@ int main(int argc, char **argv)
     totalp_rx += cores[i].total_rx_pkts;
   }
 
-  printf("\n=== Summary ===\n");
-  printf("Cores       : %d\n", ncores);
-  printf("TX packets  : %llu\n", (unsigned long long) totalp_tx);
-  printf("RX packets  : %llu\n", (unsigned long long) totalp_rx);
-  printf("Avg Load    : %lld rps %.2f Mb/s\n", 
+  printf("Cores               : %d\n", ncores);
+  printf("TX packets          : %llu\n", (unsigned long long) totalp_tx);
+  printf("RX packets          : %llu\n", (unsigned long long) totalp_rx);
+  printf("Avg Load            : %lld rps %.2f Mb/s\n", 
       totalp_tx / duration, 
-      ((double) totalp_tx * msg_size ) / duration);
-  printf("Avg Throughput : %lld rps %.2f Mb/s\n", 
+      ((double) totalp_tx * msg_size * 8 / 1000000) / duration);
+  printf("Avg Throughput      : %lld rps %.2f Mb/s\n", 
       totalp_rx / duration, 
-      ((double) totalp_rx * msg_size) / duration);
-  if (have)
-    printf("RTT percentiles (us): p50=%llu  p99=%llu  p99.9=%llu\n",
-           (unsigned long long) p50,
-           (unsigned long long) p99,
-           (unsigned long long) p999);
-  else
-    printf("No RTT samples collected.\n");
+      ((double) totalp_rx * msg_size * 8 / 1000000) / duration);
+  printf("RTT percentiles (us): p50=%llu  p99=%llu  p99.9=%llu\n",
+      (unsigned long long) p50,
+      (unsigned long long) p99,
+      (unsigned long long) p999);
 
   /* Cleanup */
-  for (int i = 0; i < ncores; i++)
+  for (i = 0; i < ncores; i++)
   {
     if (cores[i].txbuf) free(cores[i].txbuf);
     if (cores[i].rxbuf) free(cores[i].rxbuf);
