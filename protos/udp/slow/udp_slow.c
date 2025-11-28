@@ -1,7 +1,8 @@
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
+#include <fcntl.h>
 #include <cham_lib.h>
 #include <assert.h>
 
@@ -26,6 +27,8 @@ int handle_new_sock(struct udp_slow_context *ctx,
   struct udp_app_context_slow *actx, struct udp_queue_entry *qe);
 int handle_bind(struct udp_slow_context *ctx, 
     struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req);
+int handle_sock_setopt(struct udp_slow_context *ctx, 
+    struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req);
     
 int init_udp_slow_context(struct udp_slow_context *ctx)
 {
@@ -35,8 +38,8 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   __u8 *ebpf_bytecode;
   struct guest_lib *g;
   struct proto_lib *p;
-  struct proto_map_lib *port_sock_map, *socks_map;
-  int *port_socks;
+  struct proto_map_lib *port_map, *socks_map;
+  struct udp_port *ports;
 
   g = cham_connect_guest();
   if (g == NULL)
@@ -83,13 +86,13 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   }
 
   /* Create map used to hold local port to sockets translation */
-  port_sock_map = cham_new_map(p, MAX_SOCKETS, sizeof(__u16));
-  if (port_sock_map == NULL)
+  port_map = cham_new_map(p, MAX_PORT, sizeof(struct udp_port));
+  if (port_map == NULL)
   {
     LOG_ERROR("failed to create map for port to socket translation");
     abort();
   }
-  ctx->port_sock_map = port_sock_map;
+  ctx->port_map = port_map;
 
   /* Create map used to hold sockets */
   socks_map = cham_new_map(p, MAX_SOCKETS, sizeof(struct udp_sock));
@@ -100,10 +103,13 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   }
   ctx->socks_map = socks_map;
 
-  /* Populate map with invalid socket IDs */
-  port_socks = p->shm_base + port_sock_map->off;
+  /* Initialize entries in port_map */
+  ports = p->shm_base + port_map->off;
   for (i = 0; i < MAX_SOCKETS; i++)
-    port_socks[i] = __UINT16_MAX__;
+  {
+    ports[i].nsocks = 0;
+    ports[i].next_sock = 0;
+  }
 
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;
@@ -162,17 +168,19 @@ int poll_apps(struct udp_slow_context *ctx)
         break;
       case UDP_QUEUE_NEW_SOCK_REQ:
         handle_new_sock(ctx, actx, qe);
-        queue_dequeue(q);
+        break;
+      case UDP_QUEUE_SETOPT_REQ:
+        handle_sock_setopt(ctx, actx, qe);
         break;
       case UDP_QUEUE_BIND_REQ:
         handle_bind(ctx, actx, qe);
-        queue_dequeue(q);
         break;
       default:
         LOG_WARN("unknown queue entry type from app " 
-            "to udp slow-path type=%d", type);
-        break;
+          "to udp slow-path type=%d", type);
+          break;
     }
+    queue_dequeue(q);
   }
 
   return 0;
@@ -215,12 +223,12 @@ int handle_new_sock(struct udp_slow_context *ctx,
 
   sock = &socks_map[res->sock_id];
   sock->id = res->sock_id;
-  sock->next_id = ID_INVALID;
   sock->core = 0;
   sock->local_ip = ctx->proto->local_ip;
   sock->app_bump_qid = actx->app_bump_qs[0]->id;
   sock->opaque = req->opaque;
   sock->local_port = 0;
+  sock->reuport = 0;
 
   /* Create queue for RX buffer */
   protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
@@ -232,7 +240,6 @@ int handle_new_sock(struct udp_slow_context *ctx,
   res->rx_qid = protoq->id;
   res->rx_len = protoq->elsize * protoq->nelems;
   res->rx_off = protoq->off;
-  sock->rx_qid = protoq->id;
   sock->rx_len = protoq->elsize * protoq->nelems;
   sock->rx_avail = 0;
   sock->rx_head = 0;
@@ -243,7 +250,6 @@ int handle_new_sock(struct udp_slow_context *ctx,
   res->tx_qid = protoq->id;
   res->tx_len = protoq->nelems * protoq->elsize;
   res->tx_off = protoq->off;
-  sock->tx_qid = protoq->id;
   sock->tx_len = protoq->nelems * protoq->elsize;
   sock->tx_avail = 0;
   sock->tx_head = 0;
@@ -263,12 +269,67 @@ int handle_new_sock(struct udp_slow_context *ctx,
   return 0;
 }
 
+int handle_sock_setopt(struct udp_slow_context *ctx, 
+    struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
+{
+  int ret;
+  struct udp_sock *sock;
+  struct udp_queue_entry *qe_res;
+  struct udp_queue_setopt_req *req;
+  struct udp_queue_setopt_res *res;
+  struct udp_sock *socks_map = ctx->proto->shm_base + ctx->socks_map->off;
+  
+  req = &qe_req->data.setopt_req;
+  qe_res = queue_tail(actx->slow_app_q);
+  if (qe_res == NULL)
+  {
+    LOG_ERROR("faied to get tail of slow->app queue");
+    return -1;
+  }
+  res = &qe_res->data.setopt_res;
+  
+  if (req->sock_id < 0 || req->sock_id > MAX_SOCKETS)
+  {
+    LOG_ERROR("invalid socket id");
+    res->success = 0;
+    res->opaque = req->opaque;
+    ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_SETOPT_RES);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue UDP queue bind response");
+      return -1;
+    }
+  }
+  
+  sock = &socks_map[req->sock_id];
+  switch (req->opt)
+  {
+    case SO_REUSEPORT:
+      sock->reuport = 1;
+      LOG_DEBUG("set sock to reuseport");
+      break;
+    default:
+      break;
+  }
+  
+  res->success = 1;
+  res->opaque = req->opaque;
+  ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_SETOPT_RES);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue UDP queue bind response");
+    return -1;
+  }
+
+  return 0;
+  
+}
+
 int handle_bind(struct udp_slow_context *ctx, 
     struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
 {
   int ret;
-  __u32 sock_id;
-  int *port_sock_map;
+  struct udp_port *port_map, *port;
   struct udp_queue_entry *qe_res;
   struct udp_queue_bind_req *req;
   struct udp_queue_bind_res *res;
@@ -297,9 +358,11 @@ int handle_bind(struct udp_slow_context *ctx,
   }
   
   /* Return error if another socket is already using this port */
-  port_sock_map = ctx->proto->shm_base + ctx->port_sock_map->off;
-  sock_id = port_sock_map[req->local_port];
-  if (sock_id != __UINT16_MAX__)
+  socks_map = ctx->proto->shm_base + ctx->socks_map->off;
+  sock = &socks_map[req->sock_id];
+  port_map = ctx->proto->shm_base + ctx->port_map->off;
+  port = &port_map[req->local_port];
+  if (port->nsocks != 0 && !sock->reuport)
   {
     LOG_ERROR("socket with this port already in use");
     res->success = 0;
@@ -314,7 +377,10 @@ int handle_bind(struct udp_slow_context *ctx,
   sock = &socks_map[req->sock_id];
   sock->local_ip = req->local_ip;
   sock->local_port = req->local_port;
-  port_sock_map[req->local_port] = req->sock_id;
+
+  LOG_DEBUG("adding to port nsocks=%d sock_id=%d", port->nsocks, req->sock_id);
+  port->sids[port->nsocks] = req->sock_id;
+  port->nsocks++;
 
   res->success = 1;
   res->opaque = req->opaque;

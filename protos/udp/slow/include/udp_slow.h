@@ -66,10 +66,8 @@ struct udp_slow_context {
 
   /* Chamelio socket map */
   struct proto_map_lib *socks_map;
-  /* Translation from local port to sockets ID. 
-    Socket ID by itself is not unique but 
-    app id + socket id will give a unique ID */
-  struct proto_map_lib *port_sock_map;
+  /* Maps a port to a socket */
+  struct proto_map_lib *port_map;
 };
 
 #endif

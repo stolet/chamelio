@@ -11,8 +11,9 @@
 #include "udp_queue_types.h"
 #include "utils.h"
 
-#define PORT_SOCK_MAP_IDX 0
-#define SOCK_MAP_IDX 1
+#define PORT_MAP 0
+#define SOCK_MAP 1
+#define REUPORT_MAP 2
 
 static __always_inline struct udp_sock * udp_sock_find(struct cham_map *maps,
     __u16 local_port);
@@ -196,7 +197,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 {
   int ret;
   void *payload;
-  int *port_socks;
+  struct udp_port *ports, *port;
   struct udp_sock *sock, *sock_map;
   struct equeue *q;
   struct udp_queue_bump_entry *qe;
@@ -209,7 +210,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   struct udp_pkt *p = (struct udp_pkt *) ctx->pkt;
   
   qe = (struct udp_queue_entry *) ctx->qe;
-  sock_map = ctx->maps[SOCK_MAP_IDX].addr;
+  sock_map = ctx->maps[SOCK_MAP].addr;
   bump_cham = &qe->data.bump_cham_tx;
   sock = &sock_map[bump_cham->sock_id];
 
@@ -219,8 +220,9 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     local_port = find_free_port(ctx);
     if (local_port == 0)
       return -1;
-    port_socks = ctx->maps[PORT_SOCK_MAP_IDX].addr;
-    port_socks[local_port] = sock->id;
+    ports = ctx->maps[PORT_MAP].addr;
+    ports[local_port].sids[0] = sock->id;
+    ports[local_port].nsocks++;
     sock->local_port = local_port;
   }
 
@@ -306,7 +308,7 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   struct udp_queue_bump_entry *qe;
   
   qe = (struct udp_queue_bump_entry *) ctx->qe;
-  sock_map = ctx->maps[SOCK_MAP_IDX].addr;
+  sock_map = ctx->maps[SOCK_MAP].addr;
   bump = &qe->data.bump_cham_rx;
   sock = &sock_map[bump->sock_id];
   
@@ -321,16 +323,17 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
 
 static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
 {
-  __u16 port;
+  __u16 i;
   __u16 sock_id;
-  int *port_socks;
+  struct udp_port *ports, *port;
 
-  port_socks = ctx->maps[PORT_SOCK_MAP_IDX].addr;
-  for (port = MIN_PORT; port < MAX_SOCKETS; port++)
+  ports = ctx->maps[PORT_MAP].addr;
+  for (i = MIN_PORT; i < MAX_SOCKETS; i++)
   {
-    sock_id = port_socks[port];
-    if (sock_id == __UINT16_MAX__)
-      return port;
+    port = &ports[i];
+
+    if (port->nsocks == 0)
+      return i;
   }
 
   return 0;
@@ -339,16 +342,29 @@ static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
 static __always_inline struct udp_sock *udp_sock_find(struct cham_map *maps,
      __u16 local_port)
 {
-  int *port_sock_map;
-  __u16 sock_id;
+  struct udp_port *ports, *port;
+  __u16 sock_id, mask;
   struct udp_sock *sock_map;
 
   if (local_port < MIN_PORT || local_port > 65535)
     return NULL;
 
-  port_sock_map = maps[PORT_SOCK_MAP_IDX].addr;
-  sock_id = port_sock_map[local_port];
-  sock_map = maps[SOCK_MAP_IDX].addr;
+  /* Hash src port to one of the sockets if reusable port */  
+  ports = maps[PORT_MAP].addr;
+  port = &ports[local_port];
+  if (port->nsocks == 0)
+    return NULL;
 
+  if (port->nsocks < 2)
+  {
+    sock_id = port->sids[0];
+  }
+  else
+  {
+    sock_id = port->sids[port->next_sock];
+    port->next_sock = (port->next_sock + 1) % port->nsocks;
+  }
+
+  sock_map = maps[SOCK_MAP].addr;
   return &sock_map[sock_id];
 }

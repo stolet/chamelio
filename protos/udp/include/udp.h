@@ -3,18 +3,28 @@
 
 #include <linux/types.h>
 
+/* Maximum segment size for UDP */
 #define UDP_MSS 1400
-
-#define MAX_OFFS 8
+/* Max number of applications that can register with slow-path */
 #define MAX_APPS 8
+/* Max number of contexts per application */
 #define MAX_CTXS 8
-#define MAX_READY 16
+/* Minumum port number */
 #define MIN_PORT 1002
-#define MAX_SOCKETS 65534
+/* Maximum port number */
+#define MAX_PORT 65534
+/* Maximum number of UDP sockets */
+#define MAX_SOCKETS MAX_PORT
+/* Max number of reusable ports */
+#define MAX_REUPORTS MAX_PORT
+/* Max number of sockets that can bind to reusable port */
+#define MAX_REUSOCK_PORT MAX_CTXS
+STATIC_ASSERT(MAX_REUSOCK_PORT % 2 == 0, max_reusock_port);
+/* Max number of scheduler entries */
 #define MAX_SCHED MAX_SOCKETS
-
+/* Used to signal that a socket entry is invalid/empty */
 #define ID_INVALID (-1U)
-
+/* Location where ebpf bytecode is located */
 #define UDP_EBPF_BYTECODE "protos/udp/fast/udp_fast.bpf.o"
 
 /* Entry for the socket map */
@@ -23,23 +33,17 @@ struct udp_sock {
   __u32 id;
   /* Pointer to socket in application */
   __u64 opaque;
-  /* ID of next socket in list */
-  __u32 next_id;
   /* Fast-path core this socket is currently running on */
   __u16 core;
   /* Queue ID to bump app */
   __u16 app_bump_qid;
-  /* Destination IP */
-  __u32 remote_ip;
-  /* Destination port */
-  __u16 remote_port;
   /* Local IP */
   __u32 local_ip;
   /* Local port */
   __u16 local_port;
+  /* 1 if this socket reuses a port 0 otherwise */
+  __u8 reuport;
 
-  /* Queue ID used for RX buffer */
-  __u16 rx_qid;
   /* Length of RX buffer */
   __u32 rx_len;
   /* Number of available bytes to be read */
@@ -49,8 +53,6 @@ struct udp_sock {
   /* Pointer to start of RX buffer in shared memory */
   __u64 rx_off;
   
-  /* Queue ID used for TX buffer */
-  __u16 tx_qid;
   /* Length of the TX buffer */
   __u32 tx_len;
   /* Number of bytes written to buffer */
@@ -61,14 +63,14 @@ struct udp_sock {
   __u64 tx_off;
 } __attribute__((packed));
 
-/* Entry for app bump map */ 
-struct udp_app_bump_mape {
-  /* Queue ID */
-  __u16 id;
-  /* Next ID */
-  __u16 next_id;
-  /* Queue only for enqueueing */
-  struct equeue q;  
-};
+/* Maps a port to a socket id */
+struct udp_port {
+  /* Number of sockets bounded to this port */
+  __u32 nsocks;
+  /* Next socket to load balance to if a message is received */
+  __u32 next_sock;
+  /* Socket IDs */
+  __u32 sids[MAX_REUSOCK_PORT];
+} __attribute__((packed));
 
 #endif

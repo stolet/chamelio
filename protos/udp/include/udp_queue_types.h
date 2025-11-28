@@ -18,6 +18,10 @@ enum udp_queue_type {
   UDP_QUEUE_NEW_SOCK_REQ,
   /* Response from slow-path for created socket */
   UDP_QUEUE_NEW_SOCK_RES,
+  /* Sets a new option for socket */
+  UDP_QUEUE_SETOPT_REQ,
+  /* Sets a new response for socket */
+  UDP_QUEUE_SETOPT_RES,
   /* Bind message for a socket */
   UDP_QUEUE_BIND_REQ,
   /* Returns if bind was successful */
@@ -118,6 +122,24 @@ struct udp_queue_bind_res {
   __u64 opaque;
 } __attribute__((packed));
 
+/* Message that sets an option for the socket */
+struct udp_queue_setopt_req {
+  /* Type of option to set */
+  __u8 opt;
+  /* Socket ID to set the option */
+  __u32 sock_id;
+  /* Opaque pointer to socket in app library */
+  __u64 opaque;
+} __attribute__((packed));
+
+/* Response that signals if setting an option was successful */
+struct udp_queue_setopt_res {
+  /* 1 if request was successful 0 otherwise */
+  __u8 success;
+  /* Opaque pointer to socket in app library */
+  __u64 opaque;
+} __attribute__((packed));
+
 /* Message that bumps the Chamelio TX avail */
 struct udp_queue_bump_cham_tx {
   /* Socket ID used by slow-path */
@@ -169,6 +191,8 @@ struct udp_queue_entry {
     struct udp_queue_new_sock_res new_sock_res;
     struct udp_queue_bind_req bind_req;
     struct udp_queue_bind_res bind_res;
+    struct udp_queue_setopt_req setopt_req;
+    struct udp_queue_setopt_res setopt_res;
     __u8 raw[511];
   } __attribute__((packed)) data;
 } __attribute__((packed));

@@ -6,10 +6,11 @@
 
 #include "queue.h"
 
+/* TODO: Fix this because it's duplicated */
 #define MAX_SOCKETS 8192
 #define SOCK_INACTIVE (-1U)
 
-struct udp_socket {
+struct udp_socket_lib {
     /* File descriptor identifier for this socket */
     int fd;
     /* Socket ID in the slow-path */
@@ -53,6 +54,9 @@ struct udp_socket {
     /* Result from bind. Default is -1 and is set 
        to 1 on success and 0 on failure */
     int bind_success;
+    /* Result from setsockopt. Default is -1 and is set
+       to 1 on success and 0 on failure */
+    int setopt_success;
 };
 
 struct udp_context_lib {
@@ -85,7 +89,7 @@ struct udp_lib {
   /* Next socket fd */
   int next_sockfd;
   /* Table with sockets */
-  struct udp_socket socks[MAX_SOCKETS];
+  struct udp_socket_lib socks[MAX_SOCKETS];
 };
 
 /* Connects to the slow-path */
@@ -101,6 +105,8 @@ int udp_socket(struct udp_context_lib *ctx);
 /* Binds src address to UDP socket */
 int udp_bind(struct udp_context_lib *ctx, int sockfd, 
     const struct sockaddr *addr, socklen_t addrlen);
+/* Sets socket options */
+int udp_setsockopt(struct udp_context_lib *ctx, int sockfd, __u8 opt);
 /* Sends data in buffer to the specified address */
 int udp_sendto(struct udp_context_lib *ctx, int sockfd, 
     const void *buf, size_t len, 

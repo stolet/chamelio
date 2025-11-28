@@ -116,6 +116,7 @@ static inline void print_stats(__u64 now)
     pkts_rx  += __sync_fetch_and_add(&cores[i].rxp_interval, 0);
     bytes_tx += __sync_fetch_and_add(&cores[i].txb_interval, 0);
     pkts_tx  += __sync_fetch_and_add(&cores[i].txp_interval, 0);
+    fprintf(stderr, "core=%d bytes_rx=%.2f Mb/s bytes_tx=%.2f Mb/s\n", i, (double) cores[i].rxb_interval * 8.0 / 1e6, (double) cores[i].txb_interval * 8.0 / 1e6);
     __sync_fetch_and_and(&cores[i].rxb_interval, 0);
     __sync_fetch_and_and(&cores[i].rxp_interval, 0);
     __sync_fetch_and_and(&cores[i].txb_interval, 0);
@@ -162,6 +163,10 @@ static inline struct udp_context_lib * core_init(struct core *c)
   c->buf = buf;
   memset(c->buf, 0, bsize);
 
+  /* Cores that are not core 0 wait here so that ARP can complete */
+  if (c->id != 0)
+    pthread_barrier_wait(&start_barrier);
+  
   udp_ctx = udp_ctx_new();
   if (udp_ctx == NULL)
     abort();
@@ -169,8 +174,16 @@ static inline struct udp_context_lib * core_init(struct core *c)
   fd = udp_socket(udp_ctx);
   if (fd < 0)
     abort();
+    
+  ret = udp_setsockopt(udp_ctx, fd, SO_REUSEPORT);
+  if (ret < 0)
+  {
+    fprintf(stderr, "failed to set sockopt\n");
+    abort();
+  }
 
-  ret = udp_bind(udp_ctx, fd, (struct sockaddr *) &src_addr, sizeof(src_addr));
+  ret = udp_bind(udp_ctx, fd, 
+      (struct sockaddr *) &src_addr, sizeof(src_addr));
   if (ret < 0)
   {
     perror("bind");
@@ -249,8 +262,9 @@ static inline void * core_thread(void *arg)
   c = (struct core *) arg;
   udp_ctx = core_init(c);
 
-  /* Synchronize start with all other cores and main */
-  pthread_barrier_wait(&start_barrier);
+  /* Core 0 waits here while others wait in init */
+  if (c->id == 0)
+    pthread_barrier_wait(&start_barrier);
 
   while (1)
   {
