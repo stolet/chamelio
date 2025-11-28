@@ -33,10 +33,10 @@ static inline void process_arp_rx_req(struct fast_context *ctx,
 static inline void process_arp_rx_rep(struct fast_context *ctx,
     struct queue_entry *qe, struct pkt_arp *pkt);
 
-int poll_rx(struct fast_context *ctx);
-int poll_queues(struct fast_context *ctx);
-int poll_tx(struct fast_context *ctx);
-int tx_flush(struct fast_context *ctx);
+static inline int poll_rx(struct fast_context *ctx);
+static inline int poll_queues(struct fast_context *ctx);
+static inline int poll_tx(struct fast_context *ctx);
+static inline int tx_flush(struct fast_context *ctx);
 
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, __u16 thread_id,
@@ -160,7 +160,7 @@ int fast_loop(struct fast_context *ctx)
   }
 }
 
-int poll_rx(struct fast_context *ctx)
+static inline int poll_rx(struct fast_context *ctx)
 {
   int i, n, ret;
   struct rte_mbuf *mbs[BATCH_SIZE];
@@ -197,7 +197,7 @@ int poll_rx(struct fast_context *ctx)
   return n;
 }
 
-int poll_queues(struct fast_context *ctx)
+static inline int poll_queues(struct fast_context *ctx)
 {
   int i, j, max, ret, ret_tx, deq_ret, ndeq, ntx;
   __u8 qcur_empty;
@@ -297,7 +297,7 @@ int poll_queues(struct fast_context *ctx)
   return 0;
 }
 
-int poll_tx(struct fast_context *ctx)
+static inline int poll_tx(struct fast_context *ctx)
 {
   unsigned max;
   int i, tx_ret, ntx, ret;
@@ -364,7 +364,7 @@ int poll_tx(struct fast_context *ctx)
   return 0;
 }
 
-int tx_flush(struct fast_context *ctx)
+static inline int tx_flush(struct fast_context *ctx)
 {
   int i, ret;
 
@@ -388,7 +388,8 @@ int tx_flush(struct fast_context *ctx)
   return ret;
 }
 
-static inline struct guest_fast * process_infra_rx(struct fast_context *ctx, struct rte_mbuf *mb)
+static inline struct guest_fast * process_infra_rx(struct fast_context *ctx,
+    struct rte_mbuf *mb)
 {
   __u16 eth_type;
   struct pkt_arp *pkt;
@@ -419,7 +420,8 @@ static inline struct guest_fast * process_infra_rx(struct fast_context *ctx, str
   return &ctx->guests[0];
 }
 
-static inline int process_infra_tx(struct fast_context *ctx, struct rte_mbuf *mb)
+static inline int process_infra_tx(struct fast_context *ctx, 
+    struct rte_mbuf *mb)
 {
   int ret;
   struct eth_hdr *eth;

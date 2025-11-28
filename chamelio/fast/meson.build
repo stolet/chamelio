@@ -1,7 +1,6 @@
 fast_inc = include_directories('include')
 
 fast_srcs = files(
-  'txcache.c',
   'fast.c', 
   'controlif.c',
 )
