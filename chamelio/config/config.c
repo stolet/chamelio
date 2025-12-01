@@ -19,9 +19,6 @@ enum cfg_params {
   CP_IP_ADDR,
   CP_IP_ROUTE,
   CP_MAX_GUESTS,
-  CP_MAX_APPS,
-  CP_MAX_APP_CTXS,
-  CP_MAX_BUFS,
   CP_FP_CORES_MAX,
   CP_FP_NO_XSUMOFFLOAD,
   CP_DPDK_EXTRA,
@@ -55,15 +52,6 @@ static struct option opts[] = {
   { .name = "max-guests",
     .has_arg = required_argument,
     .val = CP_MAX_GUESTS },
-  { .name = "max-apps",
-    .has_arg = required_argument,
-    .val = CP_MAX_APPS },
-  { .name = "max-app-ctxs",
-    .has_arg = required_argument,
-    .val = CP_MAX_APP_CTXS },
-  { .name = "max-bufs",
-    .has_arg = required_argument,
-    .val = CP_MAX_BUFS },
   { .name = "fp-cores-max",
     .has_arg = required_argument,
     .val = CP_FP_CORES_MAX },
@@ -154,24 +142,6 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
-      case CP_MAX_APPS:
-        if (parse_int32(optarg, &c->max_apps) != 0) {
-          LOG_ERROR("max apps parsing failed");
-          goto failed;
-        }
-        break;
-      case CP_MAX_APP_CTXS:
-        if (parse_int32(optarg, &c->max_app_ctxs) != 0) {
-          LOG_ERROR("max apps ctxs parsing failed");
-          goto failed;
-        }
-        break;
-      case CP_MAX_BUFS:
-        if (parse_int32(optarg, &c->max_bufs) != 0) {
-          LOG_ERROR("max bufs parsing failed");
-          goto failed;
-        }
-        break;
       case CP_FP_CORES_MAX:
         if (parse_int32(optarg, &c->fp_cores_max) != 0) {
           LOG_ERROR("fp cores max parsing failed");
@@ -213,9 +183,6 @@ static int config_defaults(struct configuration *c, char *progname)
   c->control_txq_pkt_len = 1500;
   c->ip = 0;
   c->max_guests = 128;
-  c->max_apps = 32;
-  c->max_app_ctxs = 32;
-  c->max_bufs = 1024 * 128;
   c->fp_cores_max = 1;
   c->fp_xsumoffloads = 1;
 
@@ -253,12 +220,6 @@ static void print_usage(struct configuration *c, char *progname)
       "Max values:\n"
       "  --max-guests=GUESTS                     Max number of guests\n"
           "[default: %u]\n"
-      "  --max-apps=APPS                         Max number of apps per guest\n"
-          "[default: %u]\n"
-      "  --max-app-ctxs=CTXS                     Max number of app ctxs per app\n"
-          "[default: %u]\n"
-      "  --max-BUFS=BUFS                         Max number of bufs per app\n"
-          "[default: %u]\n"
       "Fast path:\n"
       "  --fp-cores-max=CORES                    Max cores used for fast path"
            "[default: %u]\n"
@@ -271,7 +232,7 @@ static void print_usage(struct configuration *c, char *progname)
       c->shm_len, c->shm_internal_len,
       c->cham_queue_len, c->agt_queue_len, c->control_txq_len,
       c->control_txq_pkt_len,
-      c->max_guests, c->max_apps, c->max_app_ctxs, c->max_bufs,
+      c->max_guests,
       c->fp_cores_max);
 }
 

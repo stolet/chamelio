@@ -3,9 +3,9 @@
  *
  * Usage:
  *   ./udp_cham_client <server_ip> <port>
- *     [--msg-size N] [--duration S] [--rate R] [--ncores N]
+ *     [--msize N] [--duration S] [--rate R] [--ncores N]
  *
- *   --msg-size Total UDP payload bytes.
+ *   --msize Total UDP payload bytes.
  *   --duration Duration in seconds to run benchmark
  *   --rate Per-core send rate in megabits per second
  *   --ncores Number of cores to use
@@ -49,7 +49,7 @@ struct core {
 };
 
 /* Default arg values */
-size_t msg_size = 64;
+size_t msize = 64;
 int duration = 30;
 double rate = 10.0;
 int ncores = 1;
@@ -212,7 +212,7 @@ static inline int parse_args(int argc, char **argv)
   if (argc < 3)
   {
     fprintf(stderr,
-        "Usage: %s <server_ip> <port> [--msg-size N]"
+        "Usage: %s <server_ip> <port> [--msize N]"
         " [--duration S] [--rate R] [--ncores N]\n",
         argv[0]);
     return -1;
@@ -228,11 +228,9 @@ static inline int parse_args(int argc, char **argv)
 
   for (int i = 3; i < argc; i++)
   {
-    if ((strcmp(argv[i], "--msg-size") == 0 ||
-        strcmp(argv[i], "--size") == 0) &&
-        i + 1 < argc)
+    if ((strcmp(argv[i], "--msize") == 0) && i + 1 < argc)
     {
-      msg_size = (size_t)strtoul(argv[++i], NULL, 10);
+      msize = (size_t)strtoul(argv[++i], NULL, 10);
     }
     else if (strcmp(argv[i], "--duration") == 0 && i + 1 < argc)
     {
@@ -259,9 +257,9 @@ static inline int parse_args(int argc, char **argv)
     return -1;
   }
 
-  if (msg_size < sizeof(struct payload_hdr))
+  if (msize < sizeof(struct payload_hdr))
   {
-    fprintf(stderr, "msg-size must be at least %zu bytes (header size)\n",
+    fprintf(stderr, "msize must be at least %zu bytes (header size)\n",
         sizeof(struct payload_hdr));
     return -1;
   }
@@ -357,27 +355,27 @@ static inline struct udp_context_lib * core_init(struct core *c)
     pthread_exit((void *) (intptr_t) -1);
   }
 
-  c->txbuf = (__u8 *) malloc(msg_size);
-  c->rxbuf = (__u8 *) malloc(msg_size);
+  c->txbuf = (__u8 *) malloc(msize);
+  c->rxbuf = (__u8 *) malloc(msize);
   if (!c->txbuf || !c->rxbuf)
   {
     perror("malloc buffers");
     pthread_exit((void *) (intptr_t) -1);
   }
-  memset(c->txbuf, 0, msg_size);
-  memset(c->rxbuf, 0, msg_size);
+  memset(c->txbuf, 0, msize);
+  memset(c->rxbuf, 0, msize);
 
   /* Core 0 resolves ARP */
   if (c->id == 0)
   {
-    udp_sendto(udp_ctx, c->fd, c->txbuf, msg_size, 
+    udp_sendto(udp_ctx, c->fd, c->txbuf, msize, 
         (struct sockaddr *) &c->dst, c->dstlen);
     sleep(1);
-    udp_sendto(udp_ctx, c->fd, c->txbuf, msg_size, 
+    udp_sendto(udp_ctx, c->fd, c->txbuf, msize, 
         (struct sockaddr *) &c->dst, c->dstlen);
     sleep(1);
     while(udp_poll_fast(udp_ctx) == 0);
-    while(udp_recvfrom(udp_ctx, c->fd, c->rxbuf, msg_size, NULL, 0) == 0);
+    while(udp_recvfrom(udp_ctx, c->fd, c->rxbuf, msize, NULL, 0) == 0);
     fprintf(stderr, "Resolved ARP\n");
   }
 
@@ -396,20 +394,20 @@ static inline void core_tx(struct udp_context_lib *udp_ctx, struct core *c)
   int ntx;
   struct payload_hdr *ph;
   
-  while (c->tokens >= (double) msg_size)
+  while (c->tokens >= (double) msize)
   {
     ph = (struct payload_hdr *) c->txbuf;
     ph->tsc = util_rdtsc();
 
-    ntx = udp_sendto(udp_ctx, c->fd, c->txbuf, msg_size,
+    ntx = udp_sendto(udp_ctx, c->fd, c->txbuf, msize,
                   (struct sockaddr *) &c->dst, c->dstlen);
-    assert(ntx == msg_size || ntx <= 0);
-    assert(c->tokens >= msg_size);
+    assert(ntx == msize || ntx <= 0);
+    assert(c->tokens >= msize);
     
     if (ntx < 0)
       break;
       
-    c->tokens -= msg_size;
+    c->tokens -= msize;
     c->total_tx_pkts++;
     __sync_fetch_and_add(&c->txb_load_interval, ntx);
     __sync_fetch_and_add(&c->txp_load_interval, 1);
@@ -424,8 +422,8 @@ static inline void core_rx(struct udp_context_lib *udp_ctx, struct core *c)
 
   while (1)
   {
-    nrx = udp_recvfrom(udp_ctx, c->fd, c->rxbuf, msg_size, NULL, 0);
-    assert(nrx == msg_size || nrx < 0);
+    nrx = udp_recvfrom(udp_ctx, c->fd, c->rxbuf, msize, NULL, 0);
+    assert(nrx == msize || nrx < 0);
     
     if (nrx <= 0)
       break;
@@ -635,10 +633,10 @@ int main(int argc, char **argv)
   printf("RX packets          : %llu\n", (unsigned long long) totalp_rx);
   printf("Avg Load            : %lld rps %.2f Mb/s\n", 
       totalp_tx / duration, 
-      ((double) totalp_tx * msg_size * 8 / 1000000) / duration);
+      ((double) totalp_tx * msize * 8 / 1000000) / duration);
   printf("Avg Throughput      : %lld rps %.2f Mb/s\n", 
       totalp_rx / duration, 
-      ((double) totalp_rx * msg_size * 8 / 1000000) / duration);
+      ((double) totalp_rx * msize * 8 / 1000000) / duration);
   printf("RTT percentiles (us): p50=%llu  p99=%llu  p99.9=%llu\n",
       (unsigned long long) p50,
       (unsigned long long) p99,

@@ -29,12 +29,6 @@ struct configuration {
   /*** Max values ***/
   /* Max number of guests supported */
   __u32 max_guests;
-  /* Max number of applications per guest */
-  __u32 max_apps;
-  /* Max number of application contexts per app */
-  __u32 max_app_ctxs;
-  /* Max number of buffers per application */
-  __u32 max_bufs;
 
   /*** Fast-path configurations ***/
   /* Enable checksum offload */

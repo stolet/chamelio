@@ -32,7 +32,7 @@ struct payload_hdr {
 }__attribute__((packed));
 
 /* Default arg values */
-size_t msg_size = 64; // Total payload bytes: includes payload_hdr
+size_t msize = 64; // Total payload bytes: includes payload_hdr
 int duration = 30;
 int max_pending = 1;
 const char *server_ip;
@@ -211,7 +211,7 @@ static int parse_args(int argc, char **argv)
         strcmp(argv[i], "--size") == 0) && 
         i + 1 < argc)
     {
-      msg_size = (size_t)strtoul(argv[++i], NULL, 10);
+      msize = (size_t)strtoul(argv[++i], NULL, 10);
     }
     else if (strcmp(argv[i], "--duration") == 0 && i + 1 < argc)
     {
@@ -228,7 +228,7 @@ static int parse_args(int argc, char **argv)
     }
   }
 
-  if (msg_size < sizeof(struct payload_hdr))
+  if (msize < sizeof(struct payload_hdr))
   {
     fprintf(stderr, "msg-size must be at least %zu bytes (header size)\n", 
         sizeof(struct payload_hdr));
@@ -344,15 +344,15 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
-  txbuf = (__u8 *)malloc(msg_size);
-  rxbuf = (__u8 *)malloc(msg_size);
+  txbuf = (__u8 *)malloc(msize);
+  rxbuf = (__u8 *)malloc(msize);
   if (!txbuf || !rxbuf) 
   {
     perror("malloc buffers");
     exit(EXIT_FAILURE);
   }
-  memset(txbuf, 0, msg_size);
-  memset(rxbuf, 0, msg_size);
+  memset(txbuf, 0, msize);
+  memset(rxbuf, 0, msize);
 
   /* We need to calibrate so we know how the 
    * TSC frequency maps to real time 
@@ -372,7 +372,7 @@ int main(int argc, char **argv)
       ph = (struct payload_hdr *) txbuf;
       ph->tsc = util_rdtsc();
 
-      s = sendto(fd, txbuf, msg_size, 0, (struct sockaddr *) &dst, dstlen);
+      s = sendto(fd, txbuf, msize, 0, (struct sockaddr *) &dst, dstlen);
       if (s < 0)
       {
         if (errno == EAGAIN || errno == EWOULDBLOCK) break;
@@ -389,7 +389,7 @@ int main(int argc, char **argv)
     /* Drain replies */
     while(1)
     {
-      ssize_t r = recvfrom(fd, rxbuf, msg_size, 0, NULL, NULL);
+      ssize_t r = recvfrom(fd, rxbuf, msize, 0, NULL, NULL);
       if (r < 0)
       {
         if (errno == EAGAIN || errno == EWOULDBLOCK) break;
