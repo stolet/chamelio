@@ -1,8 +1,8 @@
 /* Usage:
- *   ./udp_linux_server <bind_ip> <port> [--msize N] [--ncores N] [--buf-size N]
+ *   ./udp_cham_server <bind_ip> <port> [--msize N] [--ncores N] [--buf-size N]
  *
  * Example:
- *   ./udp_linux_server 0.0.0.0 9000 --msize 64 --ncores 2 --buf-size 4096
+ *   ./udp_cham_server 0.0.0.0 9000 --msize 64 --ncores 2 --buf-size 4096
  * 
  *   --msize Size of expected message
  *   --ncores Number of cores to use
