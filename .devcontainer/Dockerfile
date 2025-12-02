@@ -1,4 +1,4 @@
-# Debian 12
+# Debian 13
 FROM debian:13-slim
 
 # Avoid interactive tz/locale prompts during install

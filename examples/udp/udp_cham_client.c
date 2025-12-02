@@ -599,10 +599,7 @@ int main(int argc, char **argv)
       break;
 
     if (now >= t_next_report_ns)
-    {
-      fprintf(stderr, "elapsed=%lld\n", now - t_last_report_ns);
       print_stats(now);
-    }
 
     /* Sleep a bit to avoid busy wait */
     struct timespec ts = { .tv_sec = 0, .tv_nsec = 2000000 };
