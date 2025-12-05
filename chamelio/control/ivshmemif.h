@@ -5,7 +5,7 @@
 
 #include "control.h"
 
-#define IVSHMEM_SOCKET_PATH "ivshmem_socket"
+#define IVSHMEM_SOCKET_PATH "/run/chamelio/ivshmem_socket"
 
 struct ivshmem_event {
   int type;

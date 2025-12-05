@@ -60,7 +60,13 @@ utils_dep = declare_dependency(
 meson.override_dependency('cham_utils_dep', utils_dep)
 
 # Install headers
-install_headers('include/utils.h', subdir: 'chamelio')
+install_headers(
+  'include/utils.h',
+  'queue/include/queue.h',
+  'queue/include/queue_types.h',
+  'queue/include/queue_fns.h',
+  subdir: 'chamelio'
+)
 
 # Generate pkgconfig file
 pkg = import('pkgconfig')
