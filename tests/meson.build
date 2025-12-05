@@ -5,7 +5,7 @@ test_arp_srcs = files('test_arp.c', 'test_utils.c')
 test_tomgr_srcs = files('test_tomgr.c', 'test_utils.c')  # Added test_tomgr.c
 
 deps = [
-  dependency('cham_lib'),
+  dependency('cham'),
   dependency('queue_dep'),
   dependency('arp_dep'),
   dependency('scheduler_dep')

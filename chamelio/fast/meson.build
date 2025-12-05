@@ -7,7 +7,7 @@ fast_srcs = files(
 
 deps = [
   dependency('config_dep'),
-  dependency('utils_dep'),
+  dependency('cham_utils_dep'),
   dependency('log_pkt_dep'),
   dependency('nic_dep'),
   dependency('queue_dep'),
@@ -15,7 +15,7 @@ deps = [
   dependency('udp_fast_dep'),
   dependency('pkt_hdrs_dep'),
   dependency('arp_dep'),
-  dependency('cham_lib'),
+  dependency('cham'),
 ]
 
 fast_lib = static_library(

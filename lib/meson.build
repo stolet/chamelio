@@ -1,3 +1,6 @@
+# Build utils library first
+subdir('utils')
+
 lib_inc = include_directories('include')
 
 lib_srcs = files(
@@ -6,13 +9,13 @@ lib_srcs = files(
 )
 
 deps = [
-  dependency('utils_dep'),
+  dependency('cham_utils_dep'),
   dependency('log_dep'),
   dependency('queue_dep'),
 ]
 
 lib = library(
-  'chamelio',             
+  'cham',             
   lib_srcs,
   include_directories : lib_inc,
   version : '1.0.0',
@@ -26,11 +29,18 @@ lib_dep = declare_dependency(
   dependencies : deps,
 )
 
-meson.override_dependency('cham_lib', lib_dep)
+meson.override_dependency('cham', lib_dep)
+
+# Install headers
+install_headers(
+  'include/cham_lib.h',
+  'include/cham_fast.h',
+  subdir: 'chamelio'
+)
 
 pkg = import('pkgconfig')
 pkg.generate(
   lib,
-  description : 'Chamelio low level library',
+  description : 'Chamelio library',
   subdirs : 'chamelio'
 )

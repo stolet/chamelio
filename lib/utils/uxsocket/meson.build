@@ -1,4 +1,4 @@
-uxsocket_inc = include_directories('include')
+uxsocket_inc = include_directories('include', '../include')
 
 deps = [
   dependency('log_dep'),

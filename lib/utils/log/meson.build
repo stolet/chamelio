@@ -1,4 +1,4 @@
-log_inc = include_directories('include')
+log_inc = include_directories('include', '../include')
 
 log_lib = static_library(
   'log',

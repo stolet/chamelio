@@ -19,9 +19,7 @@ libbpf_dep  = dependency('libbpf', required: true)
 rt_dep = cc.find_library('rt', required : true)
 
 
-subdir('utils')
 subdir('lib')
 subdir('protos')
 subdir('chamelio')
 subdir('tests')
-subdir('examples')

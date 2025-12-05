@@ -27,7 +27,7 @@ deps = [
   dependency('uxsocket_dep'),
   dependency('tomgr_dep'),
   dependency('clock_dep'),
-  dependency('cham_lib'),
+  dependency('cham'),
   llvm_dep,
   llvmbpf_dep,
   libbpf_dep,

@@ -1,4 +1,4 @@
-shm_inc = include_directories('include')
+shm_inc = include_directories('include', '../include')
 
 shm_srcs = files('shmalloc.c', 'shm.c')
 

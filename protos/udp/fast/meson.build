@@ -2,9 +2,9 @@ udp_fast_inc = include_directories('include', '../include')
 
 deps = [
   dependency('log_dep'),
-  dependency('utils_dep'),
+  dependency('cham_utils_dep'),
   dependency('pkt_hdrs_dep'),
-  dependency('cham_lib'),
+  dependency('cham'),
 ]
 
 ecc = find_program('ecc', required: true)
@@ -13,11 +13,11 @@ ecc = find_program('ecc', required: true)
 src = meson.project_source_root()
 
 ebpf_incs = [
-  src / 'utils/include',
+  src / 'lib/utils/include',
   src / 'lib/include',
-  src / 'utils/queue/include',
-  src / 'utils/scheduler/include',
-  src / 'utils/pkt_hdrs/include',
+  src / 'lib/utils/queue/include',
+  src / 'lib/utils/scheduler/include',
+  src / 'lib/utils/pkt_hdrs/include',
   src / 'protos/udp/include',
   src / 'protos/udp/fast/include',
 ]

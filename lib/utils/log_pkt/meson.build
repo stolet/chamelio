@@ -1,9 +1,9 @@
-log_pkt_inc = include_directories('include')
+log_pkt_inc = include_directories('include', '../include')
 
 log_pkt_srcs = files('log_pkt.c')
 
 deps = [
-  dependency('utils_dep'),
+  dependency('log_dep'),
   dependency('pkt_hdrs_dep'),
 ]
 

@@ -5,6 +5,7 @@ arp_srcs = files('arp.c')
 deps = [
   dependency('queue_dep'),
   dependency('pkt_hdrs_dep'),
+  dependency('tomgr_dep'),
 ]
 
 arp_lib = static_library(

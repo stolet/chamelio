@@ -15,7 +15,7 @@ subdir('fast')
 subdir('control')
 
 deps = [
-  dependency('utils_dep'),
+  dependency('cham_utils_dep'),
   dependency('config_dep'),
   dependency('shm_dep'),
   dependency('queue_dep'),
