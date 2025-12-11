@@ -24,13 +24,6 @@
 /* Size of cache for preallocated mbufs used for transmission */
 #define TX_CACHE_SIZE 128
 
-/* Types of protocols supported by Chamelio */
-enum protocol_type {
-  PROTO_UDP = 0,
-  PROTO_TCP,
-  PROTO_RDMA,
-};
-
 struct proto_fast {
   /* Number of enabled queues */
   __u16 ndqueues;

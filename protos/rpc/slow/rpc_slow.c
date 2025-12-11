@@ -7,10 +7,10 @@
 #include <assert.h>
 
 #include "appif.h"
-#include "udp_slow.h"
-#include "udp_queue_types.h"
+#include "rpc_slow.h"
+#include "rpc_queue_types.h"
 #include "queue_fns.h"
-#include "udp.h"
+#include "rpc.h"
 #include "log.h"
 #include <stdio.h>
 #include <unistd.h>
@@ -19,18 +19,18 @@
 #include <errno.h>
 #include <fcntl.h>
 
-int init_udp_slow_context(struct udp_slow_context *ctx);
+int init_rpc_slow_context(struct rpc_slow_context *ctx);
 
-int poll_apps(struct udp_slow_context *ctx);
+int poll_apps(struct rpc_slow_context *ctx);
 
-int handle_new_sock(struct udp_slow_context *ctx, 
-  struct udp_app_context_slow *actx, struct udp_queue_entry *qe);
-int handle_bind(struct udp_slow_context *ctx, 
-    struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req);
-int handle_sock_setopt(struct udp_slow_context *ctx, 
-    struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req);
+int handle_new_sock(struct rpc_slow_context *ctx, 
+  struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
+int handle_bind(struct rpc_slow_context *ctx, 
+    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req);
+int handle_sock_setopt(struct rpc_slow_context *ctx, 
+    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req);
     
-int init_udp_slow_context(struct udp_slow_context *ctx)
+int init_rpc_slow_context(struct rpc_slow_context *ctx)
 {
   int fd, ret, i;
   struct stat statbuf;
@@ -39,7 +39,7 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   struct guest_lib *g;
   struct proto_lib *p;
   struct proto_map_lib *port_map, *socks_map;
-  struct udp_port *ports;
+  struct rpc_port *ports;
 
   g = cham_connect_guest();
   if (g == NULL)
@@ -55,7 +55,7 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
     abort();
   }
   
-  fd = open(UDP_EBPF_BYTECODE, O_RDWR);
+  fd = open(RPC_EBPF_BYTECODE, O_RDWR);
   if (fd < 0)
   {
     LOG_ERROR("Failed to open UDP eBPF bytecode");
@@ -86,7 +86,7 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   }
 
   /* Create map used to hold local port to sockets translation */
-  port_map = cham_new_map(p, MAX_PORT, sizeof(struct udp_port));
+  port_map = cham_new_map(p, MAX_PORT, sizeof(struct rpc_port));
   if (port_map == NULL)
   {
     LOG_ERROR("failed to create map for port to socket translation");
@@ -95,7 +95,7 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   ctx->port_map = port_map;
 
   /* Create map used to hold sockets */
-  socks_map = cham_new_map(p, MAX_SOCKETS, sizeof(struct udp_sock));
+  socks_map = cham_new_map(p, MAX_SOCKETS, sizeof(struct rpc_sock));
   if (socks_map == NULL)
   {
     LOG_ERROR("failed to create map to hold sockets");
@@ -122,14 +122,14 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   return 0;
 }
 
-int poll_apps(struct udp_slow_context *ctx)
+int poll_apps(struct rpc_slow_context *ctx)
 {
   int msgs_i, apps_polled, ctxs_polled;
   __u8 type;
   struct dqueue *q;
-  struct udp_queue_entry *qe;
-  struct udp_app_slow *a;
-  struct udp_app_context_slow *actx;
+  struct rpc_queue_entry *qe;
+  struct rpc_app_slow *a;
+  struct rpc_app_context_slow *actx;
  
   msgs_i = 0;
   apps_polled = 0;
@@ -164,15 +164,15 @@ int poll_apps(struct udp_slow_context *ctx)
     type = qe->type;
     switch (type)
     {
-      case UDP_QUEUE_EMPTY:
+      case RPC_QUEUE_EMPTY:
         break;
-      case UDP_QUEUE_NEW_SOCK_REQ:
+      case RPC_QUEUE_NEW_SOCK_REQ:
         handle_new_sock(ctx, actx, qe);
         break;
-      case UDP_QUEUE_SETOPT_REQ:
+      case RPC_QUEUE_SETOPT_REQ:
         handle_sock_setopt(ctx, actx, qe);
         break;
-      case UDP_QUEUE_BIND_REQ:
+      case RPC_QUEUE_BIND_REQ:
         handle_bind(ctx, actx, qe);
         break;
       default:
@@ -186,22 +186,22 @@ int poll_apps(struct udp_slow_context *ctx)
   return 0;
 }
 
-int poll_control(struct udp_slow_context *ctx)
+int poll_control(struct rpc_slow_context *ctx)
 {
   return 0;
 }
 
-int handle_new_sock(struct udp_slow_context *ctx, 
-    struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
+int handle_new_sock(struct rpc_slow_context *ctx, 
+    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
   int ret;
-  struct udp_sock *sock;
+  struct rpc_sock *sock;
   struct proto_queue_lib *protoq;
-  struct udp_queue_entry *qe_res;
-  struct udp_queue_new_sock_req *req;
-  struct udp_queue_new_sock_res *res;
+  struct rpc_queue_entry *qe_res;
+  struct rpc_queue_new_sock_req *req;
+  struct rpc_queue_new_sock_res *res;
 
-  struct udp_sock *socks_map = ctx->proto->shm_base + ctx->socks_map->off;
+  struct rpc_sock *socks_map = ctx->proto->shm_base + ctx->socks_map->off;
 
   if (ctx->n_socks >= MAX_SOCKETS)
   {
@@ -256,7 +256,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
   sock->tx_off = protoq->off;
 
   /* Send response to app */
-  ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_NEW_SOCK_RES);
+  ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_SOCK_RES);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue new socket response");
@@ -269,15 +269,15 @@ int handle_new_sock(struct udp_slow_context *ctx,
   return 0;
 }
 
-int handle_sock_setopt(struct udp_slow_context *ctx, 
-    struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
+int handle_sock_setopt(struct rpc_slow_context *ctx, 
+    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
   int ret;
-  struct udp_sock *sock;
-  struct udp_queue_entry *qe_res;
-  struct udp_queue_setopt_req *req;
-  struct udp_queue_setopt_res *res;
-  struct udp_sock *socks_map = ctx->proto->shm_base + ctx->socks_map->off;
+  struct rpc_sock *sock;
+  struct rpc_queue_entry *qe_res;
+  struct rpc_queue_setopt_req *req;
+  struct rpc_queue_setopt_res *res;
+  struct rpc_sock *socks_map = ctx->proto->shm_base + ctx->socks_map->off;
   
   req = &qe_req->data.setopt_req;
   qe_res = queue_tail(actx->slow_app_q);
@@ -293,7 +293,7 @@ int handle_sock_setopt(struct udp_slow_context *ctx,
     LOG_ERROR("invalid socket id");
     res->success = 0;
     res->opaque = req->opaque;
-    ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_SETOPT_RES);
+    ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_SETOPT_RES);
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue UDP queue bind response");
@@ -314,7 +314,7 @@ int handle_sock_setopt(struct udp_slow_context *ctx,
   
   res->success = 1;
   res->opaque = req->opaque;
-  ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_SETOPT_RES);
+  ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_SETOPT_RES);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue UDP queue bind response");
@@ -325,15 +325,15 @@ int handle_sock_setopt(struct udp_slow_context *ctx,
   
 }
 
-int handle_bind(struct udp_slow_context *ctx, 
-    struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
+int handle_bind(struct rpc_slow_context *ctx, 
+    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
   int ret;
-  struct udp_port *port_map, *port;
-  struct udp_queue_entry *qe_res;
-  struct udp_queue_bind_req *req;
-  struct udp_queue_bind_res *res;
-  struct udp_sock *sock, *socks_map;
+  struct rpc_port *port_map, *port;
+  struct rpc_queue_entry *qe_res;
+  struct rpc_queue_bind_req *req;
+  struct rpc_queue_bind_res *res;
+  struct rpc_sock *sock, *socks_map;
 
   qe_res = queue_tail(actx->slow_app_q);
   if (qe_res == NULL)
@@ -351,7 +351,7 @@ int handle_bind(struct udp_slow_context *ctx,
     LOG_ERROR("port is invalid");
     res->success = 0;
     res->opaque = req->opaque;
-    ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_BIND_RES);
+    ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_BIND_RES);
     if (ret != 0)
       LOG_ERROR("failed to enqueue UDP queue bind response");
     return -1;
@@ -367,7 +367,7 @@ int handle_bind(struct udp_slow_context *ctx,
     LOG_ERROR("socket with this port already in use port=%d", port);
     res->success = 0;
     res->opaque = req->opaque;
-    ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_BIND_RES);
+    ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_BIND_RES);
     if (ret != 0)
       LOG_ERROR("failed to enqueue UDP queue bind response");
     return -1;
@@ -384,7 +384,7 @@ int handle_bind(struct udp_slow_context *ctx,
 
   res->success = 1;
   res->opaque = req->opaque;
-  ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_BIND_RES);
+  ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_BIND_RES);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue UDP queue bind response");
@@ -397,9 +397,9 @@ int handle_bind(struct udp_slow_context *ctx,
 int main(int argc, char **argv)
 {
   int ret;
-  struct udp_slow_context ctx;
+  struct rpc_slow_context ctx;
   
-  ret = init_udp_slow_context(&ctx);
+  ret = init_rpc_slow_context(&ctx);
   if (ret != 0)
   {
     LOG_ERROR("failed to initialise udp slow context");
