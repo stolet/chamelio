@@ -75,14 +75,10 @@ int rpc_connect_slow()
     goto close_sockfd;
   }
 
-  /* Set table to 0 so default fd is SOCK_INACTIVE */
-  memset(u->socks, 0, sizeof(struct rpc_socket_lib) * MAX_SOCKETS);
-
   u->uxsocket_fd = sock_fd;
   u->shm_fd = shm_fd;
   u->shm_base = NULL;
   u->next_ctxid = 0;
-  u->next_sockfd = 0;
   rpc = u;
   
   return 0;
@@ -231,4 +227,58 @@ struct rpc_context_lib * rpc_ctx_new()
   }
 
   return ctx;
+}
+
+
+int rpc_poll_slow(struct rpc_context_lib *ctx)
+{
+  return 0;
+}
+
+int rpc_poll_calls(struct rpc_context_lib *ctx)
+{
+  return 0;
+}
+
+struct rpc_client_lib * rpc_new_client(__u32 ip, __u16 port)
+{
+  return NULL;
+}
+
+struct rpc_server_lib * rpc_new_server(__u32 ip, __u16 port)
+{
+  return NULL;
+}
+
+struct rpc_worker_lib * rpc_new_worker(struct rpc_server_lib *s)
+{
+  return NULL;
+}
+
+int rpc_register(struct rpc_server_lib *server, __u8 service)
+{
+  return 0;
+}
+
+int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
+    __u16 service, void *buf, size_t len)
+{
+  return 0;
+}
+
+int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
+    __u32 rid, void *buf, size_t len)
+{
+  return 0;
+}
+
+int rpc_handle_call(struct rpc_worker_lib *w, 
+    void *buf, size_t len)
+{
+  return 0;
+}
+
+int rpc_call_complete(struct rpc_worker_lib *w)
+{
+  return 0;
 }
