@@ -28,6 +28,7 @@ struct rpc_context_lib {
   struct dqueue **fast_app_qs;
 };
 
+/* Worker that handles RPC requests */
 struct rpc_worker_lib {
   /* Context that created this worker */
   struct rpc_context_lib *ctx;
@@ -66,6 +67,7 @@ struct rpc_worker_lib {
   void *tx_buf;
 };
 
+/* RPC client that makes calls */
 struct rpc_client_lib {
   /* Context that created this client */
   struct rpc_context_lib *ctx;
@@ -108,6 +110,7 @@ struct rpc_client_lib {
   int bind_success;
 };
 
+/* RPC server that registers different services */
 struct rpc_server_lib {
   /* Fast-path core of this server */
   __u16 core;
@@ -166,7 +169,7 @@ int rpc_register(struct rpc_server_lib *server, __u8 service);
 /* Sends an RPC request to the given IP and port */
 int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
     __u16 service, void *buf, size_t len);
-/* Sends an RPC response for the given request */
+/* Sends an RPC response for a call that was handled */
 int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
     __u32 rid, void *buf, size_t len);
 /* Parses the top request in worker queue */
