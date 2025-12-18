@@ -22,24 +22,15 @@
 int init_rpc_slow_context(struct rpc_slow_context *ctx);
 
 int poll_apps(struct rpc_slow_context *ctx);
-
-int handle_new_sock(struct rpc_slow_context *ctx, 
-  struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
-int handle_bind(struct rpc_slow_context *ctx, 
-    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req);
-int handle_sock_setopt(struct rpc_slow_context *ctx, 
-    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req);
     
 int init_rpc_slow_context(struct rpc_slow_context *ctx)
 {
-  int fd, ret, i;
+  int fd, ret;
   struct stat statbuf;
   struct proto_ebpf_lib *ebpf;
   __u8 *ebpf_bytecode;
   struct guest_lib *g;
   struct proto_lib *p;
-  struct proto_map_lib *port_map, *socks_map;
-  struct rpc_port *ports;
 
   g = cham_connect_guest();
   if (g == NULL)
@@ -85,39 +76,12 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
     abort();
   }
 
-  /* Create map used to hold local port to sockets translation */
-  port_map = cham_new_map(p, MAX_PORT, sizeof(struct rpc_port));
-  if (port_map == NULL)
-  {
-    LOG_ERROR("failed to create map for port to socket translation");
-    abort();
-  }
-  ctx->port_map = port_map;
-
-  /* Create map used to hold sockets */
-  socks_map = cham_new_map(p, MAX_SOCKETS, sizeof(struct rpc_sock));
-  if (socks_map == NULL)
-  {
-    LOG_ERROR("failed to create map to hold sockets");
-    abort();
-  }
-  ctx->socks_map = socks_map;
-
-  /* Initialize entries in port_map */
-  ports = p->shm_base + port_map->off;
-  for (i = 0; i < MAX_SOCKETS; i++)
-  {
-    ports[i].nsocks = 0;
-    ports[i].next_sock = 0;
-  }
-
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;
   ctx->guest = g;
   ctx->proto = p;
   ctx->n_apps = 0;
   ctx->next_app = 0;
-  ctx->n_socks = 0;
 
   return 0;
 }
@@ -166,15 +130,6 @@ int poll_apps(struct rpc_slow_context *ctx)
     {
       case RPC_QUEUE_EMPTY:
         break;
-      case RPC_QUEUE_NEW_SOCK_REQ:
-        handle_new_sock(ctx, actx, qe);
-        break;
-      case RPC_QUEUE_SETOPT_REQ:
-        handle_sock_setopt(ctx, actx, qe);
-        break;
-      case RPC_QUEUE_BIND_REQ:
-        handle_bind(ctx, actx, qe);
-        break;
       default:
         LOG_WARN("unknown queue entry type from app " 
           "to udp slow-path type=%d", type);
@@ -188,209 +143,6 @@ int poll_apps(struct rpc_slow_context *ctx)
 
 int poll_control(struct rpc_slow_context *ctx)
 {
-  return 0;
-}
-
-int handle_new_sock(struct rpc_slow_context *ctx, 
-    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
-{
-  int ret;
-  struct rpc_sock *sock;
-  struct proto_queue_lib *protoq;
-  struct rpc_queue_entry *qe_res;
-  struct rpc_queue_new_sock_req *req;
-  struct rpc_queue_new_sock_res *res;
-
-  struct rpc_sock *socks_map = ctx->proto->shm_base + ctx->socks_map->off;
-
-  if (ctx->n_socks >= MAX_SOCKETS)
-  {
-    LOG_ERROR("Socket map is full");
-    return -1;
-  }
-
-  req = &qe_req->data.new_sock_req;
-  qe_res = queue_tail(actx->slow_app_q);
-  if (qe_res == NULL)
-  {
-    LOG_ERROR("failed to get tail of slow->app queue");
-    return -1;
-  }
-  res = &qe_res->data.new_sock_res;
-  res->opaque = req->opaque;
-  res->sock_id = ctx->n_socks;
-  res->core = 0;
-
-  sock = &socks_map[res->sock_id];
-  sock->id = res->sock_id;
-  sock->core = 0;
-  sock->local_ip = ctx->proto->local_ip;
-  sock->app_bump_qid = actx->app_bump_qs[0]->id;
-  sock->opaque = req->opaque;
-  sock->local_port = 0;
-  sock->reuport = 0;
-
-  /* Create queue for RX buffer */
-  protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
-  if (protoq == NULL)
-  {
-    LOG_ERROR("failed to create new queue");
-    return -1;
-  }
-  res->rx_qid = protoq->id;
-  res->rx_len = protoq->elsize * protoq->nelems;
-  res->rx_off = protoq->off;
-  sock->rx_len = protoq->elsize * protoq->nelems;
-  sock->rx_avail = 0;
-  sock->rx_head = 0;
-  sock->rx_off = protoq->off;
-
-  /* Create queue for TX buffer */
-  protoq = cham_new_queue(ctx->proto, TXBUF_SZ, 1);
-  res->tx_qid = protoq->id;
-  res->tx_len = protoq->nelems * protoq->elsize;
-  res->tx_off = protoq->off;
-  sock->tx_len = protoq->nelems * protoq->elsize;
-  sock->tx_avail = 0;
-  sock->tx_head = 0;
-  sock->tx_off = protoq->off;
-
-  /* Send response to app */
-  ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_SOCK_RES);
-  if (ret != 0)
-  {
-    LOG_ERROR("failed to enqueue new socket response");
-    return -1;
-  }
-
-  /* Increment number of socks registered in protocol */
-  ctx->n_socks++;
-
-  return 0;
-}
-
-int handle_sock_setopt(struct rpc_slow_context *ctx, 
-    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
-{
-  int ret;
-  struct rpc_sock *sock;
-  struct rpc_queue_entry *qe_res;
-  struct rpc_queue_setopt_req *req;
-  struct rpc_queue_setopt_res *res;
-  struct rpc_sock *socks_map = ctx->proto->shm_base + ctx->socks_map->off;
-  
-  req = &qe_req->data.setopt_req;
-  qe_res = queue_tail(actx->slow_app_q);
-  if (qe_res == NULL)
-  {
-    LOG_ERROR("faied to get tail of slow->app queue");
-    return -1;
-  }
-  res = &qe_res->data.setopt_res;
-  
-  if (req->sock_id < 0 || req->sock_id > MAX_SOCKETS)
-  {
-    LOG_ERROR("invalid socket id");
-    res->success = 0;
-    res->opaque = req->opaque;
-    ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_SETOPT_RES);
-    if (ret != 0)
-    {
-      LOG_ERROR("failed to enqueue UDP queue bind response");
-      return -1;
-    }
-  }
-  
-  sock = &socks_map[req->sock_id];
-  switch (req->opt)
-  {
-    case SO_REUSEPORT:
-      sock->reuport = 1;
-      LOG_DEBUG("set sock to reuseport");
-      break;
-    default:
-      break;
-  }
-  
-  res->success = 1;
-  res->opaque = req->opaque;
-  ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_SETOPT_RES);
-  if (ret != 0)
-  {
-    LOG_ERROR("failed to enqueue UDP queue bind response");
-    return -1;
-  }
-
-  return 0;
-  
-}
-
-int handle_bind(struct rpc_slow_context *ctx, 
-    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
-{
-  int ret;
-  struct rpc_port *port_map, *port;
-  struct rpc_queue_entry *qe_res;
-  struct rpc_queue_bind_req *req;
-  struct rpc_queue_bind_res *res;
-  struct rpc_sock *sock, *socks_map;
-
-  qe_res = queue_tail(actx->slow_app_q);
-  if (qe_res == NULL)
-  {
-    LOG_ERROR("failed to get tail of slow->app queue");
-    return -1;
-  }
-  
-  req = &qe_req->data.bind_req;
-
-  /* Return error if port is invalid */
-  res = &qe_res->data.bind_res;
-  if (req->local_port > MAX_SOCKETS)
-  {
-    LOG_ERROR("port is invalid");
-    res->success = 0;
-    res->opaque = req->opaque;
-    ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_BIND_RES);
-    if (ret != 0)
-      LOG_ERROR("failed to enqueue UDP queue bind response");
-    return -1;
-  }
-  
-  /* Return error if another socket is already using this port */
-  socks_map = ctx->proto->shm_base + ctx->socks_map->off;
-  sock = &socks_map[req->sock_id];
-  port_map = ctx->proto->shm_base + ctx->port_map->off;
-  port = &port_map[req->local_port];
-  if (port->nsocks != 0 && !sock->reuport)
-  {
-    LOG_ERROR("socket with this port already in use port=%d", port);
-    res->success = 0;
-    res->opaque = req->opaque;
-    ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_BIND_RES);
-    if (ret != 0)
-      LOG_ERROR("failed to enqueue UDP queue bind response");
-    return -1;
-  }
-
-  socks_map = ctx->proto->shm_base + ctx->socks_map->off;
-  sock = &socks_map[req->sock_id];
-  sock->local_ip = req->local_ip;
-  sock->local_port = req->local_port;
-
-  LOG_DEBUG("adding to port nsocks=%d sock_id=%d", port->nsocks, req->sock_id);
-  port->sids[port->nsocks] = req->sock_id;
-  port->nsocks++;
-
-  res->success = 1;
-  res->opaque = req->opaque;
-  ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_BIND_RES);
-  if (ret != 0)
-  {
-    LOG_ERROR("failed to enqueue UDP queue bind response");
-    return -1;
-  }
-
   return 0;
 }
 
