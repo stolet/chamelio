@@ -19,6 +19,8 @@
 #include "queue_types.h"
 #include "scheduler_fns.h"
 #include "ebpf.h"
+#include "verifier.h"
+#include "cham_fast.h"
 
 static inline int poll_fast(struct control_context *ctx);
 static inline int poll_guests(struct control_context *ctx);
@@ -51,10 +53,13 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
 static inline struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, 
     size_t size);
 
-static void bpf_print(int a);
-static void * bpf_memcpy(void *dst, void *src, size_t n);
-static __u16 ipv4_checksum(void *ip_hdr);
-static __u16 ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr);
+static void ebpf_print(int a);
+static inline void * ebpf_memcpy(void *dst, void *src, size_t n);
+static inline __u16 ebpf_ipv4_checksum(void *ip_hdr);
+static inline __u16 ebpf_ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr);
+static inline void * ebpf_map_get(void *shm_base, __u64 off, __u32 len);
+static inline void * ebpf_map_lookup(void *shm_base, __u64 id, __u64 elsize);
+static inline void * ebpf_queue_tail(struct equeue *q, __u64 elsize);
 
 int control_context_init(struct control_context *ctrl_ctx, 
     struct nic_context *nic_ctx, struct configuration *config, 
@@ -846,6 +851,7 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
     return;
   }
   
+  /* Verify and JIT RX snippet */
   event_rx_prog = bpf_object__find_program_by_name(bpf_obj, "event_rx");
   if (event_rx_prog == NULL)
   {
@@ -856,7 +862,16 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
     return;
   }
   
-  event_rx_insns = bpf_program__insns(event_rx_prog);
+  event_rx_insns = bpf_program__insns(event_rx_prog); 
+  ret = verifier_analyze(event_rx_insns, bpf_program__insn_cnt(event_rx_prog), 
+      ctx->config->shm_len, "event_rx");
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to verify event_rx");
+    return;
+  }
+  LOG_DEBUG("Passed RX verification");
+  
   event_rx_vm = jit_ebpf(event_rx_insns, 
       bpf_program__insn_cnt(event_rx_prog) * 8);
   if (event_rx_vm == NULL)
@@ -868,6 +883,7 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
     return;
   }
   
+  /* Verify and JIT TX snippet */
   event_tx_prog = bpf_object__find_program_by_name(bpf_obj, "event_tx");
   if (event_rx_prog == NULL)
   {
@@ -879,6 +895,15 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
   }
   
   event_tx_insns = bpf_program__insns(event_tx_prog);
+  ret = verifier_analyze(event_tx_insns, bpf_program__insn_cnt(event_tx_prog), 
+      ctx->config->shm_len, "event_tx");
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to verify event_tx");
+    return;
+  }
+  LOG_DEBUG("Passed TX verification");
+  
   event_tx_vm = jit_ebpf(event_tx_insns, 
       bpf_program__insn_cnt(event_tx_prog) * 8);
   if (event_tx_vm == NULL)
@@ -890,6 +915,7 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
     return;
   }
   
+  /* Verify and JIT DEQ snippet */
   event_deq_prog = bpf_object__find_program_by_name(bpf_obj, "event_deq");
   if (event_rx_prog == NULL)
   {
@@ -901,6 +927,14 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
   }
   
   event_deq_insns = bpf_program__insns(event_deq_prog);
+  ret = verifier_analyze(event_deq_insns, bpf_program__insn_cnt(event_deq_prog), 
+      ctx->config->shm_len, "event_deq");
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to verify event_deq");
+    return;
+  }
+  LOG_DEBUG("Passed DEQ verification");
   event_deq_vm = jit_ebpf(event_deq_insns, 
       bpf_program__insn_cnt(event_deq_prog) * 8);
   if (event_deq_vm == NULL)
@@ -977,45 +1011,45 @@ static inline struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
   }
 
   // Register helper functions here
-  res = ebpf_vm_register_helper(vm, 1001, "queue_tail", queue_tail);
+  res = ebpf_vm_register_helper(vm, 1001, "ebpf_queue_tail", ebpf_queue_tail);
   if (res != 0)
   {
-    LOG_ERROR("failed to register queue_tail helper");
+    LOG_ERROR("failed to register ebpf_queue_tail helper");
     return NULL;
   }
   
   res = ebpf_vm_register_helper(vm, 1002, "queue_enqueue", queue_enqueue);
   if (res != 0)
   {
-    LOG_ERROR("failed to register queue_enqueue helper");
+    LOG_ERROR("failed to register ebpf_queue_enqueue helper");
     return NULL;  
   }
   
-  res = ebpf_vm_register_helper(vm, 1003, "bpf_memcpy", bpf_memcpy);
+  res = ebpf_vm_register_helper(vm, 1003, "ebpf_memcpy", ebpf_memcpy);
   if (res != 0)
   {
-    LOG_ERROR("failed to register bpf_memcpy helper");
+    LOG_ERROR("failed to register ebpf_memcpy helper");
     return NULL;
   }
 
-  res = ebpf_vm_register_helper(vm, 1004, "bpf_print", bpf_print);
+  res = ebpf_vm_register_helper(vm, 1004, "ebpf_print", ebpf_print);
   if (res != 0)
   {
-    LOG_ERROR("failed to register sched_add helper");
+    LOG_ERROR("failed to register ebpf_print helper");
     return NULL;
   }
 
-  res = ebpf_vm_register_helper(vm, 1005, "ipv4_checksum", ipv4_checksum);
+  res = ebpf_vm_register_helper(vm, 1005, "ebpf_ipv4_checksum", ebpf_ipv4_checksum);
   if (res != 0)
   {
-    LOG_ERROR("failed to register ipv4_checksum helper");
+    LOG_ERROR("failed to register ebpf_ipv4_checksum helper");
     return NULL;
   }
   
-  res = ebpf_vm_register_helper(vm, 1006, "ipv4_udptcp_cksum", ipv4_udptcp_cksum);
+  res = ebpf_vm_register_helper(vm, 1006, "ebpf_ipv4_udptcp_cksum", ebpf_ipv4_udptcp_cksum);
   if (res != 0)
   {
-    LOG_ERROR("failed to register ipv4_udptcp_cksum helper");
+    LOG_ERROR("failed to register ebpf_ipv4_udptcp_cksum helper");
     return NULL;
   }
   
@@ -1039,8 +1073,22 @@ static inline struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
     LOG_ERROR("failed to register sched_add helper");
     return NULL;
   }
+
+  res = ebpf_vm_register_helper(vm, 1010, "ebpf_map_get", ebpf_map_get);
+  if (res != 0)
+  {
+    LOG_ERROR("failed to register ebpf_map_get helper");
+    return NULL;
+  }
+
+  res = ebpf_vm_register_helper(vm, 1011, "ebpf_map_lookup", ebpf_map_lookup);
+  if (res != 0)
+  {
+    LOG_ERROR("failed to register ebpf_map_lookup helper");
+    return NULL;
+  }
   
-  res = ebpf_vm_compile(vm); // LLVM JIT
+  res = ebpf_vm_compile(vm);
   if (res != 0)
   {
     LOG_ERROR("failed to JIT ebpf bytecode");
@@ -1050,22 +1098,38 @@ static inline struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
   return vm;
 }
 
-static void bpf_print(int a)
+static void ebpf_print(int a)
 {
   LOG_DEBUG("HERE %lld", a);
 }
 
-static void * bpf_memcpy(void *dst, void *src, size_t n)
+static inline void * ebpf_memcpy(void *dst, void *src, size_t n)
 {
   return memcpy(dst, src, n);
 }
 
-static __u16 ipv4_checksum(void *ip_hdr)
+static inline __u16 ebpf_ipv4_checksum(void *ip_hdr)
 {
   return rte_ipv4_cksum(ip_hdr);
 }
 
-static __u16 ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr)
+static inline __u16 ebpf_ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr)
 {
   return rte_ipv4_udptcp_cksum(ip_hdr, udp_hdr);
 }
+
+static inline void * ebpf_map_get(void *shm_base, __u64 off, __u32 len)
+{
+  return shm_base + off;
+}
+
+static inline void * ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize)
+{
+  return map_base + (id * elsize);
+}
+
+static inline void * ebpf_queue_tail(struct equeue *q, __u64 elsize)
+{
+  return queue_tail(q);
+}
+

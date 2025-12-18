@@ -4,6 +4,7 @@
 #include <linux/types.h>
 
 #include "queue.h"
+#include "queue_types.h"
 #include "scheduler.h"
 
 /* Max number of fast-path cores */
@@ -61,20 +62,24 @@ struct cham_proto_handle {
 struct cham_ebpf_ctx {
   /* Pointer to packet buffer */
   void *pkt;
+  /* Length of shared memory */
+  void *pkt_end;
+  /* Shared memory base */
+  void *shm_base;
+  /* TX scheduler for this protocol */
+  struct cham_scheduler sched;
   /* Queue ID for used for event_deq */
   int qid;
   /* Queue entry dequeued by Chamelio */
   struct queue_entry *qe;
+  /* End of shared memory region */
+  void *shm_end;
   /* List of protocol queues use by fast-path to enqueue */
   struct cham_equeue equeues[MAX_PROTO_QUEUES];
   /* Number of registered maps */
   __u16 nmaps;
   /* List of created protocol maps */
   struct cham_map maps[MAX_PROTO_MAPS];
-  /* TX scheduler for this protocol */
-  struct cham_scheduler sched;
-  /* Shared memory base */
-  void *shm_base;
 };
 
 #endif 

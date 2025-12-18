@@ -56,3 +56,24 @@ RUN install -m 0644 build/_deps/spdlog-build/libspdlog.a /usr/local/lib/libspdlo
 WORKDIR /workspaces/chamelio/tests
 RUN wget https://github.com/eunomia-bpf/eunomia-bpf/releases/latest/download/ecc && chmod +x ./ecc
 RUN install -m 0755 ecc /usr/local/bin/ecc
+
+# Install Prevail dependencies
+WORKDIR /workspaces
+RUN apt-get install -y libboost-dev libboost-filesystem-dev libboost-program-options-dev libyaml-cpp-dev
+RUN git clone https://github.com/microsoft/GSL.git 
+WORKDIR /workspaces/GSL
+RUN cp -r include/gsl /usr/local/include/
+
+# Install Prevail
+WORKDIR /workspaces
+RUN git clone --recurse-submodules https://github.com/vbpf/prevail.git
+WORKDIR /workspaces/prevail
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release
+RUN cmake --build build -j $(nproc)
+RUN install -m 0644 build/libprevail.a /usr/local/lib/libprevail.a
+RUN install -m 0644 build/libebpf_yaml_lib.a /usr/local/lib/libebpf_yaml_lib.a 
+RUN mkdir -p /usr/local/include/prevail
+RUN cp -r src/* /usr/local/include/prevail
+RUN mkdir -p /usr/local/include/external
+RUN cp -r external/* /usr/local/include/external
+RUN ldconfig

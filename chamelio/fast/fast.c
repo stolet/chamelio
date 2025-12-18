@@ -186,6 +186,7 @@ static inline int poll_rx(struct fast_context *ctx)
     if (g != NULL)
     {
       g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[i], __u8 *);
+      g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mbs[i], __u8 *) + UDP_MSS);
       ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx, 
           sizeof(struct cham_ebpf_ctx), &ret);
     }
@@ -245,6 +246,7 @@ static inline int poll_queues(struct fast_context *ctx)
       /* Prepare packet buffer for potential TX */
       mbs[ntx]->data_off = 0;
       g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[ntx], __u8 *);
+      g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mbs[ntx], __u8 *) + UDP_MSS);
 
       /* Add queue entry to eBPF context */
       g->proto.ebpf_ctx.qe = qe;
@@ -330,6 +332,7 @@ static inline int poll_tx(struct fast_context *ctx)
       /* Prepare packet */
       mbs[ntx]->data_off = 0;
       g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[ntx], __u8 *);
+      g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mbs[ntx], __u8 *) + UDP_MSS);
       
       /* Execute custom protocol tx procedure */
       ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx.pkt, 

@@ -399,8 +399,8 @@ int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, __u32 size)
 
   struct queue_up_ebpf_req *req = &qe->data.up_ebpf_req;
   req->size = p->ebpf_program.size;
-  req->off = p->ebpf_program.off; // offset in shared memory where the ebpf program is stored
-  p->ebpf_program.flag = 0; //reset flag to 0 before sending request
+  req->off = p->ebpf_program.off;
+  p->ebpf_program.flag = 0;
 
   int ret = queue_enqueue(q, QUEUE_UPLOAD_EBPF_REQ);
   if (ret != 0)

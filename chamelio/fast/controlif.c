@@ -114,6 +114,7 @@ static inline void handle_new_guest(struct fast_context *ctx,
   /* Init qman */
   sched_init(&g->proto.ebpf_ctx.sched);
   g->proto.ebpf_ctx.shm_base = g->shm_base;
+  g->proto.ebpf_ctx.shm_end = g->shm_base + g->shm_len;
   g->proto.ebpf_ctx.nmaps = 0;
 
   ctx->n_guests++;

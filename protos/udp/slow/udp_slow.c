@@ -119,6 +119,7 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   ctx->next_app = 0;
   ctx->n_socks = 0;
 
+  LOG_INFO("UDP initialized");
   return 0;
 }
 

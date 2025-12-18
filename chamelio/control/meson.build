@@ -1,8 +1,25 @@
 control_inc = include_directories('include')
 chamelio_inc = include_directories('../include')
 llvmbpf_inc = include_directories('/usr/local/include/llvmbpf')
+prevail_inc = include_directories('/usr/local/include/prevail')
 
-control_srcs = files('control.c', 'ivshmemif.c', 'guestif.c')
+
+control_srcs = files('control.c', 'ivshmemif.c', 'guestif.c', 'verifier.cpp')
+
+prevail_lib = cc.find_library('prevail',
+  dirs: ['/usr/local/lib'],
+  required: true
+)
+
+prevail_yaml_lib = cc.find_library('ebpf_yaml_lib',
+  dirs: ['/usr/local/lib'],
+  required: false
+)
+
+prevail_dep = declare_dependency(
+  include_directories: prevail_inc,
+  dependencies: [prevail_lib, prevail_yaml_lib]
+)
 
 llvm_dep = dependency(
   'llvm',
@@ -32,6 +49,7 @@ deps = [
   llvmbpf_dep,
   libbpf_dep,
   spdlog_dep,
+  prevail_dep,
 ]
 
 control_lib = static_library(
