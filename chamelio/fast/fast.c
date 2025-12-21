@@ -267,6 +267,7 @@ static inline int poll_queues(struct fast_context *ctx)
         if (ret_tx == 0)
         {
           mbs[ntx]->pkt_len = mbs[ntx]->data_len = deq_ret;
+          mbs[ntx]->ol_flags |= RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_UDP_CKSUM;
           ctx->tx_mbs[ctx->tx_n] = mbs[ntx];
           ctx->tx_n++;
           ntx++;

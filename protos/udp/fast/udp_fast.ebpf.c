@@ -58,8 +58,6 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   __u32 tail;
   __u32 part;
 
-  __u16 ip_saved_chksum, ip_comp_chksum;
-  __u16 udp_saved_chksum, udp_comp_chksum;
   sock = NULL;
 
   /* Parse ETH header */
@@ -77,9 +75,6 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   if (IPH_V(ip) != 4 || IPH_HL(ip) < 5)
     return -1;
 
-  ip_hdrs_len  = (__u16) (IPH_HL(ip) * 4);
-  ip_total_len = f_beui16(ip->len);
-
   if (ip->proto != IP_PROTO_UDP)
     return -1;
 
@@ -87,15 +82,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   if (f_beui16(ip->offset) & 0x3FFF)
     return -1;
 
-  if (ip_total_len < ip_hdrs_len + (__u16) sizeof(struct udp_hdr))
-    return -1;
+  ip_hdrs_len  = (__u16) (IPH_HL(ip) * 4);
+  ip_total_len = f_beui16(ip->len);
 
-  /* Verify IPv4 header checksum */
-  ip_saved_chksum = ip->chksum;
-  ip->chksum = 0;
-  ip_comp_chksum = ebpf_ipv4_checksum((void *) ip);
-  ip->chksum = ip_saved_chksum;
-  if (ip_comp_chksum != ip_saved_chksum)
+  if (ip_total_len < ip_hdrs_len + (__u16) sizeof(struct udp_hdr))
     return -1;
 
   /* Parse UDP header */
@@ -110,18 +100,6 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   
   if (ip_total_len < ip_hdrs_len + udp_len)
     return -1;
-
-  /* Verify UDP checksum for IPv4 (0 means “no checksum”) */
-  udp_saved_chksum = udp->chksum;
-  if (udp_saved_chksum != 0)
-  {
-    udp->chksum = 0;
-    udp_comp_chksum = ebpf_ipv4_udptcp_cksum((void *) ip, (void *) udp);
-    udp->chksum = udp_saved_chksum;
-    
-    if (udp_comp_chksum != udp_saved_chksum)
-    return -1;
-  }
 
   /* Lookup socket */
   sock = udp_sock_find(ctx, f_beui16(udp->dst));
@@ -220,6 +198,10 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   __u64 part;
   struct udp_pkt *p = (struct udp_pkt *) ctx->pkt;
   
+  /* Perform bounds check so eBPF is happy */
+  if ((__u64) p + sizeof(struct udp_pkt) > ctx->pkt_end)
+    return -1;
+
   qe = (struct udp_queue_bump_entry *) ctx->qe;
   bump_cham = &qe->data.bump_cham_tx;
 
@@ -250,15 +232,15 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   if (payload_len > UDP_MSS)
     payload_len = UDP_MSS;
 
+  /* Drop if payload_len out of bounds */
+  if ((__u64) p + sizeof(struct udp_pkt) + payload_len > ctx->pkt_end)
+    return -1;
+
   opt_len = 0;
   udp_hdrs_len = sizeof(struct udp_hdr) + opt_len;
   ip_hdrs_len = sizeof(struct ip_hdr);
   pkt_hdrs_len = sizeof(struct eth_hdr) + sizeof(struct ip_hdr)
     + sizeof(struct udp_hdr) + opt_len;
-
-  /* Perform bounds check so eBPF is happy */
-  if ((__u64) p + sizeof(struct udp_pkt) > ctx->pkt_end)
-    return -1;
 
   /* Set ETH header */
   p->eth.type = t_beui16(ETH_TYPE_IP);
@@ -281,9 +263,6 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   p->udp.len = t_beui16(udp_hdrs_len + payload_len);
   
   /* Copy data to packet */
-  if ((__u64) p + sizeof(struct udp_pkt) + payload_len > ctx->pkt_end)
-    return -1;
-
   payload = ctx->pkt + pkt_hdrs_len;
   if (sock->tx_head + payload_len <= sock->tx_len) 
   {
@@ -295,12 +274,6 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     ebpf_memcpy(payload, ctx->shm_base + sock->tx_off + sock->tx_head, part);
     ebpf_memcpy(payload + part, ctx->shm_base + sock->tx_off, payload_len - part);
   }
-  
-  /* Compute checksums */
-  /* UDP checksum has to be 0 before we compute it */
-  p->udp.chksum = 0;
-  p->udp.chksum = ebpf_ipv4_udptcp_cksum((void *) &p->ip, (void *) &p->udp);
-  p->ip.chksum = ebpf_ipv4_checksum((void *) &p->ip);
   
   /* Update socket */
   new_head = sock->tx_head + payload_len;
@@ -362,7 +335,7 @@ static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
   struct cham_map *map;
 
   map = &ctx->maps[PORT_MAP];
-  
+
   /* This ebpf_map_get is useless but the verifier hangs if I remove it */
   struct udp_port *ports = ebpf_map_get(map->addr, map->size);
 

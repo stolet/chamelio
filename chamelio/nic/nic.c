@@ -74,12 +74,9 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
     port_conf->rx_adv_conf.rss_conf.rss_hf &= dev_info->flow_type_rss_offloads;
   }
 
-  /* Enable per port checksum offload if requested */
-  // if (config->fp_xsumoffloads)
-  // {
-  //   port_conf->txmode.offloads = DEV_TX_OFFLOAD_IPV4_CKSUM;
-  //   port_conf->txmode.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
-  // }
+  port_conf->txmode.offloads = RTE_ETH_TX_OFFLOAD_IPV4_CKSUM;
+  port_conf->txmode.offloads |= RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
+  port_conf->txmode.offloads |= RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
 
   /* Initialize port */
   ret = rte_eth_dev_configure(port_id, config->fp_cores_max, 
@@ -93,11 +90,9 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   /* Set offloads to dev info*/
   dev_info->default_rxconf.offloads = 0;
   dev_info->default_txconf.offloads = 0;
-  // if (config->fp_xsumoffloads)
-  // {
-  //   dev_info->default_txconf.offloads = DEV_TX_OFFLOAD_IPV4_CKSUM;
-  //   dev_info->default_txconf.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
-  // }
+  dev_info->default_txconf.offloads = RTE_ETH_TX_OFFLOAD_IPV4_CKSUM;
+  dev_info->default_txconf.offloads |= RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
+  dev_info->default_txconf.offloads |= RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
 
   return 0;
 }
