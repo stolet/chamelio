@@ -155,6 +155,7 @@ static inline void handle_new_map(struct fast_context *ctx,
   m->id = req->mid;
   m->elsize = req->elsize;
   m->nelems = req->nelems;
+  m->size = req->elsize * req->nelems;
   m->off = req->off;
   m->addr = g->shm_base + req->off;
   LOG_DEBUG("created map mid=%d in fast-path", req->mid);

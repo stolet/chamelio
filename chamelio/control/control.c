@@ -57,8 +57,8 @@ static void ebpf_print(int a);
 static inline void * ebpf_memcpy(void *dst, void *src, size_t n);
 static inline __u16 ebpf_ipv4_checksum(void *ip_hdr);
 static inline __u16 ebpf_ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr);
-static inline void * ebpf_map_get(void *shm_base, __u64 off, __u32 len);
-static inline void * ebpf_map_lookup(void *shm_base, __u64 id, __u64 elsize);
+static inline void * ebpf_map_get(void *map_base, __u32 len);
+static inline void * ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize);
 static inline void * ebpf_queue_tail(struct equeue *q, __u64 elsize);
 
 int control_context_init(struct control_context *ctrl_ctx, 
@@ -1118,9 +1118,9 @@ static inline __u16 ebpf_ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr)
   return rte_ipv4_udptcp_cksum(ip_hdr, udp_hdr);
 }
 
-static inline void * ebpf_map_get(void *shm_base, __u64 off, __u32 len)
+static inline void * ebpf_map_get(void *map_base, __u32 len)
 {
-  return shm_base + off;
+  return map_base;
 }
 
 static inline void * ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize)

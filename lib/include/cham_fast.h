@@ -41,6 +41,8 @@ struct cham_map {
   __u32 nelems;
   /* Size of each element in the map */
   __u32 elsize;
+  /* Total size of map */
+  __u32 size;
   /* Offset in shared memory where this map starts */
   __u64 off;
   /* Address to start of map entries */
