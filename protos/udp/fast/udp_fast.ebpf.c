@@ -136,7 +136,6 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   rx_base = ebpf_map_get(ctx->shm_base + sock->rx_off, sock->rx_len);
   free_bytes = sock->rx_len - sock->rx_avail;
-
   if (payload_len > free_bytes)
     return -1;
   
@@ -194,13 +193,11 @@ int event_deq(struct cham_ebpf_ctx *ctx)
   switch (ctx->qe->type)
   {
     case UDP_QUEUE_BUMP_CHAM_TX:
-      ret = handle_bump_tx(ctx);
-      break;
+      return handle_bump_tx(ctx);
     case UDP_QUEUE_BUMP_CHAM_RX:
-      ret = handle_bump_rx(ctx);
-      break;
+      return handle_bump_rx(ctx);
     default:
-      ret = -1;
+      return -1;
   }
 
   return ret;
@@ -210,8 +207,8 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 {
   int ret;
   void *payload, *shm_base;
-  struct udp_port *ports, *port;
-  struct udp_sock *sock, *sock_map;
+  struct udp_port *port;
+  struct udp_sock *sock;
   struct equeue *q;
   struct udp_queue_bump_entry *qe;
   struct udp_queue_bump_cham_tx *bump_cham;
@@ -227,7 +224,6 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   bump_cham = &qe->data.bump_cham_tx;
 
   map = &ctx->maps[SOCK_MAP];
-  sock_map = ebpf_map_get(map->addr, map->size);
   sock = ebpf_map_lookup(map->addr, 
       bump_cham->sock_id, sizeof(struct udp_sock));
   if (sock == NULL)
@@ -240,7 +236,6 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     if (local_port == 0)
       return -1;
     map = &ctx->maps[PORT_MAP];
-    ports = ebpf_map_get(map->addr, map->size);
     port = ebpf_map_lookup(map->addr, local_port, sizeof(struct udp_port));
     if (port == NULL)
       return -1;
@@ -335,7 +330,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
 {
   __u32 new_head;
-  struct udp_sock *sock, *sock_map;
+  struct udp_sock *sock;
   struct udp_queue_bump_cham_rx *bump;
   struct udp_queue_bump_entry *qe;
   struct cham_map *map;
@@ -346,7 +341,6 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   bump = &qe->data.bump_cham_rx;
 
   map = &ctx->maps[SOCK_MAP];
-  sock_map = ebpf_map_get(map->addr, map->size);
   sock = ebpf_map_lookup(map->addr, bump->sock_id, sizeof(struct udp_sock));
   if (sock == NULL)
     return -1;
@@ -364,11 +358,14 @@ static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
 {
   __u16 i;
   __u16 sock_id;
-  struct udp_port *ports, *port;
+  struct udp_port *port;
   struct cham_map *map;
 
   map = &ctx->maps[PORT_MAP];
-  ports = ebpf_map_get(map->addr, map->size);
+  
+  /* This ebpf_map_get is useless but the verifier hangs if I remove it */
+  struct udp_port *ports = ebpf_map_get(map->addr, map->size);
+
   for (i = MIN_PORT; i < MAX_SOCKETS; i++)
   {
     port = ebpf_map_lookup(map->addr, i, sizeof(struct udp_port));
@@ -385,7 +382,7 @@ static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
 static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
     __u16 local_port)
 {
-  struct udp_port *ports, *port;
+  struct udp_port *port;
   __u16 sock_id, mask;
   __u64 off;
   struct udp_sock *sock_map;
@@ -395,7 +392,6 @@ static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
     return NULL;
 
   map = &ctx->maps[PORT_MAP];
-  ports = ebpf_map_get(map->addr, map->size);
   port = ebpf_map_lookup(map->addr, local_port, sizeof(struct udp_port));
   if (port == NULL || port->nsocks == 0)
     return NULL;
@@ -414,6 +410,5 @@ static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
   }
   
   map = &ctx->maps[SOCK_MAP];
-  sock_map = ebpf_map_get(map->addr, map->size);
   return ebpf_map_lookup(map->addr, sock_id, sizeof(struct udp_sock));
 }
