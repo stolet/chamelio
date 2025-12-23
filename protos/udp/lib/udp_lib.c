@@ -18,7 +18,7 @@
 #include "log.h"
 #include "uxsocket.h"
 
-#define LIB_BATCH_SIZE 64
+#define LIB_BATCH_SIZE 16
 
 static struct udp_lib *udp = NULL;
 

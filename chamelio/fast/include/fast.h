@@ -13,7 +13,7 @@
 #include "queue_types.h"
 #include "shmalloc.h"
 
-#define FAST_BATCH_SIZE 64
+#define FAST_BATCH_SIZE 16
 
 /* We want the TXBUF_SIZE to be double the FAST_BATCH_SIZE so we can 
    fit packets from the TX phase and ACKs sent in the receive phase */

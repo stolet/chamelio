@@ -175,7 +175,8 @@ int control_context_init(struct control_context *ctrl_ctx,
   if (config->perf_iso)
   {
     ctrl_ctx->ts_refresh = clock_rdtsc();
-    ctrl_ctx->budget_cap = clock_us_to_tsc(config->perf_iso_cap);
+    ctrl_ctx->budget_cap = clock_us_to_tsc(config->perf_iso_cap) *
+        config->perf_iso_boost;
   }
 
   return 0;
@@ -1011,8 +1012,8 @@ static inline void budget_refresh(struct control_context *ctx)
     if (ctx->config->perf_iso)
     {
       __atomic_load(&ctx->guests[i].budget, &credits_guest, __ATOMIC_RELAXED);
-      if (credits_guest + credits_add > ctx->config->perf_iso_cap)
-        credits_add = ctx->config->perf_iso_cap - credits_guest;
+      if (credits_guest + credits_add > ctx->budget_cap)
+        credits_add = ctx->budget_cap - credits_guest;
       __atomic_fetch_add(&ctx->guests[i].budget, credits_add, __ATOMIC_RELAXED);
     }
     else

@@ -8,7 +8,7 @@
 #include "tomgr.h"
 
 #define CORE_INVALID UINT16_MAX
-#define CONTROL_BATCH_SIZE 8
+#define CONTROL_BATCH_SIZE 16
 
 struct proto_queue_control {
   /* Queue ID */

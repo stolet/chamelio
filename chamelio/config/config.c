@@ -21,7 +21,7 @@ enum cfg_params {
   CP_MAX_GUESTS,
   CP_FP_CORES_MAX,
   CP_FP_NO_XSUMOFFLOAD,
-  CP_PERF_ISO_NO,
+  CP_PERF_ISO_OFF,
   CP_PERF_ISO_CAP,
   CP_PERF_ISO_BOOST,
   CP_DPDK_EXTRA,
@@ -61,9 +61,9 @@ static struct option opts[] = {
   { .name = "fp-no-xsumoffload",
     .has_arg = no_argument,
     .val = CP_FP_NO_XSUMOFFLOAD },
-  { .name = "perf-iso-no",
+  { .name = "perf-iso-off",
     .has_arg = no_argument,
-    .val = CP_PERF_ISO_NO },
+    .val = CP_PERF_ISO_OFF },
   { .name = "perf-iso-cap",
     .has_arg = required_argument,
     .val = CP_PERF_ISO_CAP },
@@ -164,7 +164,7 @@ int config_parse(struct configuration *c, int argc, char **argv)
       case CP_FP_NO_XSUMOFFLOAD:
         c->fp_xsumoffloads = 0;
         break;
-      case CP_PERF_ISO_NO:
+      case CP_PERF_ISO_OFF:
         c->perf_iso = 0;
         break;
       case CP_PERF_ISO_CAP:
@@ -215,7 +215,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->fp_xsumoffloads = 1;
   c->perf_iso = 1;
   c->perf_iso_cap = 1000;
-  c->perf_iso_boost = 0.9;
+  c->perf_iso_boost = 0.5;
 
   c->dpdk_argc = 1;
   if ((c->dpdk_argv = calloc(2, sizeof(*c->dpdk_argv))) == NULL) 
@@ -257,7 +257,7 @@ static void print_usage(struct configuration *c, char *progname)
       "  --fp-no-xsumoffload                     Disable TX Checksum offload"
           "[default: enabled]\n"
       "Performance isolation:\n"
-      "  --perf-iso-no                           Disables performance isolation"
+      "  --perf-iso-off                          Disables performance isolation"
           "[default: enabled]\n"
       "  --perf-iso-cap                          Per guest budget cap in microseconds"
           "[default: %u]\n"
