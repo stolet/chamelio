@@ -25,6 +25,7 @@
 static inline int poll_fast(struct control_context *ctx);
 static inline int poll_guests(struct control_context *ctx);
 static inline int poll_timeouts(struct control_context *ctx);
+static inline void budget_refresh(struct control_context *ctx);
 
 static inline void handle_arp_lookup(struct control_context *ctx, 
     struct queue_entry *qe);
@@ -171,6 +172,11 @@ int control_context_init(struct control_context *ctrl_ctx,
   ctrl_ctx->guests = guests;
   ctrl_ctx->n_guests = 0;
   ctrl_ctx->next_guest = 0;
+  if (config->perf_iso)
+  {
+    ctrl_ctx->ts_refresh = clock_rdtsc();
+    ctrl_ctx->budget_cap = clock_us_to_tsc(config->perf_iso_cap);
+  }
 
   return 0;
 
@@ -210,6 +216,7 @@ int control_loop(struct control_context *ctx)
     poll_fast(ctx);
     poll_guests(ctx);
     poll_timeouts(ctx);
+    budget_refresh(ctx);
   }
 }
 
@@ -870,7 +877,6 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
     LOG_ERROR("failed to verify event_rx");
     return;
   }
-  LOG_DEBUG("Passed RX verification");
   
   event_rx_vm = jit_ebpf(event_rx_insns, 
       bpf_program__insn_cnt(event_rx_prog) * 8);
@@ -902,7 +908,6 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
     LOG_ERROR("failed to verify event_tx");
     return;
   }
-  LOG_DEBUG("Passed TX verification");
   
   event_tx_vm = jit_ebpf(event_tx_insns, 
       bpf_program__insn_cnt(event_tx_prog) * 8);
@@ -934,7 +939,6 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
     LOG_ERROR("failed to verify event_deq");
     return;
   }
-  LOG_DEBUG("Passed DEQ verification");
   event_deq_vm = jit_ebpf(event_deq_insns, 
       bpf_program__insn_cnt(event_deq_prog) * 8);
   if (event_deq_vm == NULL)
@@ -987,6 +991,36 @@ static inline void handle_free_ebpf_req(struct guest_control *g,
   ret = queue_enqueue(g->cham_guest_q, QUEUE_FREE_EBPF_RES);
   assert(ret == 0);
   return;
+}
+
+static inline void budget_refresh(struct control_context *ctx)
+{
+  int i;
+  __u64 credits, credits_add, credits_guest;
+
+  if (ctx->n_guests == 0)
+  {
+    ctx->ts_refresh = clock_rdtsc();
+    return;
+  }
+
+  credits = clock_rdtsc() - ctx->ts_refresh;
+  credits_add = credits * ctx->config->perf_iso_boost / ctx->n_guests;
+  for (i = 0; i < ctx->n_guests; i++)
+  {
+    if (ctx->config->perf_iso)
+    {
+      __atomic_load(&ctx->guests[i].budget, &credits_guest, __ATOMIC_RELAXED);
+      if (credits_guest + credits_add > ctx->config->perf_iso_cap)
+        credits_add = ctx->config->perf_iso_cap - credits_guest;
+      __atomic_fetch_add(&ctx->guests[i].budget, credits_add, __ATOMIC_RELAXED);
+    }
+    else
+    {
+      __atomic_store_n(&ctx->guests[i].budget, INT64_MAX, __ATOMIC_RELAXED);
+    }
+  }
+  ctx->ts_refresh = clock_rdtsc();
 }
 
 /* Pointer to the memory with the jitted code inside 

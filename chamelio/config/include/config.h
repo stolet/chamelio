@@ -36,6 +36,14 @@ struct configuration {
   /* Max number of fast-path cores */
   __u32 fp_cores_max;
   
+  /*** Performance isolation configurations ***/
+  /* Enable performance isolation */
+  __u32 perf_iso;
+  /* Maximum budget cap per guest in microseconds */
+  __u32 perf_iso_cap;
+  /* Boost multiplier for budget */
+  double perf_iso_boost;
+
   /*** DPDK configurations ***/
   /* DPDK extra argument count */
   int dpdk_argc;

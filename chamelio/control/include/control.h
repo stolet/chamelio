@@ -40,6 +40,9 @@ struct guest_control {
   /* ID of registered guest */
   __u8 id;
 
+  /* Guest budget counter shared with control */
+  __s64 budget;
+
   /* File descriptor for shared memory region for this guest */
   int shm_fd;
   /* Base pointer to the shared memory region for this guest */
@@ -67,6 +70,10 @@ struct control_context {
   __u16 next_core;
   /* Timeout manager */
   struct tomgr *tomgr;
+  /* Timestamp for last budget refresh */
+  __u64 ts_refresh;
+  /* Budget cap in CPU cycles */
+  __u64 budget_cap;
   
   /* Queues from the fast-path to control-path. One per core. */
   struct dqueue **fast_ctl_qs;

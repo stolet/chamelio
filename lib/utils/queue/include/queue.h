@@ -5,7 +5,7 @@
 #include <linux/types.h>
 
 /* Max number of queues a protocol can open */
-#define MAX_PROTO_QUEUES 16
+#define MAX_PROTO_QUEUES 128
 #define MAX_PROTO_MAPS 8
 
 /* This queue is only used for enqueuing */

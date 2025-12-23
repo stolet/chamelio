@@ -99,6 +99,7 @@ static inline void handle_new_guest(struct fast_context *ctx,
 
   g = &ctx->guests[req->id];
   g->id = req->id;
+  g->budget = req->budget;
   g->shm_base = req->shm_base;
   g->shm_len = req->shm_len;
   

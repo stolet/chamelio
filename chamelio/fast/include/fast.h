@@ -15,21 +15,11 @@
 
 #define BATCH_SIZE 16
 
-#define PROTOQ_DISABLED 0
-#define PROTOQ_ENABLED 1
-
 /* We want the TXBUF_SIZE to be double the BATCH_SIZE so we can 
    fit packets from the TX phase and ACKs sent in the receive phase */
 #define TXBUF_SIZE 2 * BATCH_SIZE
 /* Size of cache for preallocated mbufs used for transmission */
 #define TX_CACHE_SIZE 128
-
-/* Types of protocols supported by Chamelio */
-enum protocol_type {
-  PROTO_UDP = 0,
-  PROTO_TCP,
-  PROTO_RDMA,
-};
 
 struct proto_fast {
   /* Number of enabled queues */
@@ -41,17 +31,7 @@ struct proto_fast {
   /* Array of nodes for enabled queues dequeued by Chamelio */
   struct cham_dqueue dqueues[MAX_PROTO_QUEUES];
   /* Handle containing protocol state passed to custom fast-path */  
-  // struct cham_proto_handle handle;
   struct cham_ebpf_ctx ebpf_ctx;
-
-  /* These are used as baselines to the ebpf jitted functions */
-  /* Non-ebpf function to processes one received packet */
-  // int (*event_rx)(void *pkt, struct cham_proto_handle *handle);
-  // /* Non-ebpf function to process one scheduled packet for transmission */
-  // int (*event_tx)(void *pkt, struct cham_proto_handle *handle);
-  // /* Non-ebpf function to dequeue and process entry from a queue */
-  // int (*event_deq)(int qid, struct queue_entry *qe, 
-  //     struct cham_proto_handle *handle);
 
   /* Jitted LLVM VM to process one received packet */
   struct ebpf_vm_c *event_rx_vm;
@@ -64,6 +44,8 @@ struct proto_fast {
 struct guest_fast {
   /* Guest ID */
   __u8 id;
+  /* Pointer to guest budget counter shared with control */
+  __s64 *budget;
   /* Protocol to use with this guest */
   struct proto_fast proto;
   /* Base pointer to shared memory region for this guest */
@@ -96,7 +78,6 @@ struct fast_context {
   __u16 tx_cache_head;
   /* Pointers to preallocated mbufs */
   struct rte_mbuf *tx_cache_mbs[TX_CACHE_SIZE];
-
 
   /* Queue from fast-path core to control-path */
   struct equeue *fast_ctl_q;

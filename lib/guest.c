@@ -240,7 +240,6 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p,
     LOG_ERROR("failed to enqueue request for new queues");
     return NULL;
   }
-  p->nqueues++;
 
   /* Poll waiting for response */
   while (pq->nelems == 0)

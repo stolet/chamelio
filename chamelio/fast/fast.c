@@ -20,6 +20,7 @@
 #include "controlif.h"
 #include "ebpf.h"
 #include "txcache.h"
+#include "clock.h"
 
 
 struct guest_fast * init_guest(__u8 id, __u64 shm_len);
@@ -165,6 +166,7 @@ static inline int poll_rx(struct fast_context *ctx)
   int i, n, ret;
   struct rte_mbuf *mbs[BATCH_SIZE];
   struct guest_fast *g;
+  __u64 tsc_start, tsc_spent;
 
   n = BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < n)
@@ -180,15 +182,24 @@ static inline int poll_rx(struct fast_context *ctx)
   for (i = 0; i < n; i++)
   {
     /* Process infrastructure protocols */
+    tsc_start = clock_rdtsc();
     g = process_infra_rx(ctx, mbs[i]);
     
     /* Execute custom protocol rx procedure */
     if (g != NULL)
     {
+      /* Drop if this guest is out of budget */
+      if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+        continue;
+      
       g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[i], __u8 *);
       g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mbs[i], __u8 *) + UDP_MSS);
       ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx, 
           sizeof(struct cham_ebpf_ctx), &ret);
+ 
+      /* Spend guest budget */
+      tsc_spent = clock_rdtsc() - tsc_start;
+      __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
     }
   }
 
@@ -206,6 +217,7 @@ static inline int poll_queues(struct fast_context *ctx)
   struct cham_dqueue *qcur;
   struct queue_entry *qe;
   struct rte_mbuf **mbs;
+  __u64 tsc_start, tsc_spent;
 
   max = BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
@@ -221,9 +233,15 @@ static inline int poll_queues(struct fast_context *ctx)
   qcur_empty = 0;
   for (i = 0; i < ctx->n_guests && ndeq < max; i++)
   {
-    /* Continue if there are no activated queues for this protocol */
+    tsc_start = clock_rdtsc();
     g = &ctx->guests[i];
+
+    /* Continue if there are no activated queues for this protocol */
     if (g->proto.dqueues_head == PROTOQ_ID_INVALID)
+      continue;
+
+    /* Continue if this guest is out of budget */
+    if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
       continue;
 
     for (j = 0; j < g->proto.ndqueues; j++)
@@ -291,6 +309,10 @@ static inline int poll_queues(struct fast_context *ctx)
       g->proto.dqueues_head = qcur->next;
       qcur->next = PROTOQ_ID_INVALID;
     }
+
+    /* Subtract from guest's budget */
+    tsc_spent = clock_rdtsc() - tsc_start;
+    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
   }
 
   /* Free buffers that were not used */
@@ -306,6 +328,7 @@ static inline int poll_tx(struct fast_context *ctx)
   int i, tx_ret, ntx, ret;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
+  __u64 tsc_start, tsc_spent;
   __u8 n_guests = ctx->n_guests;
   
   /* Return if no guests have registered */
@@ -323,11 +346,17 @@ static inline int poll_tx(struct fast_context *ctx)
   ntx = 0;
   for (i = 0; i < n_guests && g != NULL && ntx < max; i++)
   {
-    /* Return if ebpf code hasn't been uploaded yet */
+    tsc_start = clock_rdtsc();
     g = &ctx->guests[i];
+
+    /* Continue to next guest if ebpf code hasn't been uploaded yet */
     if (g->proto.event_tx_vm == NULL)
       continue;
     
+    /* Continue to next guest if out of budget */
+    if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+      continue;
+
     for (;ntx < max;)
     {
       /* Prepare packet */
@@ -359,6 +388,10 @@ static inline int poll_tx(struct fast_context *ctx)
         break;
       }
     }
+
+    /* Subtract guest's budget */
+    tsc_spent = clock_rdtsc() - tsc_start;
+    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
   }
 
   /* Free buffers that were not used */

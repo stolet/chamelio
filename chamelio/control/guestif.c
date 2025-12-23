@@ -231,6 +231,7 @@ static inline int uxsocket_accept(struct control_context *ctx)
   /* Allocate control path struct for guest */
   g = &ctx->guests[ctx->n_guests];
   g->id = ctx->n_guests;
+  g->budget = ctx->config->perf_iso_cap;
   g->shm_fd = sfd;
   g->shm_base = shm_base;
 
@@ -314,6 +315,7 @@ static inline int uxsocket_accept(struct control_context *ctx)
 
     new_guest_req = &qe_new_guest->data.new_guest_req;
     new_guest_req->id = g->id;
+    new_guest_req->budget = &g->budget;
     new_guest_req->shm_base = shm_base;
     new_guest_req->shm_len = ctx->config->shm_len;
     ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_NEW_GUEST_REQ);

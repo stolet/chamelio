@@ -11,6 +11,8 @@ int clock_calibrate_tsc(void);
 __u64 clock_us_since_tsc(__u64 tsc_then);
 /* TSC value after given number of microseconds */
 __u64 clock_tsc_after_us(__u64 us);
+/* Converts microseconds to cycles */
+__u64 clock_us_to_tsc(__u64 us);
 /* Current time in nanoseconds */
 __u64 clock_now_ns(void);
 

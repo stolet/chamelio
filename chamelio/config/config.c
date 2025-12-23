@@ -21,6 +21,9 @@ enum cfg_params {
   CP_MAX_GUESTS,
   CP_FP_CORES_MAX,
   CP_FP_NO_XSUMOFFLOAD,
+  CP_PERF_ISO_NO,
+  CP_PERF_ISO_CAP,
+  CP_PERF_ISO_BOOST,
   CP_DPDK_EXTRA,
 };
 
@@ -58,6 +61,15 @@ static struct option opts[] = {
   { .name = "fp-no-xsumoffload",
     .has_arg = no_argument,
     .val = CP_FP_NO_XSUMOFFLOAD },
+  { .name = "perf-iso-no",
+    .has_arg = no_argument,
+    .val = CP_PERF_ISO_NO },
+  { .name = "perf-iso-cap",
+    .has_arg = required_argument,
+    .val = CP_PERF_ISO_CAP },
+  { .name = "perf-iso-boost",
+    .has_arg = required_argument,
+    .val = CP_PERF_ISO_BOOST },
   { .name = "dpdk-extra",
     .has_arg = required_argument,
     .val = CP_DPDK_EXTRA },
@@ -67,6 +79,7 @@ static int config_defaults(struct configuration *c, char *progname);
 static void print_usage(struct configuration *c, char *progname);
 static int parse_int64(const char *s, __u64 *pi);
 static int parse_int32(const char *s, __u32 *pu32);
+static int parse_double(const char *s, double *pd);
 static int parse_arg_append(char *s, struct configuration *c);
 static int parse_cidr(char *s, __u32 *ip, __u8 *prefix);
 static int parse_route(char *s, struct configuration *c);
@@ -90,44 +103,44 @@ int config_parse(struct configuration *c, int argc, char **argv)
     {
       case CP_SHM_LEN:
         if (parse_int64(optarg, &c->shm_len) != 0) {
-          fprintf(stderr, "shm len parsing failed\n");
+          LOG_ERROR("shm len parsing failed");
           goto failed;
         }
         break;
       case CP_SHM_INTERNAL_LEN:
         if (parse_int64(optarg, &c->shm_internal_len) != 0) {
-          fprintf(stderr, "shm internal len parsing failed\n");
+          LOG_ERROR("shm internal len parsing failed");
           goto failed;
         }
         break;
       case CP_CHAM_QUEUE_LEN:
         if (parse_int64(optarg, &c->cham_queue_len) != 0) {
-          fprintf(stderr, "chamelio queue len parsing failed\n");
+          LOG_ERROR("chamelio queue len parsing failed");
           goto failed;
         }
         break;
       case CP_AGT_QUEUE_LEN:
         if (parse_int64(optarg, &c->agt_queue_len) != 0) {
-          fprintf(stderr, "agent queue len parsing failed\n");
+          LOG_ERROR("agent queue len parsing failed");
           goto failed;
         }
         break;
       case CP_CONTROL_TXQ_LEN:
         if (parse_int64(optarg, &c->control_txq_len) != 0) {
-          fprintf(stderr, "control tx queue len parsing failed\n");
+          LOG_ERROR("control tx queue len parsing failed");
           goto failed;
         }
         break;
       case CP_CONTROL_TXQ_PKT_LEN:
         if (parse_int64(optarg, &c->control_txq_pkt_len) != 0) {
-          fprintf(stderr, "control tx queue packet len parsing failed\n");
+          LOG_ERROR("control tx queue packet len parsing failed");
           goto failed;
         }
         break;
       case CP_IP_ADDR:
         c->ip_prefix = 0;
         if (parse_cidr(optarg, &c->ip, &c->ip_prefix) != 0) {
-          fprintf(stderr, "Parsing IP failed\n");
+          LOG_ERROR("Parsing IP failed");
           goto failed;
         }
         break;
@@ -150,6 +163,21 @@ int config_parse(struct configuration *c, int argc, char **argv)
         break;
       case CP_FP_NO_XSUMOFFLOAD:
         c->fp_xsumoffloads = 0;
+        break;
+      case CP_PERF_ISO_NO:
+        c->perf_iso = 0;
+        break;
+      case CP_PERF_ISO_CAP:
+        if (parse_int32(optarg, &c->perf_iso_cap) != 0) {
+          LOG_ERROR("performance isolation cap parsing failed");
+          goto failed;
+        }
+        break;
+      case CP_PERF_ISO_BOOST:
+        if (parse_double(optarg, &c->perf_iso_boost) != 0) {
+          LOG_ERROR("performance isolation boost parsing failed");
+          goto failed;
+        }
         break;
       case CP_DPDK_EXTRA:
         if (parse_arg_append(optarg, c) != 0) {
@@ -185,6 +213,9 @@ static int config_defaults(struct configuration *c, char *progname)
   c->max_guests = 128;
   c->fp_cores_max = 1;
   c->fp_xsumoffloads = 1;
+  c->perf_iso = 1;
+  c->perf_iso_cap = 1000;
+  c->perf_iso_boost = 0.9;
 
   c->dpdk_argc = 1;
   if ((c->dpdk_argv = calloc(2, sizeof(*c->dpdk_argv))) == NULL) 
@@ -223,8 +254,15 @@ static void print_usage(struct configuration *c, char *progname)
       "Fast path:\n"
       "  --fp-cores-max=CORES                    Max cores used for fast path"
            "[default: %u]\n"
-      "  --fp-no-xsumoffload                     Disable TX Checksum offload "
+      "  --fp-no-xsumoffload                     Disable TX Checksum offload"
           "[default: enabled]\n"
+      "Performance isolation:\n"
+      "  --perf-iso-no                           Disables performance isolation"
+          "[default: enabled]\n"
+      "  --perf-iso-cap                          Per guest budget cap in microseconds"
+          "[default: %u]\n"
+      "  --perf-iso-boost                        Budget boost multiplier"
+          "[default: %f]\n"
       "Miscelaneous:\n"
       "  --dpdk-extra=ARG                        Add extra DPDK argument"
       "\n"
@@ -232,8 +270,8 @@ static void print_usage(struct configuration *c, char *progname)
       c->shm_len, c->shm_internal_len,
       c->cham_queue_len, c->agt_queue_len, c->control_txq_len,
       c->control_txq_pkt_len,
-      c->max_guests,
-      c->fp_cores_max);
+      c->max_guests, c->fp_cores_max, 
+      c->perf_iso_cap, c->perf_iso_boost);
 }
 
 static int parse_int64(const char *s, __u64 *pi)
@@ -258,6 +296,15 @@ static int parse_int8(const char *s, __u8 *pi)
 {
   char *end;
   *pi = strtoul(s, &end, 10);
+  if (!*s || *end)
+    return -1;
+  return 0;
+}
+
+static int parse_double(const char *s, double *pd)
+{
+  char *end;
+  *pd = strtod(s, &end);
   if (!*s || *end)
     return -1;
   return 0;

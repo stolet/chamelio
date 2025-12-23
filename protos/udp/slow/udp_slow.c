@@ -307,7 +307,6 @@ int handle_sock_setopt(struct udp_slow_context *ctx,
   {
     case SO_REUSEPORT:
       sock->reuport = 1;
-      LOG_DEBUG("set sock to reuseport");
       break;
     default:
       break;
@@ -379,7 +378,6 @@ int handle_bind(struct udp_slow_context *ctx,
   sock->local_ip = req->local_ip;
   sock->local_port = req->local_port;
 
-  LOG_DEBUG("adding to port nsocks=%d sock_id=%d", port->nsocks, req->sock_id);
   port->sids[port->nsocks] = req->sock_id;
   port->nsocks++;
 
