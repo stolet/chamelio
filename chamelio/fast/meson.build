@@ -12,9 +12,9 @@ deps = [
   dependency('nic_dep'),
   dependency('queue_dep'),
   dependency('chamelio_dep'),
-  dependency('udp_fast_dep'),
   dependency('pkt_hdrs_dep'),
   dependency('arp_dep'),
+  dependency('udp_dep'),
   dependency('cham'),
 ]
 

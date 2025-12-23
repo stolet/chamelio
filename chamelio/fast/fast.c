@@ -13,7 +13,6 @@
 #include "eth_hdr.h"
 #include "arp_hdr.h"
 #include "arp.h"
-#include "udp.h"
 #include "log.h"
 #include "log_pkt.h"
 #include "config.h"
@@ -21,6 +20,7 @@
 #include "ebpf.h"
 #include "txcache.h"
 #include "clock.h"
+#include "udp.h"
 
 
 struct guest_fast * init_guest(__u8 id, __u64 shm_len);

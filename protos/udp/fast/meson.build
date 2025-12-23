@@ -1,12 +1,3 @@
-udp_fast_inc = include_directories('include', '../include')
-
-deps = [
-  dependency('log_dep'),
-  dependency('cham_utils_dep'),
-  dependency('pkt_hdrs_dep'),
-  dependency('cham'),
-]
-
 ecc = find_program('ecc', required: true)
 
 # Compile udp_fast.ebpf.c to an object in the build dir
@@ -34,19 +25,3 @@ ebpf_obj = custom_target(
   command: [ ecc, '@INPUT@', '--output-path', meson.current_build_dir(),] + ecc_inc_args,
   build_by_default: true
 )
-
-udp_fast_lib = static_library(
-  'udp_fast',
-  'udp_fast.c',
-  include_directories : udp_fast_inc,
-  dependencies: deps,
-  install : false,
-)
-
-udp_fast_dep = declare_dependency(
-  link_with : udp_fast_lib,
-  include_directories : udp_fast_inc,
-  dependencies: deps,
-)
-
-meson.override_dependency('udp_fast_dep', udp_fast_dep)

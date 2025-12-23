@@ -49,17 +49,6 @@ struct cham_map {
   void *addr;
 };
 
-struct cham_proto_handle {
-  /* List of protocol queues use by fast-path to enqueue */
-  struct cham_equeue equeues[MAX_PROTO_QUEUES]; 
-  /* List of created protocol maps */
-  struct cham_map maps[MAX_PROTO_MAPS];
-  /* TX scheduler for this protocol */
-  struct cham_scheduler sched;
-  /* Shared memory base */
-  void *shm_base;
-};
-
 /* Context passed as a parameter to ebpf functions */
 struct cham_ebpf_ctx {
   /* Pointer to packet buffer */

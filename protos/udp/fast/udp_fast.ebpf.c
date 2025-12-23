@@ -7,7 +7,6 @@
 #include "ip_hdr.h"
 #include "eth_hdr.h"
 #include "udp.h"
-#include "udp_fast.h"
 #include "udp_queue_types.h"
 #include "utils.h"
 

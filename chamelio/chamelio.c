@@ -94,7 +94,8 @@ int main (int argc, char **argv)
   }
 
   /* Allocate fast->control queues */
-  fc_handles = malloc(sizeof(struct shm_handle *) * config->fp_cores_max);
+  fc_handles = rte_malloc("fast->control handle", 
+      sizeof(struct shm_handle *) * config->fp_cores_max, 0);
   if (fc_handles == NULL)
   {
     LOG_ERROR("failed to allocate list for fast to control queue handles");
@@ -103,7 +104,8 @@ int main (int argc, char **argv)
   cham_ctx.fast_ctl_handles = fc_handles;
   
   /* Allocate control->fast queues */
-  cf_handles = malloc(sizeof(struct shm_handle *) * config->fp_cores_max);
+  cf_handles = rte_malloc("control->fast handle", 
+      sizeof(struct shm_handle *) * config->fp_cores_max, 0);
   if (cf_handles == NULL)
   {
     LOG_ERROR("failed to allocate list for control-path to fast-path handles");
@@ -112,7 +114,8 @@ int main (int argc, char **argv)
   cham_ctx.ctl_fast_handles = cf_handles;
   
   /* Allocate control tx queues */
-  txq_handles = malloc(sizeof(struct shm_handle *) * config->fp_cores_max);
+  txq_handles = rte_malloc("tx queue handles", 
+      sizeof(struct shm_handle *) * config->fp_cores_max, 0);
   if (txq_handles == NULL)
   {
     LOG_ERROR("failed to allocate list for tx queue handles");
@@ -181,11 +184,11 @@ free_shs:
     shmalloc_free(alloc, txq_handles[i]);
   }
 free_sh_txq_list:
-  free(txq_handles);
+  rte_free(txq_handles);
 free_sh_control_fast_list:
-  free(fc_handles);
+  rte_free(fc_handles);
 free_sh_fast_control_list:
-  free(cf_handles);
+  rte_free(cf_handles);
 free_sctx:
   free(c_ctx);
 free_alloc:
