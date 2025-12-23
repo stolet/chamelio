@@ -32,7 +32,7 @@ int controlif_poll(struct fast_context *ctx)
  
   /* TODO: Might be good to decouple messages with control
      information from messages that want to send packets */
-  n = BATCH_SIZE;
+  n = FAST_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < n)
     n = TXBUF_SIZE - ctx->tx_n;
   

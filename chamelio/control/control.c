@@ -230,7 +230,7 @@ static inline int poll_fast(struct control_context *ctx)
   i = 0;
   cores_polled = 0;
   increment_core = 0;
-  while (i < BATCH_SIZE)
+  while (i < CONTROL_BATCH_SIZE)
   {
     if (cores_polled >= ctx->config->fp_cores_max)
       break;
@@ -291,7 +291,7 @@ static inline int poll_guests(struct control_context *ctx)
   i = 0;
   guests_polled = 0;
   increment_guest = 0;
-  while (i < BATCH_SIZE)
+  while (i < CONTROL_BATCH_SIZE)
   {
     if (guests_polled >= ctx->n_guests)
       break;
@@ -360,7 +360,7 @@ static inline int poll_timeouts(struct control_context *ctx)
   int i;
   struct to_entry *te;
   
-  for (i = 0; i < BATCH_SIZE; i++)
+  for (i = 0; i < CONTROL_BATCH_SIZE; i++)
   {
     te = tomgr_peek(ctx->tomgr);
     if (te == NULL)

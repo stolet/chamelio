@@ -164,11 +164,11 @@ int fast_loop(struct fast_context *ctx)
 static inline int poll_rx(struct fast_context *ctx)
 {
   int i, n, ret;
-  struct rte_mbuf *mbs[BATCH_SIZE];
+  struct rte_mbuf *mbs[FAST_BATCH_SIZE];
   struct guest_fast *g;
   __u64 tsc_start, tsc_spent;
 
-  n = BATCH_SIZE;
+  n = FAST_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < n)
     n = TXBUF_SIZE - ctx->tx_n;
 
@@ -219,7 +219,7 @@ static inline int poll_queues(struct fast_context *ctx)
   struct rte_mbuf **mbs;
   __u64 tsc_start, tsc_spent;
 
-  max = BATCH_SIZE;
+  max = FAST_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
     max = TXBUF_SIZE - ctx->tx_n;
 
@@ -335,7 +335,7 @@ static inline int poll_tx(struct fast_context *ctx)
   if (ctx->guests == NULL)
     return 0;
 
-  max = BATCH_SIZE;
+  max = FAST_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
     max = TXBUF_SIZE - ctx->tx_n;
 

@@ -7,7 +7,7 @@
 #include "udp.h"
 
 /* Size of batch size used to poll queues */
-#define BATCH_SIZE 16
+#define SLOW_BATCH_SIZE 16
 
 /* Size of UDP transmit buffer in bytes */
 #define TXBUF_SZ 32768

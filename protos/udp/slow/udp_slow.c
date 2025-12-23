@@ -135,7 +135,7 @@ int poll_apps(struct udp_slow_context *ctx)
   msgs_i = 0;
   apps_polled = 0;
   ctxs_polled = 0;
-  while (msgs_i < BATCH_SIZE && ctx->n_apps != 0)
+  while (msgs_i < SLOW_BATCH_SIZE && ctx->n_apps != 0)
   {     
     a = &ctx->apps[ctx->next_app];
     if (ctxs_polled >= a->n_ctxs)

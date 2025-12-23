@@ -13,11 +13,11 @@
 #include "queue_types.h"
 #include "shmalloc.h"
 
-#define BATCH_SIZE 16
+#define FAST_BATCH_SIZE 64
 
-/* We want the TXBUF_SIZE to be double the BATCH_SIZE so we can 
+/* We want the TXBUF_SIZE to be double the FAST_BATCH_SIZE so we can 
    fit packets from the TX phase and ACKs sent in the receive phase */
-#define TXBUF_SIZE 2 * BATCH_SIZE
+#define TXBUF_SIZE 2 * FAST_BATCH_SIZE
 /* Size of cache for preallocated mbufs used for transmission */
 #define TX_CACHE_SIZE 128
 

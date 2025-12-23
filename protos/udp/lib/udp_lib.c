@@ -18,7 +18,7 @@
 #include "log.h"
 #include "uxsocket.h"
 
-#define POLL_BATCH 16
+#define LIB_BATCH_SIZE 64
 
 static struct udp_lib *udp = NULL;
 
@@ -558,10 +558,10 @@ int udp_poll_fast(struct udp_context_lib *ctx)
   n = 0;
   ncores = ctx->ncores;
   fast_app_qs = ctx->fast_app_qs;
-  for (i = 0; i < ncores && n < POLL_BATCH; i++)
+  for (i = 0; i < ncores && n < LIB_BATCH_SIZE; i++)
   {
     q = fast_app_qs[i];
-    while (n < POLL_BATCH && (qe = queue_head(q)) != NULL)
+    while (n < LIB_BATCH_SIZE && (qe = queue_head(q)) != NULL)
     {       
       n++;
     
@@ -594,7 +594,7 @@ int udp_poll_slow(struct udp_context_lib *ctx)
 
   n = 0;  
   q = ctx->slow_app_q;
-  while (n < POLL_BATCH)
+  while (n < LIB_BATCH_SIZE)
   {
     qe = queue_head(q);
   
