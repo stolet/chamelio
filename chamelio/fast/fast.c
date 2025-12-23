@@ -138,17 +138,11 @@ int fast_loop(struct fast_context *ctx)
       LOG_ERROR("poll_queues failed");
     }
 
-    /* Flush entries in transmit buffer added by poll_queues */
-    tx_flush(ctx);
-
     ret = poll_tx(ctx);
     if (ret < 0)
     {
       LOG_ERROR("poll_tx failed");
     }
-
-    /* Flush entries in transmit buffer added by poll_tx */
-    tx_flush(ctx);
 
     ret = controlif_poll(ctx);
     if (ret < 0)
@@ -315,8 +309,10 @@ static inline int poll_queues(struct fast_context *ctx)
     __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
   }
 
+  tx_flush(ctx);
+
   /* Free buffers that were not used */
-  for (i = ntx; i < max; i++)
+  for (i = 0; i < max; i++)
     txcache_free(ctx, mbs[i]);
 
   return 0;
@@ -394,8 +390,10 @@ static inline int poll_tx(struct fast_context *ctx)
     __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
   }
 
+  tx_flush(ctx);
+
   /* Free buffers that were not used */
-  for (i = ntx; i < max; i++)
+  for (i = 0; i < max; i++)
     txcache_free(ctx, mbs[i]);
 
   return 0;
