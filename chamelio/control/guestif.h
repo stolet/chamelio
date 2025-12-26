@@ -10,6 +10,7 @@
 #include "shmalloc.h"
 
 struct guest_event {
+  /* Type of guest event */
   int type;
   /* File descriptor for the connection to the uxsocket */
   int fd;

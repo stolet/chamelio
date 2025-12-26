@@ -216,7 +216,7 @@ static inline int uxsocket_accept(struct control_context *ctx)
   ret = uxsocket_sendfd(cfd, sfd, -1);
   if (ret < 0)
   {
-    LOG_ERROR("failed to sned shm fd");
+    LOG_ERROR("failed to send shm fd");
     goto shm_destroy;
   }
 

@@ -8,9 +8,12 @@
 #define IVSHMEM_SOCKET_PATH "/run/chamelio/ivshmem_socket"
 
 struct ivshmem_event {
+  /* Type of ivshmem event */
   int type;
+  /* File descriptor for the connection to the uxsocket */
   int fd;
-  __u8 vmid;
+  /* Guest protocol */
+  struct guest_control *guest;
 };
 
 int ivshmemif_init(struct control_context *ctx);

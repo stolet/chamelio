@@ -168,17 +168,17 @@ close_fd:
 
 static int uxsocket_accept(struct control_context *ctx)
 {
-  int i, ret, cfd, ifd, nfd, sfd;
+  int i, ret, cfd, sfd, nfd, ifd;
   void *shm_base;
   char shm_name[30];
   struct epoll_event ev;
-  struct ivshmem_event *gev;
+  struct ivshmem_event *iev;
   struct guest_control *g;
   struct shm_allocator *alloc;
   struct shm_handle *guest_cham_handle, *cham_guest_handle;
-  struct dqueue *guest_cham_q; 
+  struct dqueue *guest_cham_q;
   struct equeue *cham_guest_q;
-  struct queue_entry *qe_new_vm;
+  struct queue_entry *qe_new_guest;
   struct queue_new_guest_req *new_guest_req;
 
   int64_t version = IVSHMEM_PROTOCOL_VERSION;
@@ -187,7 +187,7 @@ static int uxsocket_accept(struct control_context *ctx)
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));
 
-  /* Accept connection from VM */
+  /* Accept connection from guest */
   cfd = accept(ctx->ivshmem_uxfd, NULL, NULL);
   if (cfd < 0)
   {
@@ -258,20 +258,22 @@ static int uxsocket_accept(struct control_context *ctx)
   ret = uxsocket_sendfd(cfd, ifd, ctx->n_guests);
   if (ret < 0)
   {
-    LOG_ERROR("failed to senf interrupt fd");
+    LOG_ERROR("failed to send interrupt fd");
     goto close_ifd;
   }
 
   /* Allocate guest event */
-  gev = malloc(sizeof(struct ivshmem_event));
-  if (gev == NULL)
+  iev = malloc(sizeof(struct ivshmem_event));
+  if (iev == NULL)
   {
-    LOG_ERROR("failed to allocate guest event struct");
+    LOG_ERROR("failed to allocate app event struct");
     goto close_ifd;
   }
 
+  /* Allocate control path struct for guest */
   g = &ctx->guests[ctx->n_guests];
   g->id = ctx->n_guests;
+  g->budget = ctx->config->perf_iso_cap;
   g->shm_fd = sfd;
   g->shm_base = shm_base;
 
@@ -279,38 +281,38 @@ static int uxsocket_accept(struct control_context *ctx)
   if (alloc == NULL)
   {
     LOG_ERROR("failed to initialise shm allocator");
-    goto free_gev;
+    goto free_iev;
   }
   g->alloc = alloc;
 
-  /* Create queue that holds messages from guest agent to Chamelio */
+  /* Create queue that holds messages from guest to Chamelio */
   ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len * 
       sizeof(struct queue_entry), &guest_cham_handle);
   if (ret != 0)
   {
-    LOG_ERROR("failed to allocated memory in shared memory");
+    LOG_ERROR("failed to allocate memory in shared memory");
     goto free_alloc;
   }
   memset(guest_cham_handle->addr, 0, ctx->config->agt_queue_len);
 
-  guest_cham_q = dqueue_new(ctx->config->agt_queue_len,
+  guest_cham_q = dqueue_new(ctx->config->agt_queue_len, 
       sizeof(struct queue_entry),
       guest_cham_handle->addr, guest_cham_handle->off);
   if (guest_cham_q == NULL)
   {
     LOG_ERROR("failed to create guest->chamelio queue");
-    goto free_agt_cham_handle;
+    goto free_guest_cham_handle;
   }
-  assert(guest_cham_q->entries == alloc->shm_base);
+  assert(guest_cham_q->off == 0);
   g->guest_cham_q = guest_cham_q;
 
-  /* Create queue that holds messages from Chamelio to guest agent */
+  /* Create queue that holds messages from Chamelio to guest */
   ret = shmalloc_alloc(alloc, ctx->config->agt_queue_len * 
     sizeof(struct queue_entry), &cham_guest_handle);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocated memory in shared memory");
-    goto free_agt_cham_q;
+    goto free_guest_cham_q;
   }
   memset(cham_guest_handle->addr, 0, ctx->config->agt_queue_len);
 
@@ -320,66 +322,69 @@ static int uxsocket_accept(struct control_context *ctx)
   if (cham_guest_q == NULL)
   {
     LOG_ERROR("failed to create chamelio->guest queue");
-    goto free_cham_agt_handle;
+    goto free_cham_guest_handle;
   }
-  assert(cham_guest_q->entries == 
-      (alloc->shm_base + ctx->config->agt_queue_len));
+  assert(cham_guest_q->off == 
+      ctx->config->agt_queue_len * sizeof(struct queue_entry));
   g->cham_guest_q = cham_guest_q;
 
   /* Add connection to epoll */
-  gev->type = EP_VM;
-  gev->fd = cfd;
-  gev->vmid = ctx->n_guests;
+  iev->type = EP_VM;
+  iev->fd = cfd;
+  iev->guest = g;
 
   ev.events = EPOLLIN | EPOLLRDHUP | EPOLLERR;
-  ev.data.ptr = gev;
+  ev.data.ptr = iev;
   ret = epoll_ctl(ctx->ivshmem_epfd, EPOLL_CTL_ADD, cfd, &ev);
   if (ret != 0)
   {
     LOG_ERROR("epoll_ctl failed");
     perror("");
-    goto free_cham_agt_q;
-  }
+    goto free_cham_guest_q;
+  }  
 
-  /* Register new guest with the fast-path */
+  /* Register new guest with the fast-path cores */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
-    qe_new_vm = queue_tail(ctx->ctl_fast_qs[i]);
-    if (qe_new_vm == NULL)
+    qe_new_guest = queue_tail(ctx->ctl_fast_qs[i]);
+    if (qe_new_guest == NULL)
     {
       LOG_ERROR("control to fast queue is empty");
-      goto remove_from_epoll;
+      goto free_cham_guest_q;
     }
 
-    new_guest_req = &qe_new_vm->data.new_guest_req;
+    new_guest_req = &qe_new_guest->data.new_guest_req;
     new_guest_req->id = g->id;
+    new_guest_req->budget = &g->budget;
     new_guest_req->shm_base = shm_base;
     new_guest_req->shm_len = ctx->config->shm_len;
     ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_NEW_GUEST_REQ);
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue new guest req to fast-path");
-      goto remove_from_epoll;
+      goto free_cham_guest_q;
     }
   }
 
   ctx->n_guests++;
+
+  LOG_DEBUG("registered new vm=%d", g->id);
   return 0;
 
-remove_from_epoll:
-  epoll_ctl(ctx->ivshmem_epfd, EPOLL_CTL_DEL, gev->fd, NULL);
-free_cham_agt_q:
+free_cham_guest_q:
   free(cham_guest_q);
-free_cham_agt_handle:
-  free(cham_guest_handle);
-free_agt_cham_q:
+free_cham_guest_handle:
+  shmalloc_free(alloc, cham_guest_handle);
+free_guest_cham_q:
   free(guest_cham_q);
-free_agt_cham_handle:
+free_guest_cham_handle:
   shmalloc_free(alloc, guest_cham_handle);
 free_alloc:
   free(alloc);
-free_gev:
-  free(gev);
+free_iev:
+  free(iev);
+
+  
 close_ifd:
   close(ifd);
 close_nfd:
