@@ -3,7 +3,6 @@ chamelio_inc = include_directories('../include')
 llvmbpf_inc = include_directories('/usr/local/include/llvmbpf')
 prevail_inc = include_directories('/usr/local/include/prevail')
 
-
 control_srcs = files('control.c', 'ivshmemif.c', 'guestif.c', 'verifier.cpp')
 
 prevail_lib = cc.find_library('prevail',
@@ -11,14 +10,9 @@ prevail_lib = cc.find_library('prevail',
   required: true
 )
 
-prevail_yaml_lib = cc.find_library('ebpf_yaml_lib',
-  dirs: ['/usr/local/lib'],
-  required: false
-)
-
 prevail_dep = declare_dependency(
   include_directories: prevail_inc,
-  dependencies: [prevail_lib, prevail_yaml_lib]
+  dependencies: [prevail_lib]
 )
 
 llvm_dep = dependency(

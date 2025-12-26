@@ -3,14 +3,7 @@
 #include <vector>
 #include <linux/bpf.h>
 
-#include "prevail/ir/unmarshal.hpp"
-#include "prevail/ir/syntax.hpp"
-#include "prevail/spec/vm_isa.hpp"
-#include "prevail/ir/program.hpp"
-#include "prevail/result.hpp"
-#include "prevail/spec/type_descriptors.hpp"
-#include "prevail/string_constraints.hpp"
-#include "prevail/verifier.hpp"
+#include <prevail.hpp>
 
 #include "verifier.h"
 #include "cham_fast.h"
