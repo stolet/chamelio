@@ -165,7 +165,7 @@ struct udp_context_lib * udp_ctx_new()
   if (ctx->id == 0)
   {
     shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE, 
-        MAP_SHARED | MAP_POPULATE, udp->shm_fd, 0);
+        MAP_SHARED | MAP_POPULATE, udp->shm_fd, res->shm_off);
     if (shm_base == (void *) -1) 
     {
       LOG_ERROR("failed to map shm region");

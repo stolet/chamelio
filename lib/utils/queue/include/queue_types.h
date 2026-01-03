@@ -15,8 +15,8 @@ enum queue_type {
   QUEUE_NEW_GUEST_REQ,
   
   /* Request/response for new protocol registration */
-  QUEUE_PROTO_REQ,
-  QUEUE_PROTO_RES,
+  QUEUE_NEW_PROTO_REQ,
+  QUEUE_NEW_PROTO_RES,
   
   /* Request/response for creating protocol queues */
   QUEUE_NEW_QUEUE_REQ,
@@ -83,10 +83,6 @@ struct queue_new_proto_res {
   __u32 local_ip;
   /* Size of shm region */
   __u32 shm_len;
-  /* Number of elements in Guest <-> Control queues */
-  __u32 guestq_nelems;
-  /* Element size of Guest <-> Control queues */
-  __u32 guestq_elsize;
 } __attribute__((packed));
 
 /* Request to create queues for the protocol */

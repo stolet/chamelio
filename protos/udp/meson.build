@@ -1,3 +1,4 @@
+subdir('config')
 subdir('fast')
 subdir('slow')
 subdir('lib')

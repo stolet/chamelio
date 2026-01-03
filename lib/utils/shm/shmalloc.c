@@ -10,7 +10,7 @@ static inline void sh_free(struct shm_handle *sh);
 static inline void merge_items(struct shm_allocator *alloc, 
     struct shm_handle *sh_prev);
 
-struct shm_allocator * shmalloc_init(int shm_fd, void *shm_base, __u64 len)
+struct shm_allocator * shmalloc_init(void *shm_base, __u64 len)
 {
   struct shm_allocator *alloc;
   struct shm_handle *sh;
@@ -33,7 +33,6 @@ struct shm_allocator * shmalloc_init(int shm_fd, void *shm_base, __u64 len)
     return NULL;
   }
   alloc->freelist = sh;
-  alloc->shm_fd = shm_fd;
   alloc->shm_base = shm_base;
 
   return alloc;

@@ -78,7 +78,7 @@ int main (int argc, char **argv)
   cham_ctx.shm_base_internal = shm_base;
 
   /* Create allocator for internal shared memory region */
-  alloc = shmalloc_init(sfd, shm_base, config->shm_internal_len);
+  alloc = shmalloc_init(shm_base, config->shm_internal_len);
   if (alloc == NULL)
   {
     LOG_ERROR("failed to initialise shared memory allocator");

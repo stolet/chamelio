@@ -29,7 +29,7 @@ llvmbpf_dep = cc.find_library(
 spdlog_dep  = cc.find_library('spdlog', dirs: ['/usr/local/lib'], required: true)
 
 deps = [
-  dependency('config_dep'),
+  dependency('cham_config_dep'),
   dependency('nic_dep'),
   dependency('log_dep'),
   dependency('shm_dep'),

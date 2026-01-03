@@ -76,6 +76,8 @@ struct udp_queue_new_actx_res {
   __u32 n_fp_cores;
   /* Size of shm region */
   __u32 shm_len;
+  /* Offset of shm region */
+  __u64 shm_off;
   /* NUmber of elements app->slow queue */
   __u32 as_nelems;
   /* Size of elements app->slow queue */

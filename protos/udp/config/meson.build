@@ -7,7 +7,7 @@ deps = [
 ]
 
 config_lib = static_library(
-  'cham_config',
+  'udp_config',
   config_srcs,
   include_directories : config_inc,
   dependencies : deps,
@@ -20,4 +20,4 @@ config_dep = declare_dependency(
   dependencies: deps,
 )
 
-meson.override_dependency('cham_config_dep', config_dep)
+meson.override_dependency('udp_config_dep', config_dep)

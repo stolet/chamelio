@@ -5,6 +5,8 @@
 #include <cham_fast.h>
 
 #include "udp.h"
+#include "udp_config.h"
+#include "vfio.h"
 
 /* Size of batch size used to poll queues */
 #define SLOW_BATCH_SIZE 16
@@ -45,6 +47,8 @@ struct udp_app_slow {
 };
 
 struct udp_slow_context {
+  /* UDP confguration */
+  struct udp_configuration config;
   /* Listening UX sockets for new applications */
   int app_uxfd;
   /* Epoll object used by UX application socket */
@@ -52,8 +56,6 @@ struct udp_slow_context {
   /* Number of sockets registered */
   __u32 n_socks;
 
-  /* Chamelio library guest structure */
-  struct guest_lib *guest;
   /* Chamelio library protocol structure */
   struct proto_lib *proto;
 

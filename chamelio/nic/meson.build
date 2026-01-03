@@ -4,7 +4,7 @@ nic_srcs = files('nic.c', 'nic_fast.c')
 
 deps = [
   dependency('chamelio_dep'),
-  dependency('config_dep'),
+  dependency('cham_config_dep'),
   dependency('log_dep'),
 ]
 

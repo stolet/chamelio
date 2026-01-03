@@ -4,6 +4,7 @@
 #include <linux/types.h>
 
 #include "queue.h"
+#include "vfio.h"
 
 #define APP_SOCKET_PATH "/run/chamelio/app_socket"
 
@@ -16,6 +17,11 @@
 
 #define IVSHMEM_PROTOCOL_VERSION 0
 #define HOST_PEERID 255
+
+/* Number of elements in Guest <-> Control queues */
+#define GUESTQ_NELEMS (16 * 1024)
+/* Element size of Guest <-> Control queues */
+#define GUESTQ_ELSIZE sizeof(struct queue_entry)
 
 struct proto_queue_lib {
   /* ID of this queue */
@@ -60,18 +66,22 @@ struct guest_lib {
 };
 
 struct proto_lib {
+  /* Shared memory file descriptor */
+  int shm_fd;
   /* Size of shared memory region */
   __u32 shm_size;
   /* Base pointer for shared memory region used by this guest */
   void *shm_base;
+  /* Shared memory offset used in mmap */
+  size_t shm_off;
   /* Allocator for shared memory */
   struct shmalloc *alloc;
-  /* Guest this protocol belongs to */
-  struct guest_lib *guest;
   /* Number of Chamelio fast-path cores */
   __u32 n_fp_cores;
   /* Local IP address */
   __u32 local_ip;
+    /* VFIO structure used to map shared memory in guest */
+  struct vfio vfio;
   
   /* Guest->control queue */
   struct equeue *guest_ctl_q;
@@ -97,8 +107,10 @@ int cham_init_ivshmem();
 
 /* Connects a guest with Chamelio */
 struct guest_lib * cham_connect_guest();
-/* Creates a new protocol and maps shared memory region */
-struct proto_lib* cham_new_proto(struct guest_lib *g, __u32 shmsize);
+/* Creates a new protocol and maps shared memory region on host */
+struct proto_lib *cham_new_proto_bare(struct guest_lib *g);
+/* Creates a new protocol and maps shared memory region in guest */
+struct proto_lib *cham_new_proto_virt();
 
 /* Creates a queue of the specified size in the shared memory of the protocol */
 struct proto_queue_lib * cham_new_queue(struct proto_lib *p, 

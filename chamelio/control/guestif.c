@@ -235,7 +235,7 @@ static inline int uxsocket_accept(struct control_context *ctx)
   g->shm_fd = sfd;
   g->shm_base = shm_base;
 
-  alloc = shmalloc_init(sfd, shm_base, ctx->config->shm_len);
+  alloc = shmalloc_init(shm_base, ctx->config->shm_len);
   if (alloc == NULL)
   {
     LOG_ERROR("failed to initialise shm allocator");
@@ -424,8 +424,6 @@ static inline void uxsocket_receive(struct control_context *ctx,
   gev->proto_res.n_fp_cores = ctx->config->fp_cores_max;
   gev->proto_res.shm_len = ctx->config->shm_len;
   gev->proto_res.local_ip = ctx->config->ip;
-  gev->proto_res.guestq_nelems = ctx->config->agt_queue_len;
-  gev->proto_res.guestq_elsize = sizeof(struct queue_entry);
 
   /* Send out response */
   res_sz = sizeof(struct queue_new_proto_res);

@@ -13,7 +13,9 @@
 #include "log.h"
 #include "shmalloc.h"
 #include "uxsocket.h"
+#include "vfio.h"
 
+static int handle_proto_res(struct proto_lib *p, struct queue_entry *qe);
 static int handle_new_queue_res(struct proto_lib *p, struct queue_entry *qe);
 static int handle_new_map_res(struct proto_lib *p, struct queue_entry *qe);
 static int handle_allocate_ebpf_res(struct proto_lib *p, struct queue_entry *qe);
@@ -77,7 +79,7 @@ close_sockfd:
   return NULL;
 }
 
-struct proto_lib *cham_new_proto(struct guest_lib *g, __u32 shmsize)
+struct proto_lib *cham_new_proto_bare(struct guest_lib *g)
 {
   int ret;
   ssize_t sz, off;
@@ -150,12 +152,13 @@ struct proto_lib *cham_new_proto(struct guest_lib *g, __u32 shmsize)
   p->shm_base = shm_base;
   p->shm_size = res->shm_len;
   p->nmaps = 0;
-  p->guest = g;
   p->n_fp_cores = res->n_fp_cores;
   p->local_ip = res->local_ip;
+  p->shm_fd = g->shm_fd;
+  p->shm_off = 0;
 
   /* Create allocator that manages shared memory */
-  alloc = shmalloc_init(g->shm_fd, shm_base, res->shm_len);
+  alloc = shmalloc_init(shm_base, res->shm_len);
   if (alloc == NULL)
   {
     LOG_ERROR("failed to create allocator");
@@ -163,14 +166,14 @@ struct proto_lib *cham_new_proto(struct guest_lib *g, __u32 shmsize)
   }
 
   /* Create queue for messages from guest to the control-path */
-  ret = shmalloc_alloc(alloc, res->guestq_nelems * res->guestq_elsize, &sh);
+  ret = shmalloc_alloc(alloc, GUESTQ_NELEMS * GUESTQ_ELSIZE, &sh);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocate memory for queue");
     return NULL;
   }
 
-  eq = equeue_new(res->guestq_nelems, res->guestq_elsize, sh->addr, sh->off);
+  eq = equeue_new(GUESTQ_NELEMS, GUESTQ_ELSIZE, sh->addr, sh->off);
   if (eq == NULL)
   {
     LOG_ERROR("failed to create queue");
@@ -183,14 +186,14 @@ struct proto_lib *cham_new_proto(struct guest_lib *g, __u32 shmsize)
   assert(eq->off == 0);
 
   /* Create queue for messages from control-path to the guest */
-  ret = shmalloc_alloc(alloc, res->guestq_nelems * res->guestq_elsize, &sh);
+  ret = shmalloc_alloc(alloc, GUESTQ_NELEMS * GUESTQ_ELSIZE, &sh);
   if (ret != 0)
   {
     LOG_ERROR("failed to allocate memory for queue");
     return NULL;
   }
 
-  dq = dqueue_new(res->guestq_nelems, res->guestq_elsize, sh->addr, sh->off);
+  dq = dqueue_new(GUESTQ_NELEMS, GUESTQ_ELSIZE, sh->addr, sh->off);
   if (dq == NULL)
   {
     LOG_ERROR("failed to allocate memory for queue");
@@ -200,7 +203,111 @@ struct proto_lib *cham_new_proto(struct guest_lib *g, __u32 shmsize)
 
   /* Queue from the control path to the guest should always be the
      second thing allocated in the shared memory region */
-  assert(dq->off == (res->guestq_nelems * res->guestq_elsize));
+  assert(dq->off == (GUESTQ_NELEMS * GUESTQ_ELSIZE));
+
+  return p;
+}
+
+struct proto_lib *cham_new_proto_virt()
+{
+  int ret;
+  struct proto_lib *p;
+  struct equeue *eq;
+  struct dqueue *dq;
+  struct shm_allocator *alloc;
+  struct shm_handle *sh;
+  struct queue_entry *qe;
+  struct queue_new_proto_req *req;
+  struct vfio vfio;
+
+  ret = vfio_init(&vfio);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to init vfio");
+    return NULL;
+  }
+
+  p = malloc(sizeof(struct proto_lib));
+  if (p == NULL)
+  {
+    LOG_ERROR("failed to allocate proto struct");
+    return NULL;
+  }
+  p->nqueues = 0;
+  p->shm_base = vfio.shm_base;
+  p->nmaps = 0;
+  p->n_fp_cores = 0;
+  p->shm_fd = vfio.dev;
+  p->shm_off = vfio.shm_off;
+
+  /* Create allocator that manages shared memory */
+  alloc = shmalloc_init(vfio.shm_base, vfio.shm_size);
+  if (alloc == NULL)
+  {
+    LOG_ERROR("failed to create allocator");
+    return NULL;
+  }
+
+  /* Create queue for messages from guest to the control-path */
+  ret = shmalloc_alloc(alloc, GUESTQ_NELEMS * GUESTQ_ELSIZE, &sh);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocate memory for queue");
+    return NULL;
+  }
+
+  eq = equeue_new(GUESTQ_NELEMS, GUESTQ_ELSIZE, sh->addr, sh->off);
+  if (eq == NULL)
+  {
+    LOG_ERROR("failed to create queue");
+    return NULL;
+  }
+  p->guest_ctl_q = eq;
+
+  /* Queue from the guest to the control path should always
+     be the first thing allocated in the shared memory region. */
+  assert(eq->off == 0);
+
+  /* Create queue for messages from control-path to the guest */
+  ret = shmalloc_alloc(alloc, GUESTQ_NELEMS * GUESTQ_ELSIZE, &sh);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to allocate memory for queue");
+    return NULL;
+  }
+
+  dq = dqueue_new(GUESTQ_NELEMS, GUESTQ_ELSIZE, sh->addr, sh->off);
+  if (dq == NULL)
+  {
+    LOG_ERROR("failed to allocate memory for queue");
+    return NULL;
+  }
+  p->ctl_guest_q = dq;
+
+  /* Queue from the control path to the guest should always be the
+     second thing allocated in the shared memory region */
+  assert(dq->off == (GUESTQ_NELEMS * GUESTQ_ELSIZE));
+
+  /* Send message to control to register protocol */
+  qe = queue_tail(eq);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get enqueue tail");
+    return NULL;
+  }
+  req = &qe->data.new_proto_req;
+  req->proto_type = 1;
+
+  ret = queue_enqueue(eq, QUEUE_NEW_PROTO_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue new proto request");
+    return NULL;
+  }
+
+  /* Wait to get protocol response */
+  while (p->n_fp_cores != 0)
+    cham_poll_control(p);
 
   return p;
 }
@@ -477,33 +584,47 @@ int cham_poll_control(struct proto_lib *p)
 
   switch (qe->type)
   {
-  case QUEUE_NEW_QUEUE_RES:
-    handle_new_queue_res(p, qe);
-    queue_dequeue(q);
-    return QUEUE_NEW_QUEUE_RES;
-  case QUEUE_NEW_MAP_RES:
-    handle_new_map_res(p, qe);
-    queue_dequeue(q);
-    return QUEUE_NEW_MAP_RES;
-  case QUEUE_ALLOCATE_EBPF_RES:
-    handle_allocate_ebpf_res(p, qe);
-    queue_dequeue(q);
-    return QUEUE_ALLOCATE_EBPF_RES;
-  case QUEUE_FREE_EBPF_RES:
-    handle_free_ebpf_res(p, qe);
-    queue_dequeue(q);
-    return QUEUE_FREE_EBPF_RES;
-  case QUEUE_UPLOAD_EBPF_RES:
-    handle_upload_ebpf_res(p, qe);
-    queue_dequeue(q);
-    return QUEUE_UPLOAD_EBPF_RES;
-  default:
-    LOG_ERROR("unknown queue entry type from "
-              "guest to control-path type=%d",
-              qe->type);
-    abort();
+    case QUEUE_NEW_PROTO_RES:
+      handle_proto_res(p, qe);
+      queue_dequeue(q);
+      return QUEUE_NEW_PROTO_RES;
+    case QUEUE_NEW_QUEUE_RES:
+      handle_new_queue_res(p, qe);
+      queue_dequeue(q);
+      return QUEUE_NEW_QUEUE_RES;
+    case QUEUE_NEW_MAP_RES:
+      handle_new_map_res(p, qe);
+      queue_dequeue(q);
+      return QUEUE_NEW_MAP_RES;
+    case QUEUE_ALLOCATE_EBPF_RES:
+      handle_allocate_ebpf_res(p, qe);
+      queue_dequeue(q);
+      return QUEUE_ALLOCATE_EBPF_RES;
+    case QUEUE_FREE_EBPF_RES:
+      handle_free_ebpf_res(p, qe);
+      queue_dequeue(q);
+      return QUEUE_FREE_EBPF_RES;
+    case QUEUE_UPLOAD_EBPF_RES:
+      handle_upload_ebpf_res(p, qe);
+      queue_dequeue(q);
+      return QUEUE_UPLOAD_EBPF_RES;
+    default:
+      LOG_ERROR("unknown queue entry type from "
+                "guest to control-path type=%d",
+                qe->type);
+      abort();
   }
 
+  return 0;
+}
+
+static int handle_proto_res(struct proto_lib *p, struct queue_entry *qe)
+{
+  struct queue_new_proto_res *res = &qe->data.new_proto_res;
+
+  p->n_fp_cores = res->n_fp_cores;
+  p->local_ip = res->local_ip;
+  p->shm_size = res->shm_len;
   return 0;
 }
 

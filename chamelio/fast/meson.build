@@ -6,7 +6,7 @@ fast_srcs = files(
 )
 
 deps = [
-  dependency('config_dep'),
+  dependency('cham_config_dep'),
   dependency('cham_utils_dep'),
   dependency('log_pkt_dep'),
   dependency('nic_dep'),

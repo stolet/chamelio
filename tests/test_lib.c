@@ -11,7 +11,6 @@
 #include "test_utils.h"
 #include "queue.h"
 
-
 /* Test configurations */
 #define TEST_CHAM_IP "192.168.10.14/24"
 #define TEST_NIC_ID "d8:00.0"
@@ -78,11 +77,10 @@ static void test_connect_guest()
 static void test_new_proto(struct guest_lib *guest)
 {
   printf(ANSI_COLOR_BLUE "Testing cham_new_proto..." ANSI_COLOR_RESET "\n");
-  struct proto_lib *proto = cham_new_proto(guest, TEST_SHM_SIZE);
+  struct proto_lib *proto = cham_new_proto_bare(guest);
   TEST_ASSERT(proto != NULL, "proto is NULL");
   TEST_ASSERT(proto->shm_base != NULL, "shm_base is NULL");
   TEST_ASSERT(proto->shm_size == TEST_SHM_SIZE, "incorrect shm_size");
-  TEST_ASSERT(proto->guest == guest, "incorrect guest pointer");
   TEST_ASSERT(proto->nqueues == 0, "nqueues not initialized to 0");
   TEST_ASSERT(proto->nmaps == 0, "nmaps not initialized to 0");
   printf(ANSI_COLOR_GREEN "cham_new_proto test passed" ANSI_COLOR_RESET "\n");
@@ -214,7 +212,6 @@ int main()
   TEST_ASSERT(guest != NULL, "guest connection failed");
 
   test_new_proto(guest);
-  proto = cham_new_proto(guest, TEST_SHM_SIZE);
   TEST_ASSERT(proto != NULL, "proto creation failed");
 
   test_new_queue(proto);

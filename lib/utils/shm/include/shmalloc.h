@@ -19,14 +19,14 @@ struct shm_handle {
 /* Allocator for a shared memory region */
 struct shm_allocator {
   /* File descriptor of shared memory region */
-  int shm_fd;
+  // int shm_fd;
   /* Base pointer to mmapped region */
   void *shm_base;
   /* List of free memory */
   struct shm_handle *freelist;
 };
 
-struct shm_allocator * shmalloc_init(int shm_fd, void *shm_base, __u64 len);
+struct shm_allocator * shmalloc_init(void *shm_base, __u64 len);
 int shmalloc_alloc(struct shm_allocator *alloc, size_t length, 
     struct shm_handle **handle);
 void shmalloc_free(struct shm_allocator *alloc, struct shm_handle *handle);

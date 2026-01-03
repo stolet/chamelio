@@ -5,6 +5,7 @@ subdir('shm')
 subdir('scheduler')
 subdir('tomgr')
 subdir('clock')
+subdir('vfio')
 
 utils_inc = include_directories('include')
 
@@ -15,6 +16,7 @@ core_utils_deps = [
   dependency('scheduler_dep'),
   dependency('clock_dep'),
   dependency('tomgr_dep'),
+  dependency('vfio_dep'),
 ]
 
 # Build extended utilities that may depend on core utils
@@ -42,7 +44,8 @@ utils_lib = library(
                  get_variable('tomgr_lib'),
                  get_variable('clock_lib'),
                  get_variable('log_pkt_lib'),
-                 get_variable('queue_lib')
+                 get_variable('queue_lib'),
+                 get_variable('vfio_lib'),
                ],
   version : '1.0.0',
   install : true,

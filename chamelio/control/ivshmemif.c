@@ -277,7 +277,7 @@ static int uxsocket_accept(struct control_context *ctx)
   g->shm_fd = sfd;
   g->shm_base = shm_base;
 
-  alloc = shmalloc_init(sfd, shm_base, ctx->config->shm_len);
+  alloc = shmalloc_init(shm_base, ctx->config->shm_len);
   if (alloc == NULL)
   {
     LOG_ERROR("failed to initialise shm allocator");

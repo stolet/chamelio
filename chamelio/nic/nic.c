@@ -19,7 +19,7 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   else if (n_ports > 1)
   {
     LOG_ERROR("Multiple ethernet devices");
-    return -1;
+    // return -1;
   }
 
   memset(&nic_ctx->port_conf, 0, sizeof(nic_ctx->port_conf));

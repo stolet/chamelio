@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
+#include "udp_config.h"
 
 int init_udp_slow_context(struct udp_slow_context *ctx);
 
@@ -41,18 +42,30 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   struct proto_map_lib *port_map, *socks_map;
   struct udp_port *ports;
 
-  g = cham_connect_guest();
-  if (g == NULL)
+  if (!ctx->config.virt)
   {
-    LOG_ERROR("UDP slow-path couldn't connect to Chamelio");
-    abort();
-  }
+    g = cham_connect_guest();
+    if (g == NULL)
+    {
+      LOG_ERROR("UDP slow-path couldn't connect to Chamelio");
+      abort();
+    }
 
-  p = cham_new_proto(g, 0);
-  if (p == NULL)
+    p = cham_new_proto_bare(g);
+    if (p == NULL)
+    {
+      LOG_ERROR("UDP slow-path failed to register protocol with Chamelio");
+      abort();
+    }
+  }
+  else
   {
-    LOG_ERROR("UDP slow-path failed to register protocol with Chamelio");
-    abort();
+    p = cham_new_proto_virt();
+    if (p == NULL)
+    {
+      LOG_ERROR("UDP slow-path failed to register protocol with Chamelio");
+      abort();
+    }
   }
   
   fd = open(UDP_EBPF_BYTECODE, O_RDWR);
@@ -113,7 +126,6 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
 
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;
-  ctx->guest = g;
   ctx->proto = p;
   ctx->n_apps = 0;
   ctx->next_app = 0;
@@ -397,6 +409,13 @@ int main(int argc, char **argv)
 {
   int ret;
   struct udp_slow_context ctx;
+  
+  ret = udp_config_parse(&ctx.config, argc, argv);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to parse UDP configuration");
+    abort();
+  }
   
   ret = init_udp_slow_context(&ctx);
   if (ret != 0)

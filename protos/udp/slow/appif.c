@@ -190,7 +190,7 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   }
 
   /* Send shared memory fd to application */
-  ret = uxsocket_sendfd(cfd, ctx->proto->guest->shm_fd, -1);
+  ret = uxsocket_sendfd(cfd, ctx->proto->shm_fd, -1);
   if (ret < 0)
   {
     LOG_ERROR("failed to sned shm fd");
@@ -386,6 +386,7 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
   aev->app->n_ctxs++;
   aev->app_res.n_fp_cores = ctx->proto->n_fp_cores;
   aev->app_res.shm_len = ctx->proto->shm_size;
+  aev->app_res.shm_off = ctx->proto->shm_off;
   
   /* Send out response */
   res_sz = sizeof(struct udp_queue_new_actx_res);

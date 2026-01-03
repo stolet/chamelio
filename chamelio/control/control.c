@@ -36,6 +36,8 @@ static inline void handle_arp_rep(struct control_context *ctx,
 static inline void handle_arp_timeout(struct control_context *ctx,
     struct to_entry *ae);
 
+static inline void handle_new_proto_req(struct control_context *ctx,
+    struct guest_control *g, struct queue_entry *qe_req);
 static inline void handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
 static inline void handle_new_map_req(struct control_context *ctx,
@@ -313,6 +315,10 @@ static inline int poll_guests(struct control_context *ctx)
     increment_guest = 1;
     switch (qe->type)
     {
+      case QUEUE_NEW_PROTO_REQ:
+        handle_new_proto_req(ctx, g, qe);
+        queue_dequeue(q);
+        break;
       case QUEUE_NEW_QUEUE_REQ:
         handle_new_queue_req(ctx, g, qe);
         queue_dequeue(q);
@@ -570,6 +576,31 @@ static inline void handle_arp_rep(struct control_context *ctx,
   return;
 }
 
+static inline void handle_new_proto_req(struct control_context *ctx,
+    struct guest_control *g, struct queue_entry *qe_req)
+{
+  int ret;
+  struct queue_entry *qe_res;
+  struct queue_new_proto_res *res;
+  struct proto_control *p;
+
+  p = &g->proto;
+  p->guest = g;
+  p->nqueues = 0;
+  p->nmaps = 0;
+
+  /* Initialize response */
+  qe_res = queue_tail(g->cham_guest_q);
+  assert(qe_res != NULL);
+  res = &qe_res->data.new_proto_res;
+  res->n_fp_cores = ctx->config->fp_cores_max;
+  res->shm_len = ctx->config->shm_len;
+  res->local_ip = ctx->config->ip;
+
+  ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_PROTO_RES);
+  assert(ret == 0);
+}
+
 static inline void handle_new_queue_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
@@ -586,7 +617,7 @@ static inline void handle_new_queue_req(struct control_context *ctx,
 
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
-  res = (struct queue_new_queue_res *)&qe_res->data;
+  res = &qe_res->data.new_queue_res;
 
   if (nqueues >= MAX_PROTO_QUEUES)
   {
@@ -642,8 +673,6 @@ static inline void handle_new_queue_req(struct control_context *ctx,
   res->opaque = req->opaque;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_QUEUE_RES);
   assert(ret == 0);
-  
-  return;
 }
 
 static inline void handle_new_map_req(struct control_context *ctx,
@@ -709,7 +738,6 @@ static inline void handle_new_map_req(struct control_context *ctx,
   /* Send response back to guest */
   ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_MAP_RES);
   assert(ret == 0);
-  return;
 }
 
 static inline void handle_enableq_req(struct control_context *ctx,
@@ -751,8 +779,6 @@ static inline void handle_enableq_req(struct control_context *ctx,
   /* Enable queue in fast-path */
   ret = queue_enqueue(q, QUEUE_ENABLEQ_REQ);
   assert(ret == 0);
-
-  return;
 }
 
 static inline void handle_disableq_req(struct control_context *ctx,
@@ -790,8 +816,6 @@ static inline void handle_disableq_req(struct control_context *ctx,
   /* Enable queue in fast-path */
   ret = queue_enqueue(q, QUEUE_DISABLEQ_REQ);
   assert(ret == 0);
-
-  return;
 }
 
 static inline void handle_allocate_ebpf_req(struct guest_control *g, 
@@ -825,8 +849,6 @@ static inline void handle_allocate_ebpf_req(struct guest_control *g,
   res->opaque = req->opaque;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_ALLOCATE_EBPF_RES);
   assert(ret == 0);
-  
-  return;
 }
 
 static inline void handle_upload_ebpf_req(struct control_context *ctx,
@@ -971,7 +993,6 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
   res->success = 1;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
   assert(ret == 0);
-  return;
 }
 
 static inline void handle_free_ebpf_req(struct guest_control *g, 
@@ -991,7 +1012,6 @@ static inline void handle_free_ebpf_req(struct guest_control *g,
   res->success = 1;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_FREE_EBPF_RES);
   assert(ret == 0);
-  return;
 }
 
 static inline void budget_refresh(struct control_context *ctx)

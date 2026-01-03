@@ -16,7 +16,7 @@ subdir('control')
 
 deps = [
   dependency('cham_utils_dep'),
-  dependency('config_dep'),
+  dependency('cham_config_dep'),
   dependency('shm_dep'),
   dependency('queue_dep'),
   dependency('nic_dep'),
