@@ -24,6 +24,7 @@ enum cfg_params {
   CP_PERF_ISO_OFF,
   CP_PERF_ISO_CAP,
   CP_PERF_ISO_BOOST,
+  CP_VIRT_GRE,
   CP_DPDK_EXTRA,
 };
 
@@ -70,6 +71,9 @@ static struct option opts[] = {
   { .name = "perf-iso-boost",
     .has_arg = required_argument,
     .val = CP_PERF_ISO_BOOST },
+  { .name = "virt-gre",
+    .has_arg = no_argument,
+    .val = CP_VIRT_GRE },
   { .name = "dpdk-extra",
     .has_arg = required_argument,
     .val = CP_DPDK_EXTRA },
@@ -179,6 +183,9 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
+      case CP_VIRT_GRE:
+        c->virt_gre = 1;
+        break;
       case CP_DPDK_EXTRA:
         if (parse_arg_append(optarg, c) != 0) {
           goto failed;
@@ -216,6 +223,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->perf_iso = 1;
   c->perf_iso_cap = 1000;
   c->perf_iso_boost = 0.5;
+  c->virt_gre = 0;
 
   c->dpdk_argc = 1;
   if ((c->dpdk_argv = calloc(2, sizeof(*c->dpdk_argv))) == NULL) 
@@ -263,6 +271,9 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: %u]\n"
       "  --perf-iso-boost                        Budget boost multiplier"
           "[default: %f]\n"
+      "Virtualization:\n"
+      "  --virt-gre                              Uses GRE for network virtualization"
+          "[default: disabled]\n"
       "Miscelaneous:\n"
       "  --dpdk-extra=ARG                        Add extra DPDK argument"
       "\n"

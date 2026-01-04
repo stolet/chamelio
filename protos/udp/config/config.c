@@ -6,13 +6,13 @@
 #include "udp_config.h"
 
 enum cfg_params {
-  CP_VIRT_OFF,
+  CP_VIRT,
 };
 
 static struct option opts[] = {
-  { .name = "virt-off",
+  { .name = "virt",
     .has_arg = no_argument,
-    .val = CP_VIRT_OFF },
+    .val = CP_VIRT },
 };
 
 static int config_defaults(struct udp_configuration *c);
@@ -34,8 +34,8 @@ int udp_config_parse(struct udp_configuration *c, int argc, char **argv)
     ret = getopt_long(argc, argv, "", opts, NULL);
     switch (ret)
     {
-      case CP_VIRT_OFF:
-        c->virt = 0;
+      case CP_VIRT:
+        c->virt = 1;
         break;
       case -1:
         done = 1;
@@ -56,7 +56,7 @@ failed:
 
 static int config_defaults(struct udp_configuration *c)
 {
-  c->virt = 1;
+  c->virt = 0;
   return 0;
 }
 
@@ -65,8 +65,8 @@ static void print_usage(char *progname)
   fprintf(stderr, "Usage: %s [OPTION]...\n"
       "\n"
       "Virtualization:\n"
-      "  --virt-off                              Disable virtualization features"
-          "[default: enabled]\n"
+      "  --virt                              Enable virtualization features"
+          "[default: disabled]\n"
       "\n"
       , progname);
 }

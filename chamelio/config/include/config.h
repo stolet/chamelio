@@ -44,6 +44,10 @@ struct configuration {
   /* Boost multiplier for budget */
   double perf_iso_boost;
 
+  /*** Virtualization configurations ***/
+  /* Uses GRE for network virtualization */
+  __u32 virt_gre;
+
   /*** DPDK configurations ***/
   /* DPDK extra argument count */
   int dpdk_argc;
