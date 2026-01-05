@@ -3,12 +3,14 @@ test_scheduler_srcs = files('test_scheduler.c', 'test_utils.c')
 test_queue_srcs = files('test_queue.c', 'test_utils.c')
 test_arp_srcs = files('test_arp.c', 'test_utils.c')
 test_tomgr_srcs = files('test_tomgr.c', 'test_utils.c')  # Added test_tomgr.c
+test_netvirt_srcs = files('test_netvirt.c', 'test_utils.c')
 
 deps = [
   dependency('cham'),
   dependency('queue_dep'),
   dependency('arp_dep'),
-  dependency('scheduler_dep')
+  dependency('scheduler_dep'),
+  dependency('netvirt_dep'),
 ]
 
 # Find ecc compiler
@@ -57,3 +59,10 @@ test_tomgr = executable(
   dependencies: deps,
 )
 test('tomgr-test', test_tomgr)  # Added tomgr-test
+
+test_netvirt = executable(
+  'test_netvirt',
+  test_netvirt_srcs,
+  dependencies: deps,
+)
+test('netvirt-test', test_netvirt)

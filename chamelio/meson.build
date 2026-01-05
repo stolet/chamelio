@@ -13,6 +13,7 @@ subdir('nic')
 subdir('arp')
 subdir('fast')
 subdir('control')
+subdir('netvirt')
 
 deps = [
   dependency('cham_utils_dep'),
