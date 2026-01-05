@@ -3,6 +3,8 @@
 
 #include <linux/types.h>
 
+#define MAX_PATH 128
+
 struct configuration {
   /*** SHM configurations ***/
   /* Shared memory size for one guest */
@@ -45,8 +47,10 @@ struct configuration {
   double perf_iso_boost;
 
   /*** Virtualization configurations ***/
-  /* Uses GRE for network virtualization */
+  /* Use GRE for network virtualization */
   __u32 virt_gre;
+  /* Path to network virtualization configuration */
+  char virt_path[MAX_PATH];
 
   /*** DPDK configurations ***/
   /* DPDK extra argument count */

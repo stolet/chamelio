@@ -25,6 +25,7 @@ enum cfg_params {
   CP_PERF_ISO_CAP,
   CP_PERF_ISO_BOOST,
   CP_VIRT_GRE,
+  CP_VIRT_PATH,
   CP_DPDK_EXTRA,
 };
 
@@ -74,6 +75,9 @@ static struct option opts[] = {
   { .name = "virt-gre",
     .has_arg = no_argument,
     .val = CP_VIRT_GRE },
+  { .name = "virt-path",
+    .has_arg = required_argument,
+    .val = CP_VIRT_PATH },
   { .name = "dpdk-extra",
     .has_arg = required_argument,
     .val = CP_DPDK_EXTRA },
@@ -81,6 +85,7 @@ static struct option opts[] = {
 
 static int config_defaults(struct configuration *c, char *progname);
 static void print_usage(struct configuration *c, char *progname);
+static int parse_string(const char *s, char *str);
 static int parse_int64(const char *s, __u64 *pi);
 static int parse_int32(const char *s, __u32 *pu32);
 static int parse_double(const char *s, double *pd);
@@ -186,6 +191,12 @@ int config_parse(struct configuration *c, int argc, char **argv)
       case CP_VIRT_GRE:
         c->virt_gre = 1;
         break;
+      case CP_VIRT_PATH:
+        if (parse_string(optarg, c->virt_path) != 0) {
+          LOG_ERROR("network virtualization config path parsing failed");
+          goto failed;
+        }
+        break;
       case CP_DPDK_EXTRA:
         if (parse_arg_append(optarg, c) != 0) {
           goto failed;
@@ -224,6 +235,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->perf_iso_cap = 1000;
   c->perf_iso_boost = 0.5;
   c->virt_gre = 0;
+  strcpy(c->virt_path, "net_virt.csv");
 
   c->dpdk_argc = 1;
   if ((c->dpdk_argv = calloc(2, sizeof(*c->dpdk_argv))) == NULL) 
@@ -274,6 +286,8 @@ static void print_usage(struct configuration *c, char *progname)
       "Virtualization:\n"
       "  --virt-gre                              Uses GRE for network virtualization"
           "[default: disabled]\n"
+      "  --virt-path                             Path to network virtualization config file"
+          "[default: %s]\n"
       "Miscelaneous:\n"
       "  --dpdk-extra=ARG                        Add extra DPDK argument"
       "\n"
@@ -282,7 +296,13 @@ static void print_usage(struct configuration *c, char *progname)
       c->cham_queue_len, c->agt_queue_len, c->control_txq_len,
       c->control_txq_pkt_len,
       c->max_guests, c->fp_cores_max, 
-      c->perf_iso_cap, c->perf_iso_boost);
+      c->perf_iso_cap, c->perf_iso_boost, c->virt_path);
+}
+
+static int parse_string(const char *s, char *str)
+{
+  strcpy(str, s);
+  return 0;
 }
 
 static int parse_int64(const char *s, __u64 *pi)
