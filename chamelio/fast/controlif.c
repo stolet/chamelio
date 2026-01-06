@@ -111,6 +111,13 @@ static inline void handle_new_guest(struct fast_context *ctx,
   g->proto.event_rx_vm = NULL;
   g->proto.event_tx_vm = NULL;
   g->proto.event_deq_vm = NULL;
+
+  /* Add network virtualization configuration if enabled */
+  if (ctx->config->virt_gre)
+  {
+    g->gre_key = req->gre_key;
+    g->ip = req->guest_ip;
+  }
   
   /* Init qman */
   sched_init(&g->proto.ebpf_ctx.sched);
@@ -267,7 +274,7 @@ static inline void handle_arp_tx_pkt(struct fast_context *ctx,
   
   /* Copy packet data from shared memory to mbuf */
   mb[0]->data_off = 0;
-  mb[0]->pkt_len = mb[0]->data_len = sizeof(struct pkt_arp);
+  mb[0]->pkt_len = mb[0]->data_len = sizeof(struct arp_pkt);
   rte_memcpy(rte_pktmbuf_mtod(mb[0], __u8 *), &txqe->data, mb[0]->data_len);
   
   /* Add packet to transmit buffer */

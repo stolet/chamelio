@@ -32,7 +32,7 @@ struct arp_hdr {
   ip_addr_t tpa;
 } __attribute__((packed));
 
-struct pkt_arp {
+struct arp_pkt {
   struct eth_hdr eth;
   struct arp_hdr arp;
 } __attribute__ ((packed));

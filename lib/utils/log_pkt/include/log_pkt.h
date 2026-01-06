@@ -10,7 +10,7 @@ void log_eth(const struct eth_hdr *eth);
 void log_ip(const struct ip_hdr *ip);
 void log_udp(const struct udp_hdr *udp);
 void log_arp(const struct arp_hdr *arp);
-void log_arp_pkt(const struct pkt_arp *p);
+void log_arp_pkt(const struct arp_pkt *p);
 void log_udp_pkt(const struct udp_pkt *p);
 
 #endif

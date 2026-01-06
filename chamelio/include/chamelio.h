@@ -6,6 +6,7 @@
 #include "fast.h"
 #include "control.h"
 #include "shmalloc.h"
+#include "netvirt.h"
 
 struct chamelio_context {
   /* Configuration parameters */
@@ -29,6 +30,11 @@ struct chamelio_context {
   int shm_fd_internal;
   /* Base pointer to internal shared memory region */
   void *shm_base_internal;
+  /* Read-only after being initialized */
+  /* Network virtualization table indexed by GRE key and inner IP */
+  struct netvirt_table inner_table;
+  /* Network virtualization table indexed by guest ID and outer IP */
+  struct netvirt_table gid_table;
 };
 
 #endif

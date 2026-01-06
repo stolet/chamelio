@@ -22,7 +22,6 @@
 #include "ebpf.h"
 #include "verifier.h"
 #include "cham_fast.h"
-#include "netvirt.h"
 
 static inline int poll_fast(struct control_context *ctx);
 static inline int poll_guests(struct control_context *ctx);
@@ -71,15 +70,13 @@ int control_context_init(struct control_context *ctrl_ctx,
     struct shm_handle **fc_handles, struct shm_handle **cf_handles,
     struct shm_handle **txq_handles)
 {
-  int i, ret;
+  int i;
   struct tomgr *tomgr;
   struct guest_control *guests;
   struct equeue *cfq, *txq;
   struct dqueue *fcq;
   struct dqueue **fast_ctl_qs;
   struct equeue **ctl_fast_qs, **txqs;
-  struct ip_table *it;
-  struct gre_table *gt;
 
   ctrl_ctx->config = config;
   ctrl_ctx->nic_ctx = nic_ctx;
@@ -173,8 +170,9 @@ int control_context_init(struct control_context *ctrl_ctx,
   if (guests == NULL)
   {
     LOG_ERROR("failed to allocate guest list");
-    goto free_control_fast_list;
+    goto free_control_txqs;
   }
+  
   ctrl_ctx->guests = guests;
   ctrl_ctx->n_guests = 0;
   ctrl_ctx->next_guest = 0;
@@ -185,43 +183,8 @@ int control_context_init(struct control_context *ctrl_ctx,
         config->perf_iso_boost;
   }
 
-  /* Parse network virtualization configuration */
-  ctrl_ctx->ip_table = NULL;
-  ctrl_ctx->gre_table = NULL;
-  if (config->virt_gre)
-  {
-    it = rte_malloc("netvirt ip table", sizeof(struct ip_table), 0);
-    if (it == NULL)
-    {
-      LOG_ERROR("failed to allocate net virt ip table");
-      goto free_guests;
-    }
-
-    gt = rte_malloc("netvirt gre table", sizeof(struct gre_table), 0);
-    if (gt == NULL)
-    {
-      LOG_ERROR("failed to allocate net virt gre table");
-      goto free_it;
-    }
-
-    ret = netvirt_parser(it, gt, config->virt_path);
-    if (ret != 0)
-    {
-      LOG_ERROR("failed to parse network virtualization config");
-      goto free_gt;
-    }
-
-    LOG_DEBUG("parsed!");
-  }
-
   return 0;
 
-free_gt:
-  rte_free(gt);
-free_it:
-  rte_free(it);
-free_guests:
-  free(guests);
 free_control_txqs:
   free(txqs);
 free_control_fast_list:

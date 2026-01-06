@@ -22,4 +22,9 @@ struct udp_pkt {
   struct udp_hdr udp;
 } __attribute__ ((packed));
 
+struct udp_pkt_inner {
+  struct ip_hdr ip;
+  struct udp_hdr udp;
+} __attribute__ ((packed));
+
 #endif

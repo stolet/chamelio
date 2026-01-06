@@ -18,8 +18,8 @@ int parse_ipv4(const char *s)
   return ntohl(ip);
 }
 
-int netvirt_parser(struct ip_table *ip_tbl, struct gre_table *gre_tbl,
-    const char *config_path)
+int netvirt_parser(struct netvirt_table *inner_table, 
+    struct netvirt_table *gid_table, const char *config_path)
 {
   FILE *fp;
   char line[MAX_LINE_LEN];
@@ -27,12 +27,13 @@ int netvirt_parser(struct ip_table *ip_tbl, struct gre_table *gre_tbl,
   char outer_ip_str[16], inner_ip_str[16];
   int ret = 0;
 
-  if (!ip_tbl || !gre_tbl || !config_path)
+  if (!inner_table || !gid_table || !config_path)
     return -1;
 
   fp = fopen(config_path, "r");
   if (!fp)
   {
+    LOG_ERROR("failed to open config path");
     return -1;
   }
 
@@ -40,6 +41,7 @@ int netvirt_parser(struct ip_table *ip_tbl, struct gre_table *gre_tbl,
   if (fgets(line, sizeof(line), fp) == NULL)
   {
     fclose(fp);
+    LOG_ERROR("failed to get first header line");
     return -1;
   }
 
@@ -59,22 +61,27 @@ int netvirt_parser(struct ip_table *ip_tbl, struct gre_table *gre_tbl,
 
     if (outer_ip == 0 || inner_ip == 0)
     {
-      ret = -1;
-      break;
+      LOG_ERROR("failed to parse outer ip or inner ip");
+      fclose(fp);
+      return -1;
     }
 
-    /* Add to IP table */
-    if (netvirt_ip_set(ip_tbl, gre_key, inner_ip, outer_ip) < 0)
+    /* Add to inner IP table */
+    if (netvirt_table_set(inner_table, gre_key, inner_ip,
+        guest_id, gre_key, inner_ip, outer_ip) < 0)
     {
-      ret = -1;
-      break;
+      LOG_ERROR("failed to add entry to inner IP table");
+      fclose(fp);
+      return -1;
     }
 
-    /* Add to GRE table */
-    if (netvirt_gre_set(gre_tbl, outer_ip, guest_id, gre_key) < 0)
+    /* Add to guest ID table */
+    if (netvirt_table_set(gid_table, guest_id, outer_ip,
+        guest_id, gre_key, inner_ip, outer_ip) < 0)
     {
-      ret = -1;
-      break;
+      LOG_ERROR("failed to add entry to guest ID table");
+      fclose(fp);
+      return -1;
     }
   }
 

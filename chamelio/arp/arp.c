@@ -26,7 +26,7 @@ struct arp_entry * arp_lookup(struct arp_table *at, __u32 ip)
   int i;
   __u32 hash, idx; 
   
-  hash = hash_ip(ip);  
+  hash = hash_ip(ip);
 
   for (i = 0; i < ARP_TABLE_SIZE; i++) 
   {
@@ -96,7 +96,7 @@ int arp_request(struct equeue *txq, struct equeue *cfq,
 {
   int ret;
   struct queue_entry *qe;
-  struct pkt_arp *pkt;
+  struct arp_pkt *pkt;
   __u64 dst_mac = 0xffffffffffffULL;
 
   qe = queue_tail(txq);
@@ -148,7 +148,7 @@ int arp_reply(struct equeue *txq, struct equeue *cfq,
 {
   int ret;
   struct queue_entry *qe;
-  struct pkt_arp *pkt;
+  struct arp_pkt *pkt;
 
   qe = queue_tail(txq);
   if (qe == NULL)

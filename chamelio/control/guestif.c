@@ -17,6 +17,7 @@
 #include "queue_fns.h"
 #include "queue_types.h"
 #include "uxsocket.h"
+#include "netvirt.h"
 
 #define EP_LISTEN_GUEST 1
 #define EP_GUEST 2
@@ -189,6 +190,7 @@ static inline int uxsocket_accept(struct control_context *ctx)
   struct equeue *cham_guest_q;
   struct queue_entry *qe_new_guest;
   struct queue_new_guest_req *new_guest_req;
+  struct netvirt_entry *gid_entry;
 
   /* Init to 0 to prevent invalid argument errors from epoll ctl */
   memset(&ev, 0, sizeof(ev));
@@ -318,6 +320,18 @@ static inline int uxsocket_accept(struct control_context *ctx)
     new_guest_req->budget = &g->budget;
     new_guest_req->shm_base = shm_base;
     new_guest_req->shm_len = ctx->config->shm_len;
+    if (ctx->config->virt_gre)
+    {
+      gid_entry = netvirt_table_get(ctx->gid_table, g->id, ctx->config->ip);
+      if (gid_entry == NULL)
+      {
+        LOG_ERROR("failed to get entry in guest id virtualization table");
+        goto free_cham_guest_q;
+      }
+      
+      new_guest_req->gre_key = gid_entry->gre_key;
+      new_guest_req->guest_ip = gid_entry->inner_ip;
+    }
     ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_NEW_GUEST_REQ);
     if (ret != 0)
     {

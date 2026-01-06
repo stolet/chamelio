@@ -10,10 +10,10 @@ meson.override_dependency('chamelio_dep', chamelio_dep)
 
 subdir('config')
 subdir('nic')
+subdir('netvirt')
 subdir('arp')
 subdir('fast')
 subdir('control')
-subdir('netvirt')
 
 deps = [
   dependency('cham_utils_dep'),
@@ -23,6 +23,7 @@ deps = [
   dependency('nic_dep'),
   dependency('arp_dep'),
   dependency('fast_dep'),
+  dependency('netvirt_dep'),
   dependency('control_dep'),
   dpdk_dep,
   threads_dep,

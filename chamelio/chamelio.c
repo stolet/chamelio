@@ -13,6 +13,7 @@
 #include "log.h"
 #include "shm.h"
 #include "shmalloc.h"
+#include "netvirt.h"
 
 
 struct chamelio_context cham_ctx;
@@ -58,7 +59,7 @@ int main (int argc, char **argv)
 
   /* Initialize fast path contexts in hugepages */
   f_ctxs = rte_calloc("fast path context list", 
-      cham_ctx.config.fp_cores_max, sizeof(*f_ctxs), 64);
+      cham_ctx.config.fp_cores_max, sizeof(*f_ctxs), 0);
   if (f_ctxs == NULL)
   {
     LOG_ERROR("failed to allocated f_ctxs");
@@ -93,13 +94,29 @@ int main (int argc, char **argv)
     goto free_alloc;
   }
 
+  /* Parse network virtualization configuration */
+  netvirt_table_init(&cham_ctx.inner_table);
+  netvirt_table_init(&cham_ctx.gid_table);
+  c_ctx->inner_table = &cham_ctx.inner_table;
+  c_ctx->gid_table = &cham_ctx.gid_table;
+  if (config->virt_gre)
+  {
+    ret = netvirt_parser(&cham_ctx.inner_table, 
+        &cham_ctx.gid_table, config->virt_path);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to parse network virtualization config");
+      goto free_cctx;
+    }
+  }
+
   /* Allocate fast->control queues */
   fc_handles = rte_malloc("fast->control handle", 
       sizeof(struct shm_handle *) * config->fp_cores_max, 0);
   if (fc_handles == NULL)
   {
     LOG_ERROR("failed to allocate list for fast to control queue handles");
-    goto free_sctx;
+    goto free_cctx;
   }
   cham_ctx.fast_ctl_handles = fc_handles;
   
@@ -189,7 +206,7 @@ free_sh_control_fast_list:
   rte_free(fc_handles);
 free_sh_fast_control_list:
   rte_free(cf_handles);
-free_sctx:
+free_cctx:
   free(c_ctx);
 free_alloc:
   free(alloc);
@@ -264,6 +281,18 @@ static int fast_thread(void *arg)
   }
   cham_ctx.f_ctxs[id] = f_ctx;
   f_ctx->id = id;
+
+  /* Add GRE and IP configuration tables if using net virtualization */
+  if (cham_ctx.config.virt_gre)
+  {
+    f_ctx->inner_table = &cham_ctx.inner_table;
+    f_ctx->gid_table = &cham_ctx.gid_table;
+  }
+  else
+  {
+    f_ctx->inner_table = NULL;
+    f_ctx->gid_table = NULL;
+  }
 
   /* initialize data plane context */
   ret = fast_context_init(f_ctx, &cham_ctx.nic_ctx, id,

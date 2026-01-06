@@ -107,11 +107,11 @@ struct control_context {
   /* Guests that have registered with chamelio */
   struct guest_control *guests;
 
-  /* Read-only after being initialized */
-  /* Network virtualization IP table */
-  struct ip_table *ip_table;
-  /* Network virtualization GRE key table */
-  struct gre_table *gre_table;
+/* Read-only after being initialized */
+  /* Network virtualization table indexed by GRE key and inner IP */
+  struct netvirt_table *inner_table;
+  /* Network virtualization table indexed by guest ID and outer IP */
+  struct netvirt_table *gid_table;
 };
 
 int control_context_init(struct control_context *ctrl_ctx, 

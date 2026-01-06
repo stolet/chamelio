@@ -8,6 +8,7 @@ fast_srcs = files(
 deps = [
   dependency('cham_config_dep'),
   dependency('cham_utils_dep'),
+  dependency('netvirt_dep'),
   dependency('log_pkt_dep'),
   dependency('nic_dep'),
   dependency('queue_dep'),

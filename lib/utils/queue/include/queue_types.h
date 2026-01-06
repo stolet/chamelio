@@ -67,6 +67,10 @@ struct queue_new_guest_req {
   void *shm_base;
   /* Length of shared memory region for this guest */
   __u64 shm_len;
+  /* GRE key used in network virtualization */
+  __u32 gre_key;
+  /* Guest IP used in network virtualization */
+  __u32 guest_ip;
 } __attribute__((packed));
 
 /* Request for registering new protocol */

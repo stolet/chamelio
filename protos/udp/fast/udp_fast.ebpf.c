@@ -5,7 +5,6 @@
 #include "cham_fast.h"
 #include "udp_hdr.h"
 #include "ip_hdr.h"
-#include "eth_hdr.h"
 #include "udp.h"
 #include "udp_queue_types.h"
 #include "utils.h"
@@ -42,7 +41,6 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 {
   int ret;
   __u16 ip_hdrs_len, ip_total_len, udp_len, payload_len;
-  struct eth_hdr *eth;
   struct ip_hdr  *ip;
   struct udp_hdr *udp;
   void *payload;
@@ -58,19 +56,12 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   __u32 part;
 
   sock = NULL;
-
-  /* Parse ETH header */
-  if (ctx->pkt + sizeof(struct eth_hdr) > ctx->pkt_end)
-    return -1;
-  eth = (struct eth_hdr *) ctx->pkt;
-  if (f_beui16(eth->type) != ETH_TYPE_IP)
-    return -1;
   
   /* Parse IP header */
-  if (ctx->pkt + sizeof(struct eth_hdr) + sizeof(struct ip_hdr) > ctx->pkt_end)
+  if (ctx->pkt + sizeof(struct ip_hdr) > ctx->pkt_end)
     return -1;
 
-  ip = (struct ip_hdr *) ((__u8 *) eth + sizeof(struct eth_hdr));
+  ip = (struct ip_hdr *) ctx->pkt;
   if (IPH_V(ip) != 4 || IPH_HL(ip) < 5)
     return -1;
 
@@ -195,10 +186,10 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   __u16 udp_hdrs_len, ip_hdrs_len, pkt_hdrs_len;
   __u32 new_head;
   __u64 part;
-  struct udp_pkt *p = (struct udp_pkt *) ctx->pkt;
-  
+
   /* Perform bounds check so eBPF is happy */
-  if ((__u64) p + sizeof(struct udp_pkt) > ctx->pkt_end)
+  struct udp_pkt_inner *p = (struct udp_pkt_inner *) ctx->pkt;
+  if ((__u64) p + sizeof(struct udp_pkt_inner) > ctx->pkt_end)
     return -1;
 
   qe = (struct udp_queue_bump_entry *) ctx->qe;
@@ -232,17 +223,13 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     payload_len = UDP_MSS;
 
   /* Drop if payload_len out of bounds */
-  if ((__u64) p + sizeof(struct udp_pkt) + payload_len > ctx->pkt_end)
+  if ((__u64) p + sizeof(struct udp_pkt_inner) + payload_len > ctx->pkt_end)
     return -1;
 
   opt_len = 0;
   udp_hdrs_len = sizeof(struct udp_hdr) + opt_len;
   ip_hdrs_len = sizeof(struct ip_hdr);
-  pkt_hdrs_len = sizeof(struct eth_hdr) + sizeof(struct ip_hdr)
-    + sizeof(struct udp_hdr) + opt_len;
-
-  /* Set ETH header */
-  p->eth.type = t_beui16(ETH_TYPE_IP);
+  pkt_hdrs_len = ip_hdrs_len + udp_hdrs_len;
 
   /* Set IP header */
   IPH_VHL_SET(&p->ip, 4, 5);
@@ -260,7 +247,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   p->udp.src = t_beui16(sock->local_port);
   p->udp.dst = t_beui16(bump_cham->tx_port);
   p->udp.len = t_beui16(udp_hdrs_len + payload_len);
-  
+
   /* Copy data to packet */
   payload = ctx->pkt + pkt_hdrs_len;
   if (sock->tx_head + payload_len <= sock->tx_len) 

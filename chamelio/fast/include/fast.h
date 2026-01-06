@@ -44,6 +44,10 @@ struct proto_fast {
 struct guest_fast {
   /* Guest ID */
   __u8 id;
+  /* IP assigned to VM */
+  __u32 ip;
+  /* GRE key used by this guest */
+  __u32 gre_key;
   /* Pointer to guest budget counter shared with control */
   __s64 *budget;
   /* Protocol to use with this guest */
@@ -93,6 +97,12 @@ struct fast_context {
   
   /* ARP table replicated in fast-path to avoid locks */
   struct arp_table arp_table;
+  
+  /* Read-only after being initialized */
+  /* Network virtualization table indexed by GRE key and inner IP */
+  struct netvirt_table *inner_table;
+  /* Network virtualization table indexed by guest ID and outer IP */
+  struct netvirt_table *gid_table;
 };
 
 /* Initialises the fast-path context when a core is launched */

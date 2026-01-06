@@ -7,6 +7,7 @@
 #include "ip_hdr.h"
 #include "udp_hdr.h"
 #include "arp_hdr.h"
+#include "gre_hdr.h"
 
 static inline const char *ip4_to_str(ip_addr_t a, char buf[INET_ADDRSTRLEN]);
 static inline const char *eth_type_name(uint16_t t);
@@ -112,7 +113,7 @@ void log_udp_pkt(const struct udp_pkt *p)
   log_udp(&p->udp);
 }
 
-void log_arp_pkt(const struct pkt_arp *p)
+void log_arp_pkt(const struct arp_pkt *p)
 {
   log_eth(&p->eth);
   log_arp(&p->arp);
