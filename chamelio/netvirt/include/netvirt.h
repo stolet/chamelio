@@ -55,5 +55,8 @@ int netvirt_gre_set(struct gre_table *table, __u32 outer_ip, __u8 gid, __u32 gre
 /* Hashes outer_ip and gid and returns gre key from the table */
 struct gre_table_entry * netvirt_gre_get(struct gre_table *table,
     __u32 outer_ip, __u8 gid);
+/* Parses CSV configuration file and populates ip_table and gre_table */
+int netvirt_parser(struct ip_table *ip_tbl, struct gre_table *gre_tbl,
+    const char *config_path);
 
 #endif

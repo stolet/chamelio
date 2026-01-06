@@ -38,6 +38,7 @@ deps = [
   dependency('uxsocket_dep'),
   dependency('tomgr_dep'),
   dependency('clock_dep'),
+  dependency('netvirt_dep'),
   dependency('cham'),
   llvm_dep,
   llvmbpf_dep,

@@ -1,6 +1,6 @@
 netvirt_inc = include_directories('include')
 
-netvirt_srcs = files('netvirt.c')
+netvirt_srcs = files('netvirt_ht.c', 'netvirt_parser.c')
 
 deps = [
   dependency('log_dep'),

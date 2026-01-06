@@ -106,6 +106,12 @@ struct control_context {
   __u16 next_guest;
   /* Guests that have registered with chamelio */
   struct guest_control *guests;
+
+  /* Read-only after being initialized */
+  /* Network virtualization IP table */
+  struct ip_table *ip_table;
+  /* Network virtualization GRE key table */
+  struct gre_table *gre_table;
 };
 
 int control_context_init(struct control_context *ctrl_ctx, 

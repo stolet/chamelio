@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <arpa/inet.h>
 #include "netvirt.h"
 #include "test_utils.h"
 
@@ -289,10 +290,70 @@ static void test_gre_table_set_and_overwrite()
   entry = netvirt_gre_get(&gt, TEST_OUTER_IP_1, TEST_GID_1);
   TEST_ASSERT(entry != NULL, "Failed to get overwritten entry");
 
-  fprintf(stderr, "actual=%d expected=%d\n", entry->gre_key, TEST_GRE_KEY_2);
   TEST_ASSERT(entry->gre_key == TEST_GRE_KEY_2, "GRE key mismatch after overwrite");
 
   printf(ANSI_COLOR_GREEN "PASSED: GRE table set and overwrite test" ANSI_COLOR_RESET "\n");
+}
+
+static void test_netvirt_parser()
+{
+  struct ip_table it = {0};
+  struct gre_table gt = {0};
+  struct ip_table_entry *ip_entry;
+  struct gre_table_entry *gre_entry;
+  FILE *fp;
+  const char *test_config = "/tmp/test_netvirt_config.csv";
+  
+  printf(ANSI_COLOR_BLUE "Testing netvirt_parser..." ANSI_COLOR_RESET "\n");
+
+  /* Create temporary config file */
+  fp = fopen(test_config, "w");
+  TEST_ASSERT(fp != NULL, "Failed to create temporary config file");
+  
+  fprintf(fp, "GUEST_ID, GRE_KEY, OUTER_IP, INNER_IP\n");
+  fprintf(fp, "0, 0, 192.168.10.14, 10.0.0.1\n");
+  fprintf(fp, "1, 0, 192.168.10.14, 10.0.0.2\n");
+  fprintf(fp, "0, 1, 192.168.10.13, 10.0.0.3\n");
+  fclose(fp);
+
+  /* Initialize tables */
+  netvirt_ip_init(&it);
+  netvirt_gre_init(&gt);
+
+  /* Parse config file */
+  int result = netvirt_parser(&it, &gt, test_config);
+  TEST_ASSERT(result == 0, "Failed to parse config file");
+
+  /* Verify IP table entries */
+  ip_entry = netvirt_ip_get(&it, 0, ntohl(inet_addr("10.0.0.1")));
+  TEST_ASSERT(ip_entry != NULL, "Failed to find IP entry (gre_key=0, inner_ip=10.0.0.1)");
+  TEST_ASSERT(ip_entry->outer_ip == ntohl(inet_addr("192.168.10.14")), "Outer IP mismatch for first entry");
+
+  ip_entry = netvirt_ip_get(&it, 0, ntohl(inet_addr("10.0.0.2")));
+  TEST_ASSERT(ip_entry != NULL, "Failed to find IP entry (gre_key=0, inner_ip=10.0.0.2)");
+  TEST_ASSERT(ip_entry->outer_ip == ntohl(inet_addr("192.168.10.14")), "Outer IP mismatch for second entry");
+
+  ip_entry = netvirt_ip_get(&it, 1, ntohl(inet_addr("10.0.0.3")));
+  TEST_ASSERT(ip_entry != NULL, "Failed to find IP entry (gre_key=1, inner_ip=10.0.0.3)");
+  TEST_ASSERT(ip_entry->outer_ip == ntohl(inet_addr("192.168.10.13")), "Outer IP mismatch for third entry");
+
+  /* Verify GRE table entries */
+  gre_entry = netvirt_gre_get(&gt, ntohl(inet_addr("192.168.10.14")), 0);
+  TEST_ASSERT(gre_entry != NULL, "Failed to find GRE entry (outer_ip=192.168.10.14, gid=0)");
+  TEST_ASSERT(gre_entry->gre_key == 0, "GRE key mismatch for first GRE entry");
+
+  gre_entry = netvirt_gre_get(&gt, ntohl(inet_addr("192.168.10.14")), 1);
+  TEST_ASSERT(gre_entry != NULL, "Failed to find GRE entry (outer_ip=192.168.10.14, gid=1)");
+  TEST_ASSERT(gre_entry->gre_key == 0, "GRE key mismatch for second GRE entry");
+
+  gre_entry = netvirt_gre_get(&gt, ntohl(inet_addr("192.168.10.13")), 0);
+  TEST_ASSERT(gre_entry != NULL, "Failed to find GRE entry (outer_ip=192.168.10.13, gid=0)");
+  TEST_ASSERT(gre_entry->gre_key == 1, "GRE key mismatch for third GRE entry");
+
+  /* Clean up temporary file */
+  remove(test_config);
+
+  printf(ANSI_COLOR_GREEN "PASSED: netvirt_parser test" ANSI_COLOR_RESET "\n");
 }
 
 int main()
@@ -311,6 +372,7 @@ int main()
   test_gre_table_collision();
   test_gre_table_get_nonexistent();
   test_gre_table_set_and_overwrite();
+  test_netvirt_parser();
 
   printf("All netvirt tests passed!\n");
   return 0;
