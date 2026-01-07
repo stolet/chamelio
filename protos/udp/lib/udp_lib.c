@@ -40,36 +40,36 @@ int udp_connect_slow()
     LOG_WARN("library already connected to udp slow-path");
     return -1;
   }
-  
+
   sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (sock_fd < 0) 
+  if (sock_fd < 0)
   {
     LOG_ERROR("failed to create socket");
     return -1;
   }
 
   s_un.sun_family = AF_UNIX;
-  ret = snprintf(s_un.sun_path, sizeof(s_un.sun_path), 
-      "%s", APP_SOCKET_PATH);
-  if (ret < 0 || ret >= sizeof(s_un.sun_path)) 
+  ret = snprintf(s_un.sun_path, sizeof(s_un.sun_path),
+                 "%s", APP_SOCKET_PATH);
+  if (ret < 0 || ret >= sizeof(s_un.sun_path))
   {
     LOG_ERROR("could not copy unix socket path");
     goto close_sockfd;
   }
 
-  if (connect(sock_fd, (struct sockaddr *)&s_un, sizeof(s_un)) < 0) 
+  if (connect(sock_fd, (struct sockaddr *)&s_un, sizeof(s_un)) < 0)
   {
     LOG_ERROR("cannot connect to slow-path, %s", APP_SOCKET_PATH);
     perror("");
     goto close_sockfd;
   }
-  
+
   /* Get shared mem fd */
-  if (uxsocket_read_one_msg(sock_fd, &tmp, &shm_fd) < 0 || tmp != -1 || shm_fd < 0) 
+  if (uxsocket_read_one_msg(sock_fd, &tmp, &shm_fd) < 0 || tmp != -1 || shm_fd < 0)
   {
-    if (shm_fd >= 0) 
+    if (shm_fd >= 0)
       close(shm_fd);
-    
+
     LOG_ERROR("cannot read shared memory fd from slow-path");
     goto close_sockfd;
   }
@@ -90,7 +90,7 @@ int udp_connect_slow()
   u->next_ctxid = 0;
   u->next_sockfd = 0;
   udp = u;
-  
+
   return 0;
 
 close_sockfd:
@@ -98,7 +98,7 @@ close_sockfd:
   return -1;
 }
 
-struct udp_context_lib * udp_ctx_new()
+struct udp_context_lib *udp_ctx_new()
 {
   int i;
   ssize_t sz, off;
@@ -109,23 +109,23 @@ struct udp_context_lib * udp_ctx_new()
   struct equeue *eq, **eq_list;
   struct dqueue *dq, **dq_list;
   struct udp_queue_new_actx_req req = {
-    .req = 1,
+      .req = 1,
   };
-  
+
   /* Send request on kernel socket */
   struct iovec iov = {
-    .iov_base = &req,
-    .iov_len = sizeof(req),
+      .iov_base = &req,
+      .iov_len = sizeof(req),
   };
 
   struct msghdr msg = {
-    .msg_name = NULL,
-    .msg_namelen = 0,
-    .msg_iov = &iov,
-    .msg_iovlen = 1,
-    .msg_control = NULL,
-    .msg_controllen = 0,
-    .msg_flags = 0,
+      .msg_name = NULL,
+      .msg_namelen = 0,
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = NULL,
+      .msg_controllen = 0,
+      .msg_flags = 0,
   };
 
   sz = sendmsg(udp->uxsocket_fd, &msg, 0);
@@ -137,12 +137,12 @@ struct udp_context_lib * udp_ctx_new()
   }
 
   /* Receive response on kernel socket */
-  res = (struct udp_queue_new_actx_res *) resp_buf;
+  res = (struct udp_queue_new_actx_res *)resp_buf;
   off = 0;
-  while (off < sizeof(*res)) 
+  while (off < sizeof(*res))
   {
-    sz = read(udp->uxsocket_fd, (__u8 *) res + off, sizeof(*res) - off);
-    if (sz < 0) 
+    sz = read(udp->uxsocket_fd, (__u8 *)res + off, sizeof(*res) - off);
+    if (sz < 0)
     {
       LOG_ERROR("read failed");
       perror("");
@@ -150,46 +150,49 @@ struct udp_context_lib * udp_ctx_new()
     }
     off += sz;
   }
-  
+
   ctx = malloc(sizeof(struct udp_context_lib));
   if (ctx == NULL)
   {
     LOG_ERROR("failed to allocate udp context struct");
     return NULL;
   }
-  
+
   ctx->id = __sync_fetch_and_add(&udp->next_ctxid, 1);
   ctx->ncores = res->n_fp_cores;
-  
+
   /* Map shared memory if this is the first context */
   if (ctx->id == 0)
   {
-    shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE, 
-        MAP_SHARED | MAP_POPULATE, udp->shm_fd, 0);
-    if (shm_base == (void *) -1) 
+    shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE,
+                    MAP_SHARED | MAP_POPULATE, udp->shm_fd, 0);
+    if (shm_base == (void *)-1)
     {
       LOG_ERROR("failed to map shm region");
-      return NULL;;
+      return NULL;
+      ;
     }
     udp->shm_base = shm_base;
   }
-  
+
   /* Wait until shm_base is mapped */
-  while (udp->shm_base == NULL) {}
+  while (udp->shm_base == NULL)
+  {
+  }
 
   /* Set queue from app to slow-path */
   eq = equeue_new(res->as_nelems, res->as_elsize,
-      udp->shm_base + res->as_off, res->as_off);
+                  udp->shm_base + res->as_off, res->as_off);
   if (eq == NULL)
   {
     LOG_ERROR("failed to create queue from app to slow-path");
     return NULL;
   }
   ctx->app_slow_q = eq;
-  
+
   /* Set queue from slow-path to app */
-  dq = dqueue_new(res->sa_nelems, 
-      res->sa_elsize,udp->shm_base + res->sa_off, res->sa_off);
+  dq = dqueue_new(res->sa_nelems,
+                  res->sa_elsize, udp->shm_base + res->sa_off, res->sa_off);
   if (dq == NULL)
   {
     LOG_ERROR("failed to create queue from slow-path to app");
@@ -218,7 +221,7 @@ struct udp_context_lib * udp_ctx_new()
   for (i = 0; i < res->n_fp_cores; i++)
   {
     eq = equeue_new(res->af_nelems, res->af_elsize,
-        udp->shm_base + res->af_offs[i], res->af_offs[i]);
+                    udp->shm_base + res->af_offs[i], res->af_offs[i]);
     if (eq == NULL)
     {
       LOG_ERROR("failed to create app->fast bump queue");
@@ -227,7 +230,7 @@ struct udp_context_lib * udp_ctx_new()
     eq_list[i] = eq;
 
     dq = dqueue_new(res->fa_nelems, res->fa_elsize,
-        udp->shm_base + res->fa_offs[i], res->fa_offs[i]);
+                    udp->shm_base + res->fa_offs[i], res->fa_offs[i]);
     if (dq == NULL)
     {
       LOG_ERROR("failed to create fast->app bump queue");
@@ -252,7 +255,7 @@ int udp_socket(struct udp_context_lib *ctx)
     LOG_ERROR("passed NULL udp_context_lib");
     return -1;
   }
-  
+
   /* Find next free fd and get socket */
   fd = __sync_fetch_and_add(&udp->next_sockfd, 1);
   if (fd >= MAX_SOCKETS)
@@ -272,7 +275,7 @@ int udp_socket(struct udp_context_lib *ctx)
   sock->rx_ip = 0;
   sock->bind_success = -1;
   sock->setopt_success = -1;
-  
+
   /* Set to 0 here so we can check if it was initialised when polling slow-path */
   sock->rx_len = 0;
 
@@ -286,7 +289,7 @@ int udp_socket(struct udp_context_lib *ctx)
   }
 
   req = &qe->data.new_sock_req;
-  req->opaque = (__u64) sock;
+  req->opaque = (__u64)sock;
   ret = queue_enqueue(q, UDP_QUEUE_NEW_SOCK_REQ);
   if (ret != 0)
   {
@@ -301,16 +304,16 @@ int udp_socket(struct udp_context_lib *ctx)
   return sock->fd;
 }
 
-int udp_bind(struct udp_context_lib *ctx, int sockfd, 
-    const struct sockaddr *addr, socklen_t addrlen)
+int udp_bind(struct udp_context_lib *ctx, int sockfd,
+             const struct sockaddr *addr, socklen_t addrlen)
 {
   int ret;
   struct equeue *q;
   struct udp_queue_entry *qe;
   struct udp_queue_bind_req *req;
-  struct sockaddr_in *sin = (struct sockaddr_in *) addr;
+  struct sockaddr_in *sin = (struct sockaddr_in *)addr;
   struct udp_socket_lib *sock;
-  
+
   /* Send src ip and port to slow-path */
   q = ctx->app_slow_q;
   qe = queue_tail(q);
@@ -319,14 +322,14 @@ int udp_bind(struct udp_context_lib *ctx, int sockfd,
     LOG_ERROR("failed to get queue tail");
     return -1;
   }
-  
+
   req = &qe->data.bind_req;
-  
+
   sock = &udp->socks[sockfd];
   req->sock_id = sock->sock_id;
   req->local_ip = ntohl(sin->sin_addr.s_addr);
   req->local_port = ntohs(sin->sin_port);
-  req->opaque = (__u64) sock;
+  req->opaque = (__u64)sock;
   ret = queue_enqueue(q, UDP_QUEUE_BIND_REQ);
   if (ret != 0)
   {
@@ -335,11 +338,10 @@ int udp_bind(struct udp_context_lib *ctx, int sockfd,
   }
 
   while (sock->bind_success == -1)
-    udp_poll_slow(ctx);
+    rcp_poll_slow(ctx);
 
   if (!sock->bind_success)
     return -1;
-
   sock->tx_port = sin->sin_port;
   sock->tx_ip = sin->sin_addr.s_addr;
   sock->bind_success = -1;
@@ -353,7 +355,7 @@ int udp_setsockopt(struct udp_context_lib *ctx, int sockfd, __u8 opt)
   struct udp_queue_entry *qe;
   struct udp_queue_setopt_req *req;
   struct udp_socket_lib *sock;
-  
+
   q = ctx->app_slow_q;
   qe = queue_tail(q);
   if (qe == NULL)
@@ -361,33 +363,33 @@ int udp_setsockopt(struct udp_context_lib *ctx, int sockfd, __u8 opt)
     LOG_ERROR("failed to get queue tail");
     return -1;
   }
-  
+
   sock = &udp->socks[sockfd];
   req = &qe->data.setopt_req;
   req->opt = opt;
   req->sock_id = sockfd;
-  req->opaque = (__u64) sock;
-  
+  req->opaque = (__u64)sock;
+
   ret = queue_enqueue(q, UDP_QUEUE_SETOPT_REQ);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue setsockopt req");
     return -1;
   }
-  
+
   while (sock->setopt_success == -1)
     udp_poll_slow(ctx);
-    
+
   if (!sock->setopt_success)
     return -1;
-    
+
   sock->setopt_success = -1;
   return 0;
 }
 
-int udp_sendto(struct udp_context_lib *ctx, int sockfd, 
-    const void *buf, size_t len, 
-    const struct sockaddr *addr, socklen_t addrlen)
+int udp_sendto(struct udp_context_lib *ctx, int sockfd,
+               const void *buf, size_t len,
+               const struct sockaddr *addr, socklen_t addrlen)
 {
   int n, ret;
   __u32 tail, n1, n2;
@@ -395,7 +397,7 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
   struct equeue *q;
   struct udp_queue_bump_entry *qe;
   struct udp_queue_bump_cham_tx *bump;
-  struct sockaddr_in *sin = (struct sockaddr_in *) addr;
+  struct sockaddr_in *sin = (struct sockaddr_in *)addr;
 
   sock = &udp->socks[sockfd];
   if (sock->fd == SOCK_INACTIVE)
@@ -403,14 +405,14 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
     LOG_ERROR("bad socket file descriptor");
     return -1;
   }
-  
+
   if (len == 0)
     return 0;
 
   n = len;
   if (len > sock->tx_len - sock->tx_avail)
     n = sock->tx_len - sock->tx_avail;
-  
+
   /* No space available in tx buffer */
   if (n == 0)
   {
@@ -439,7 +441,7 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
   sock->tx_avail = sock->tx_avail + n;
   sock->tx_ip = ntohl(sin->sin_addr.s_addr);
   sock->tx_port = ntohs(sin->sin_port);
-    
+
   /* Send bump message to update TX available */
   q = ctx->app_fast_qs[sock->core];
   qe = queue_tail(q);
@@ -465,17 +467,17 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
   return n;
 }
 
-int udp_recvfrom(struct udp_context_lib *ctx, int sockfd, 
-    void *buf, size_t len, 
-    struct sockaddr *addr, socklen_t addr_len)
+int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
+                 void *buf, size_t len,
+                 struct sockaddr *addr, socklen_t addr_len)
 {
   int n, ret;
   __u32 n1, n2, new_head;
   struct equeue *q;
   struct udp_queue_bump_entry *qe;
-  struct udp_queue_bump_cham_rx *bump; 
+  struct udp_queue_bump_cham_rx *bump;
   struct udp_socket_lib *sock;
-  struct sockaddr_in *sin = (struct sockaddr_in *) addr;
+  struct sockaddr_in *sin = (struct sockaddr_in *)addr;
 
   sock = &udp->socks[sockfd];
   if (sock->fd == SOCK_INACTIVE)
@@ -488,14 +490,14 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
   n = len;
   if (len > sock->rx_avail)
     n = sock->rx_avail;
-    
+
   /* There is nothing available */
   if (n == 0)
   {
     errno = EAGAIN;
     return -1;
   }
-    
+
   assert(sock->rx_head >= 0);
   if (sock->rx_head + n > sock->rx_len)
   {
@@ -510,13 +512,13 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
     /* Simple copy */
     memcpy(buf, sock->rx_buf + sock->rx_head, n);
   }
-  
+
   sock->rx_avail -= n;
   new_head = sock->rx_head + n;
   if (new_head > sock->rx_len)
     new_head -= sock->rx_len;
   sock->rx_head = new_head;
-  
+
   if (addr != NULL)
   {
     sin->sin_addr.s_addr = htonl(sock->rx_ip);
@@ -535,14 +537,14 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
   bump = &qe->data.bump_cham_rx;
   bump->sock_id = sock->sock_id;
   bump->rx_head = n;
-  
+
   ret = queue_enqueue(q, UDP_QUEUE_BUMP_CHAM_RX);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue bump");
     return -1;
   }
-  
+
   return n;
 }
 
@@ -552,8 +554,7 @@ int udp_poll_fast(struct udp_context_lib *ctx)
   struct dqueue *q;
   struct udp_queue_bump_entry *qe;
   struct dqueue **fast_app_qs;
-  
-  
+
   /* Poll for messages from each fast-path core */
   n = 0;
   ncores = ctx->ncores;
@@ -562,24 +563,25 @@ int udp_poll_fast(struct udp_context_lib *ctx)
   {
     q = fast_app_qs[i];
     while (n < POLL_BATCH && (qe = queue_head(q)) != NULL)
-    {       
+    {
       n++;
-    
+
       switch (qe->type)
       {
-        case UDP_QUEUE_BUMP_APP_TX:
-          handle_tx_bump(qe);
-          break;
-        case UDP_QUEUE_BUMP_APP_RX:
-          handle_rx_bump(qe);
-          break;
-        default:
-          LOG_ERROR("unknown queue entry type from "
-              "fast-path to app type=%d", qe->type);
-          abort();
+      case UDP_QUEUE_BUMP_APP_TX:
+        handle_tx_bump(qe);
+        break;
+      case UDP_QUEUE_BUMP_APP_RX:
+        handle_rx_bump(qe);
+        break;
+      default:
+        LOG_ERROR("unknown queue entry type from "
+                  "fast-path to app type=%d",
+                  qe->type);
+        abort();
       }
-      
-      queue_dequeue(q);      
+
+      queue_dequeue(q);
     }
   }
 
@@ -592,39 +594,39 @@ int udp_poll_slow(struct udp_context_lib *ctx)
   struct dqueue *q;
   struct udp_queue_entry *qe;
 
-  n = 0;  
+  n = 0;
   q = ctx->slow_app_q;
   while (n < POLL_BATCH)
   {
     qe = queue_head(q);
-  
+
     /* Queue is empty */
     if (qe == NULL)
       return -1;
-      
+
     n++;
-  
+
     switch (qe->type)
     {
-      case UDP_QUEUE_NEW_SOCK_RES:
-        handle_new_sock_res(qe);
-        break;
-      case UDP_QUEUE_BIND_RES:
-        handle_bind_res(qe);
-        break;
-      case UDP_QUEUE_SETOPT_RES:
-        handle_setopt_res(qe);
-        break;
-      default:
-        LOG_ERROR("unknown queue entry type from "
-            "slow-path to app type=%d", qe->type);
-        abort();
+    case UDP_QUEUE_NEW_SOCK_RES:
+      handle_new_sock_res(qe);
+      break;
+    case UDP_QUEUE_BIND_RES:
+      handle_bind_res(qe);
+      break;
+    case UDP_QUEUE_SETOPT_RES:
+      handle_setopt_res(qe);
+      break;
+    default:
+      LOG_ERROR("unknown queue entry type from "
+                "slow-path to app type=%d",
+                qe->type);
+      abort();
     }
     queue_dequeue(q);
-    
   }
 
-  return n;  
+  return n;
 }
 
 static int handle_new_sock_res(struct udp_queue_entry *qe)
@@ -633,7 +635,7 @@ static int handle_new_sock_res(struct udp_queue_entry *qe)
   struct udp_socket_lib *sock;
 
   res = &qe->data.new_sock_res;
-  sock = (struct udp_socket_lib *) res->opaque;
+  sock = (struct udp_socket_lib *)res->opaque;
   sock->core = res->core;
   sock->sock_id = res->sock_id;
   sock->rx_qid = res->rx_qid;
@@ -642,9 +644,9 @@ static int handle_new_sock_res(struct udp_queue_entry *qe)
   sock->tx_qid = res->tx_qid;
   sock->tx_len = res->tx_len;
   sock->tx_buf = udp->shm_base +
-  res->tx_off;
+                 res->tx_off;
 
-  return 0;  
+  return 0;
 }
 
 static int handle_bind_res(struct udp_queue_entry *qe)
@@ -653,7 +655,7 @@ static int handle_bind_res(struct udp_queue_entry *qe)
   struct udp_socket_lib *sock;
 
   res = &qe->data.bind_res;
-  sock = (struct udp_socket_lib *) res->opaque;
+  sock = (struct udp_socket_lib *)res->opaque;
   sock->bind_success = res->success;
 
   return 0;
@@ -665,7 +667,7 @@ static int handle_setopt_res(struct udp_queue_entry *qe)
   struct udp_socket_lib *sock;
 
   res = &qe->data.setopt_res;
-  sock = (struct udp_socket_lib *) res->opaque;
+  sock = (struct udp_socket_lib *)res->opaque;
   sock->setopt_success = res->success;
 
   return 0;
@@ -678,7 +680,7 @@ static int handle_tx_bump(struct udp_queue_bump_entry *qe)
   struct udp_socket_lib *sock;
 
   bump = &qe->data.bump_app_tx;
-  sock = (struct udp_socket_lib *) bump->opaque;
+  sock = (struct udp_socket_lib *)bump->opaque;
 
   new_head = sock->tx_head + bump->tx_head;
   if (new_head > sock->tx_len)
@@ -686,7 +688,7 @@ static int handle_tx_bump(struct udp_queue_bump_entry *qe)
   sock->tx_head = new_head;
   sock->tx_avail -= bump->tx_head;
 
-  return 0;  
+  return 0;
 }
 
 static int handle_rx_bump(struct udp_queue_bump_entry *qe)
@@ -695,10 +697,10 @@ static int handle_rx_bump(struct udp_queue_bump_entry *qe)
   struct udp_socket_lib *sock;
 
   bump = &qe->data.bump_app_rx;
-  sock = (struct udp_socket_lib *) bump->opaque;
+  sock = (struct udp_socket_lib *)bump->opaque;
   sock->rx_avail += bump->rx_avail;
   sock->rx_port = bump->rx_port;
   sock->rx_ip = bump->rx_ip;
 
-  return 0;  
+  return 0;
 }
