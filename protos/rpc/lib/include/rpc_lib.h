@@ -1,5 +1,5 @@
-#ifndef UDP_LIB_H_
-#define UDP_LIB_H_
+#ifndef RPC_LIB_H_
+#define RPC_LIB_H_
 
 #include <linux/types.h>
 #include <sys/socket.h>
@@ -13,15 +13,16 @@
 #define MAX_WORKERS 16
 #define SOCK_INACTIVE (-1U)
 
-struct rpc_context_lib {
+struct rpc_context_lib
+{
   /* ID for this context */
   __u16 id;
 
   /* Queue from app context to slow-path */
-  struct equeue *app_slow_q;  
+  struct equeue *app_slow_q;
   /* Queue from slow-path to app context */
   struct dqueue *slow_app_q;
-  
+
   /* Outgoing and incoming queue for each fast-path core*/
   __u16 ncores;
   struct equeue **app_fast_qs;
@@ -29,7 +30,8 @@ struct rpc_context_lib {
 };
 
 /* Worker that handles RPC requests */
-struct rpc_worker_lib {
+struct rpc_worker_lib
+{
   /* Context that created this worker */
   struct rpc_context_lib *ctx;
   /* Server for this worker */
@@ -54,7 +56,7 @@ struct rpc_worker_lib {
   __u32 rx_head;
   /* Pointer to start of RX buffer in shared memory */
   void *rx_buf;
-  
+
   /* Queue ID used for TX buffer */
   __u16 tx_qid;
   /* Length of the TX buffer */
@@ -68,11 +70,15 @@ struct rpc_worker_lib {
 };
 
 /* RPC client that makes calls */
-struct rpc_client_lib {
+struct rpc_client_lib
+{
   /* Context that created this client */
   struct rpc_context_lib *ctx;
   /* Fast-path core of this client */
   __u16 core;
+
+  /* Socket ID in slow-path */
+  __u32 sock_id;
 
   /* RX port */
   __u16 rx_port;
@@ -93,7 +99,7 @@ struct rpc_client_lib {
   __u32 rx_head;
   /* Pointer to start of RX buffer in shared memory */
   void *rx_buf;
-  
+
   /* Queue ID used for TX buffer */
   __u16 tx_qid;
   /* Length of the TX buffer */
@@ -105,13 +111,14 @@ struct rpc_client_lib {
   /* Pointer to the start of the TX buffer in shared memory */
   void *tx_buf;
 
-  /* Result from bind. Default is -1 and is set 
+  /* Result from bind. Default is -1 and is set
       to 1 on success and 0 on failure */
   int bind_success;
 };
 
 /* RPC server that registers different services */
-struct rpc_server_lib {
+struct rpc_server_lib
+{
   /* Fast-path core of this server */
   __u16 core;
 
@@ -125,12 +132,13 @@ struct rpc_server_lib {
   /* Array of workers */
   struct rpc_worker_lib workers[MAX_WORKERS];
 
-  /* Result from bind. Default is -1 and is set 
+  /* Result from bind. Default is -1 and is set
       to 1 on success and 0 on failure */
   int bind_success;
 };
 
-struct rpc_lib {
+struct rpc_lib
+{
   /* Unix socket file descriptor */
   int uxsocket_fd;
 
@@ -138,43 +146,42 @@ struct rpc_lib {
   int shm_fd;
   /* Base pointer to mapped shared memory */
   void *shm_base;
-  
+
   /* Next ctx ID */
   int next_ctxid;
 
-  /* Table with clients */
-  struct rpc_server_lib servers[MAX_SERVERS];
   /* Table with servers */
+  struct rpc_server_lib servers[MAX_SERVERS];
+  /* Table with clients */
   struct rpc_client_lib clients[MAX_CLIENTS];
 };
 
 /* Connects to the slow-path */
 int rpc_connect_slow();
 /* Creates a new context for a thread */
-struct rpc_context_lib * rpc_ctx_new();
+struct rpc_context_lib *rpc_ctx_new();
 /* Polls message queue for slow-path messages */
 int rpc_poll_slow(struct rpc_context_lib *ctx);
 /* Polls message queue for RPC requests */
 int rpc_poll_calls(struct rpc_context_lib *ctx);
 
 /* Allocates an RPC client */
-struct rpc_client_lib * rpc_new_client(__u32 ip, __u16 port);
+struct rpc_client_lib *rpc_new_client(struct rpc_context_lib *ctx, __u32 ip, __u16 port);
 /* Allocates an RPC server */
-struct rpc_server_lib * rpc_new_server(__u32 ip, __u16 port);
+struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u16 port);
 /* Creates a new worker for a server */
-struct rpc_worker_lib * rpc_new_worker(struct rpc_server_lib *s);
-
+struct rpc_worker_lib *rpc_new_worker(struct rpc_context_lib *ctx, struct rpc_server_lib *s);
 /* Registers a service with the given server */
 int rpc_register(struct rpc_server_lib *server, __u8 service);
 /* Sends an RPC request to the given IP and port */
 int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
-    __u16 service, void *buf, size_t len);
+             __u16 service, void *buf, size_t len);
 /* Sends an RPC response for a call that was handled */
 int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
-    __u32 rid, void *buf, size_t len);
+               __u32 rid, void *buf, size_t len);
 /* Parses the top request in worker queue */
-int rpc_handle_call(struct rpc_worker_lib *w, 
-    void *buf, size_t len);
+int rpc_handle_call(struct rpc_worker_lib *w,
+                    void *buf, size_t len);
 
 /* Removes a pending job from the given worker */
 int rpc_call_complete(struct rpc_worker_lib *w);
