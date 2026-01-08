@@ -188,12 +188,12 @@ int handle_new_sock_rpc(struct rpc_slow_context *ctx,
 {
   int ret;
 
-  ret = cham_new_sock(actx->app_fd, qe_req->sock);
-  if (ret != 0)
-  {
-    LOG_ERROR("failed to create new socket");
-    return ret;
-  }
+  // ret = cham_new_sock(actx->app_fd, qe_req->sock);
+  // if (ret != 0)
+  // {
+  //   LOG_ERROR("failed to create new socket");
+  //   return ret;
+  // }
 
   return 0;
 }
@@ -203,13 +203,13 @@ int handle_bind_rpc(struct rpc_slow_context *ctx,
 {
   int ret;
 
-  ret = cham_bind_sock(actx->app_fd, qe_req->bind_req.sock,
-      qe_req->bind_req.ip, qe_req->bind_req.port);
-  if (ret != 0)
-  {
-    LOG_ERROR("failed to bind socket");
-    return ret;
-  }
+  // ret = cham_bind_sock(actx->app_fd, qe_req->bind_req.sock,
+  //     qe_req->bind_req.ip, qe_req->bind_req.port);
+  // if (ret != 0)
+  // {
+  //   LOG_ERROR("failed to bind socket");
+  //   return ret;
+  // }
 
   return 0;
 }
