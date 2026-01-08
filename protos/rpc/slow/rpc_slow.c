@@ -19,6 +19,11 @@
 #include <errno.h>
 #include <fcntl.h>
 
+int handle_new_sock_rpc(struct rpc_slow_context *ctx, 
+  struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
+int handle_bind_rpc(struct rpc_slow_context *ctx, 
+    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req);
+
 int init_rpc_slow_context(struct rpc_slow_context *ctx);
 
 int poll_apps(struct rpc_slow_context *ctx);
@@ -130,6 +135,12 @@ int poll_apps(struct rpc_slow_context *ctx)
     {
       case RPC_QUEUE_EMPTY:
         break;
+      case RPC_QUEUE_NEW_SOCK_REQ:
+        handle_new_sock_rpc(ctx, actx, qe);
+        break;
+      case RPC_QUEUE_BIND_REQ:
+        handle_bind_rpc(ctx, actx, qe);
+        break;
       default:
         LOG_WARN("unknown queue entry type from app " 
           "to udp slow-path type=%d", type);
@@ -170,4 +181,35 @@ int main(int argc, char **argv)
     appif_poll(&ctx);
     poll_apps(&ctx);
   }
+}
+
+int handle_new_sock_rpc(struct rpc_slow_context *ctx, 
+    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
+{
+  int ret;
+
+  ret = cham_new_sock(actx->app_fd, qe_req->sock);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to create new socket");
+    return ret;
+  }
+
+  return 0;
+}
+
+int handle_bind_rpc(struct rpc_slow_context *ctx, 
+    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
+{
+  int ret;
+
+  ret = cham_bind_sock(actx->app_fd, qe_req->bind_req.sock,
+      qe_req->bind_req.ip, qe_req->bind_req.port);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to bind socket");
+    return ret;
+  }
+
+  return 0;
 }
