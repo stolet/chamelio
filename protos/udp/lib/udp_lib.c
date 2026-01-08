@@ -338,7 +338,7 @@ int udp_bind(struct udp_context_lib *ctx, int sockfd,
   }
 
   while (sock->bind_success == -1)
-    rcp_poll_slow(ctx);
+    udp_poll_slow(ctx);
 
   if (!sock->bind_success)
     return -1;
