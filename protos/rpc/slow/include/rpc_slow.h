@@ -1,5 +1,5 @@
-#ifndef UDP_SLOW_H_
-#define UDP_SLOW_H_
+#ifndef RPC_SLOW_H_
+#define RPC_SLOW_H_
 
 #include <cham_lib.h>
 #include <cham_fast.h>
