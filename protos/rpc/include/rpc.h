@@ -16,7 +16,100 @@
 #define MAX_PORT 65534
 /* Maximum number of UDP sockets */
 #define MAX_SOCKETS MAX_PORT
+/* Maximum number of servers */
+#define MAX_SERVERS 6
+/* Maximum number of clients */
+#define MAX_CLIENTS 16
+/* Maximum number of workers */
+#define MAX_WORKERS 16
 /* Location where ebpf bytecode is located */
 #define RPC_EBPF_BYTECODE "protos/rpc/fast/rpc_fast.bpf.o"
 
+/* Entry for the client map */
+struct rpc_client
+{
+  /* Client ID */
+  __u32 id;
+  /* Fast-path core this client is currently running on */
+  __u16 core;
+  /* Queue ID to bump app */
+  __u16 app_bump_qid;
+  /* Opaque pointer to client in application */
+  __u64 opaque;
+
+  /* Local IP of the client */
+  __u32 local_ip;
+  /* Local port of the client */
+  __u16 local_port;
+
+  // TODO: check if rx/tx_head/avail are needed
+
+  /* Length of RX buffer */
+  __u32 rx_len;
+
+  /* Number of available bytes to be read */
+  // __u32 rx_avail;
+  // /* Head of RX buffer */
+  // __u32 rx_head;
+
+  /* Pointer to start of RX buffer in shared memory */
+  __u64 rx_off;
+
+  /* Length of the TX buffer */
+  __u32 tx_len;
+
+  /* Number of bytes written to buffer */
+  // __u32 tx_avail;
+  /* Head of the TX buffer */
+  // __u32 tx_head;
+
+  /* Offset to the start of the TX buffer in shared memory */
+  __u64 tx_off;
+} __attribute__((packed));
+
+/* Entry for the port to server map */
+struct rpc_port_entry
+{
+  /* Server ID */
+  __u32 server_id;
+};
+
+struct rpc_server
+{
+  /* Server ID */
+  __u32 id;
+  /* First worker */
+  __u32 w1;
+  /* Number of workers */
+  __u16 n_workers;
+  /* Local IP */
+  __u32 local_ip;
+  /* Local port */
+  __u16 local_port;
+};
+
+struct rpc_worker
+{
+  /* Worker ID */
+  __u32 id;
+  /* Opaque pointer to worker in application */
+  __u64 opaque;
+  /* Fast-path core this worker is currently running on */
+  __u16 core;
+  /* Queue ID to bump app */
+  __u16 app_bump_qid;
+  /* Server ID */
+  __u32 server_id;
+  /* Number of pending jobs */
+  __u32 jobs_pending;
+
+  /* Length of RX buffer */
+  __u32 rx_len;
+  /* Pointer to start of RX buffer in shared memory */
+  __u64 rx_off;
+  /* Length of TX buffer */
+  __u32 tx_len;
+  /* Pointer to start of TX buffer in shared memory */
+  __u64 tx_off;
+};
 #endif

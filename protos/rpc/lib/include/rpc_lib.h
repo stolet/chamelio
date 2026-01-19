@@ -5,12 +5,13 @@
 #include <sys/socket.h>
 
 #include "queue.h"
+#include "rpc.h"
 
 /* TODO: Fix this because it's duplicated */
 #define MAX_SOCKETS 8192
-#define MAX_SERVERS 6
-#define MAX_CLIENTS 16
-#define MAX_WORKERS 16
+// #define MAX_SERVERS 6
+// #define MAX_CLIENTS 16
+// #define MAX_WORKERS 16
 #define SOCK_INACTIVE (-1U)
 
 struct rpc_context_lib
@@ -32,6 +33,7 @@ struct rpc_context_lib
 /* Worker that handles RPC requests */
 struct rpc_worker_lib
 {
+  //TBC: why have the ctx for the worker? Is it needed? 
   /* Context that created this worker */
   struct rpc_context_lib *ctx;
   /* Server for this worker */
@@ -77,9 +79,6 @@ struct rpc_client_lib
   /* Fast-path core of this client */
   __u16 core;
 
-  /* Socket ID in slow-path */
-  __u32 sock_id;
-
   /* RX port */
   __u16 rx_port;
   /* RX IP address */
@@ -119,6 +118,9 @@ struct rpc_client_lib
 /* RPC server that registers different services */
 struct rpc_server_lib
 {
+  /* Context that created this client */
+  struct rpc_context_lib *ctx;
+
   /* Fast-path core of this server */
   __u16 core;
 
@@ -149,6 +151,10 @@ struct rpc_lib
 
   /* Next ctx ID */
   int next_ctxid;
+  /* Next client ID */
+  int next_clientid;
+  /* Next server ID */
+  int next_serverid;
 
   /* Table with servers */
   struct rpc_server_lib servers[MAX_SERVERS];

@@ -19,15 +19,24 @@
 #include <errno.h>
 #include <fcntl.h>
 
-int handle_new_sock_rpc(struct rpc_slow_context *ctx, 
-  struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
-int handle_bind_rpc(struct rpc_slow_context *ctx, 
-    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req);
+#define INVALID_SERVER_ID 0xFFFFFFFF
+
+int handle_new_client_req(struct rpc_slow_context *ctx,
+                          struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
+
+int handle_new_server_req(struct rpc_slow_context *ctx,
+                          struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
+
+int handle_new_worker_req(struct rpc_slow_context *ctx,
+                          struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
+
+int handle_bind_rpc(struct rpc_slow_context *ctx,
+                    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req);
 
 int init_rpc_slow_context(struct rpc_slow_context *ctx);
 
 int poll_apps(struct rpc_slow_context *ctx);
-    
+
 int init_rpc_slow_context(struct rpc_slow_context *ctx)
 {
   int fd, ret;
@@ -36,6 +45,8 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
   __u8 *ebpf_bytecode;
   struct guest_lib *g;
   struct proto_lib *p;
+  struct proto_map_lib *pt_to_ser_map, *servers_map, *workers_map, *clients_map;
+  struct rpc_port_entry *pt_sers;
 
   g = cham_connect_guest();
   if (g == NULL)
@@ -50,7 +61,7 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
     LOG_ERROR("UDP slow-path failed to register protocol with Chamelio");
     abort();
   }
-  
+
   fd = open(RPC_EBPF_BYTECODE, O_RDWR);
   if (fd < 0)
   {
@@ -58,22 +69,22 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
     abort();
   }
   fstat(fd, &statbuf);
-  
+
   ebpf = cham_allocate_ebpf(p, statbuf.st_size);
   if (ebpf == NULL)
   {
     LOG_ERROR("Failed to allocate space for eBPF bytecode in shared memory");
     abort();
   }
-  
+
   ebpf_bytecode = mmap(NULL, ebpf->size, PROT_READ | PROT_EXEC,
-      MAP_PRIVATE, fd, 0);
+                       MAP_PRIVATE, fd, 0);
   if (ebpf_bytecode == NULL)
   {
     LOG_ERROR("failed to mmap eBPF bytecode");
     abort();
   }
-  
+
   ret = cham_upload_ebpf(p, ebpf_bytecode, ebpf->size);
   if (ret != 0)
   {
@@ -81,12 +92,50 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
     abort();
   }
 
+  clients_map = cham_new_map(p, MAX_CLIENTS, sizeof(struct rpc_client));
+  if (clients_map == NULL)
+  {
+    LOG_ERROR("failed to create map to hold clients");
+    abort();
+  }
+  servers_map = cham_new_map(p, MAX_SERVERS, sizeof(struct rpc_server));
+  if (servers_map == NULL)
+  {
+    LOG_ERROR("failed to create map to hold servers");
+    abort();
+  }
+  workers_map = cham_new_map(p, MAX_WORKERS, sizeof(struct rpc_worker));
+  if (workers_map == NULL)
+  {
+    LOG_ERROR("failed to create map to hold workers");
+    abort();
+  }
+  pt_to_ser_map = cham_new_map(p, MAX_PORT, sizeof(struct rpc_port_entry));
+  if (pt_to_ser_map == NULL)
+  {
+    LOG_ERROR("failed to create port to server map");
+    abort();
+  }
+  // initialize port to server map entries to invalid server id
+  pt_sers = ctx->proto->shm_base + ctx->port_server_map->off;
+  for (int i = 0; i < MAX_PORT; i++)
+  {
+    pt_sers[i].server_id = INVALID_SERVER_ID;
+  }
+
+  ctx->clients_map = clients_map;
+  ctx->servers_map = servers_map;
+  ctx->workers_map = workers_map;
+
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;
   ctx->guest = g;
   ctx->proto = p;
   ctx->n_apps = 0;
   ctx->next_app = 0;
+  ctx->n_clients = 0;
+  ctx->n_servers = 0;
+  ctx->n_workers = 0;
 
   return 0;
 }
@@ -99,12 +148,12 @@ int poll_apps(struct rpc_slow_context *ctx)
   struct rpc_queue_entry *qe;
   struct rpc_app_slow *a;
   struct rpc_app_context_slow *actx;
- 
+
   msgs_i = 0;
   apps_polled = 0;
   ctxs_polled = 0;
   while (msgs_i < BATCH_SIZE && ctx->n_apps != 0)
-  {     
+  {
     a = &ctx->apps[ctx->next_app];
     if (ctxs_polled >= a->n_ctxs)
     {
@@ -112,16 +161,16 @@ int poll_apps(struct rpc_slow_context *ctx)
       ctx->next_app = (ctx->next_app + 1) % ctx->n_apps;
       a = &ctx->apps[ctx->next_app];
     }
-  
+
     if (apps_polled >= ctx->n_apps || a->n_ctxs == 0)
     {
       break;
     }
-    
+
     actx = &a->ctxs[a->next_ctx];
     q = actx->app_slow_q;
     qe = queue_head(q);
-    
+
     if (qe == NULL)
     {
       ctxs_polled++;
@@ -133,18 +182,25 @@ int poll_apps(struct rpc_slow_context *ctx)
     type = qe->type;
     switch (type)
     {
-      case RPC_QUEUE_EMPTY:
-        break;
-      case RPC_QUEUE_NEW_SOCK_REQ:
-        handle_new_sock_rpc(ctx, actx, qe);
-        break;
-      case RPC_QUEUE_BIND_REQ:
-        handle_bind_rpc(ctx, actx, qe);
-        break;
-      default:
-        LOG_WARN("unknown queue entry type from app " 
-          "to udp slow-path type=%d", type);
-          break;
+    case RPC_QUEUE_EMPTY:
+      break;
+    case RPC_QUEUE_NEW_CLIENT_REQ:
+      handle_new_client_req(ctx, actx, qe);
+      break;
+    case RPC_QUEUE_NEW_SERVER_REQ:
+      handle_new_server_req(ctx, actx, qe);
+      break;
+    case RPC_QUEUE_NEW_WORKER_REQ:
+      handle_new_worker_req(ctx, actx, qe);
+      break;
+    // case RPC_QUEUE_BIND_REQ:
+    //   handle_bind_rpc(ctx, actx, qe);
+    //   break;
+    default:
+      LOG_WARN("unknown queue entry type from app "
+               "to udp slow-path type=%d",
+               type);
+      break;
     }
     queue_dequeue(q);
   }
@@ -161,21 +217,21 @@ int main(int argc, char **argv)
 {
   int ret;
   struct rpc_slow_context ctx;
-  
+
   ret = init_rpc_slow_context(&ctx);
   if (ret != 0)
   {
     LOG_ERROR("failed to initialise udp slow context");
     abort();
   }
-  
+
   ret = appif_init(&ctx);
   if (ret != 0)
   {
     LOG_ERROR("failed to initialise appiff");
     abort();
   }
-  
+
   while (1)
   {
     appif_poll(&ctx);
@@ -183,33 +239,230 @@ int main(int argc, char **argv)
   }
 }
 
-int handle_new_sock_rpc(struct rpc_slow_context *ctx, 
-    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
+// TODO: remove the abundant structs later on which are not used in this protocol
+int handle_new_client_req(struct rpc_slow_context *ctx,
+                          struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
   int ret;
+  struct rpc_client *cl;
+  struct rpc_queue_new_client_req *req;
+  struct rpc_queue_new_client_res *res;
+  struct rpc_queue_entry *qe_res;
+  struct proto_queue_lib *protoq;
 
-  // ret = cham_new_sock(actx->app_fd, qe_req->sock);
-  // if (ret != 0)
-  // {
-  //   LOG_ERROR("failed to create new socket");
-  //   return ret;
-  // }
+  struct rpc_client *client = ctx->proto->shm_base + ctx->clients_map->off;
 
+  if (ctx->n_clients >= MAX_CLIENTS)
+  {
+    LOG_ERROR("maximum number of rpc clients reached");
+    return -1;
+  }
+
+  req = &qe_req->data.new_client_req;
+  qe_res = queue_tail(actx->slow_app_q);
+  if (qe_res == NULL)
+  {
+    LOG_ERROR("failed to get tail of slow->app queue");
+    return -1;
+  }
+  res = &qe_res->data.new_client_res;
+  res->opaque = req->opaque;
+  res->core = 0;
+  res->client_id = ctx->n_clients;
+
+  cl = &client[res->client_id];
+  cl->id = res->client_id;
+  cl->core = 0;
+  cl->app_bump_qid = actx->app_bump_qs[0]->id;
+  cl->opaque = req->opaque;
+  cl->local_ip = req->local_ip;
+  cl->local_port = req->local_port;
+
+  // Create queue for RX buffer
+  protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
+  if (protoq == NULL)
+  {
+    LOG_ERROR("failed to create new queue");
+    return -1;
+  }
+  res->rx_qid = protoq->id;
+  res->rx_len = protoq->nelems * protoq->elsize;
+  res->rx_off = protoq->off;
+
+  cl->rx_len = protoq->nelems * protoq->elsize;
+  cl->rx_off = protoq->off;
+
+  // Create queue for TX buffer
+
+  protoq = cham_new_queue(ctx->proto, TXBUF_SZ, 1);
+  if (protoq == NULL)
+  {
+    LOG_ERROR("failed to create new queue");
+    return -1;
+  }
+  res->tx_qid = protoq->id;
+  res->tx_len = protoq->nelems * protoq->elsize;
+  res->tx_off = protoq->off;
+
+  cl->tx_len = protoq->nelems * protoq->elsize;
+  cl->tx_off = protoq->off;
+
+  res->success = 1;
+
+  ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_CLIENT_RES);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue rpc new client response");
+    return -1;
+  }
+
+  ctx->n_clients++;
   return 0;
 }
 
-int handle_bind_rpc(struct rpc_slow_context *ctx, 
-    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
+int handle_new_server_req(struct rpc_slow_context *ctx,
+                          struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
+{ 
+  struct rpc_queue_new_server_req *req;
+  struct rpc_queue_new_server_res *res;
+  struct rpc_queue_entry *qe_res;
+  struct proto_queue_lib *protoq;
+  struct rpc_server *sv;
+  int ret;
+  struct rpc_port_entry *pt_sers_map, *port;
+  struct rpc_server *server_map = ctx->proto->shm_base + ctx->servers_map->off;
+  
+  pt_sers_map = ctx->proto->shm_base + ctx->port_server_map->off;
+
+  if (ctx->n_servers >= MAX_SERVERS)
+  {
+    LOG_ERROR("maximum number of rpc servers reached");
+    return -1;
+  }
+  req = &qe_req->data.new_server_req;
+  qe_res = queue_tail(actx->slow_app_q);
+  if (qe_res == NULL)
+  {
+    LOG_ERROR("failed to get tail of slow->app queue");
+    return -1;
+  }
+  res = &qe_res->data.new_server_res;
+  res->opaque = req->opaque;
+  res->core = 0;
+  res->server_id = ctx->n_servers;
+
+  sv = &server_map[res->server_id];
+
+  sv->id = res->server_id;
+  sv->local_ip = req->local_ip;
+  sv->local_port = req->local_port;
+  sv->n_workers = 0;
+  sv->w1 = 0;
+
+  //bind the port to the server id in the port to server map
+  port = &pt_sers_map[req->local_port];
+  if (port->server_id != INVALID_SERVER_ID)
+  {
+    LOG_ERROR("port already bound to another server");
+    res->success = 0;
+    ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_SERVER_RES);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue rpc new server response");
+      return -1;
+    }
+    return -1;
+  }
+
+  port->server_id = res->server_id;
+
+  res->success = 1;
+  ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_SERVER_RES);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue rpc new server response");
+    return -1;
+  }
+  ctx->n_servers++;
+  return 0;
+}
+
+static int handle_new_worker_req(struct rpc_slow_context *ctx,
+                          struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
   int ret;
+  struct rpc_worker *worker;
+  struct rpc_queue_new_worker_req *req;
+  struct rpc_queue_new_worker_res *res;
+  struct rpc_queue_entry *qe_res;
+  struct proto_queue_lib *protoq;
 
-  // ret = cham_bind_sock(actx->app_fd, qe_req->bind_req.sock,
-  //     qe_req->bind_req.ip, qe_req->bind_req.port);
-  // if (ret != 0)
-  // {
-  //   LOG_ERROR("failed to bind socket");
-  //   return ret;
-  // }
+  struct rpc_worker *worker_map = ctx->proto->shm_base + ctx->workers_map->off;
 
+  if (ctx->n_workers >= MAX_WORKERS)
+  {
+    LOG_ERROR("maximum number of rpc workers reached");
+    return -1;
+  }
+
+  req = &qe_req->data.new_worker_req;
+  qe_res = queue_tail(actx->slow_app_q);
+  if (qe_res == NULL)
+  {
+    LOG_ERROR("failed to get tail of slow->app queue");
+    return -1;
+  }
+  res = &qe_res->data.new_worker_res;
+  res->opaque = req->opaque;
+  res->worker_id = ctx->n_workers;
+
+  worker = &worker_map[ctx->n_workers];
+  worker->id = ctx->n_workers;
+
+  // Create queue for RX buffer
+  protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
+  if (protoq == NULL)
+  {
+    LOG_ERROR("failed to create new queue");
+    return -1;
+  }
+  res->rx_qid = protoq->id;
+  res->rx_len = protoq->nelems * protoq->elsize;
+  res->rx_off = protoq->off;
+
+  worker->rx_len = protoq->nelems * protoq->elsize;
+  worker->rx_off = protoq->off;
+
+  // Create queue for TX buffer
+  protoq = cham_new_queue(ctx->proto, TXBUF_SZ, 1);
+  if (protoq == NULL)
+  {
+    LOG_ERROR("failed to create new queue");
+    return -1;
+  }
+  res->tx_qid = protoq->id;
+  res->tx_len = protoq->nelems * protoq->elsize;
+  res->tx_off = protoq->off; 
+  worker->tx_len = protoq->nelems * protoq->elsize;
+  worker->tx_off = protoq->off;
+
+  // worker->server_id = server->id;
+  // worker->core = 0;
+  // worker->app_bump_qid = actx->app_bump_qs[0]->id;
+  // worker->opaque = req->opaque;
+
+  // res->opaque = req->opaque;
+  // res->core = 0;
+  // res->worker_id = ctx->n_workers;
+
+
+  ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_WORKER_RES);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue rpc new worker response");
+    return -1;
+  }
+
+  ctx->n_workers++;
   return 0;
 }
