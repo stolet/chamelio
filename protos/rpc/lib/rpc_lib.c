@@ -22,8 +22,9 @@
 
 static struct rpc_lib *rpc = NULL;
 
-static int handle_new_sock_res(struct rpc_queue_entry *qe);
-static int handle_bind_res(struct rpc_queue_entry *qe);
+static int handle_new_client_res(struct rpc_queue_entry *qe);
+static int handle_new_server_res(struct rpc_queue_entry *qe);
+static int handle_new_worker_res(struct rpc_queue_entry *qe);
 
 int rpc_connect_slow()
 {
@@ -82,6 +83,7 @@ int rpc_connect_slow()
   u->shm_fd = shm_fd;
   u->shm_base = NULL;
   u->next_ctxid = 0;
+  u->next_clientid = 0;
   rpc = u;
 
   return 0;
@@ -257,11 +259,14 @@ int rpc_poll_slow(struct rpc_context_lib *ctx)
     n++;
     switch (qe->type)
     {
-    case RPC_QUEUE_NEW_SOCK_RES:
-      handle_new_sock_res(qe);
+    case RPC_QUEUE_NEW_CLIENT_RES:
+      handle_new_client_res(qe);
       break;
-    case RPC_QUEUE_BIND_RES:
-      handle_bind_res(qe);
+    case RPC_QUEUE_NEW_SERVER_RES:
+      handle_new_server_res(qe);
+      break;
+    case RPC_QUEUE_NEW_WORKER_RES:
+      handle_new_worker_res(qe);
       break;
     default:
       LOG_ERROR("unknown queue entry type from "
@@ -284,25 +289,27 @@ struct rpc_client_lib *rpc_new_client(struct rpc_context_lib *ctx, __u32 ip, __u
   struct rpc_client_lib *client;
   struct equeue *eq;
   struct rpc_queue_entry *qe;
-  struct rpc_queue_new_sock_req *nc_req;
-  struct rpc_queue_bind_req *bind_req;
-  int ret;
+  struct rpc_queue_new_client_req *nc_req;
+  // struct rpc_queue_bind_req *bind_req;
+  int ret, id;
 
-  if (!ctx)
+  if (!ctx || !rpc)
   {
     LOG_ERROR("null rpc context");
     return NULL;
   }
 
-  client = malloc(sizeof(struct rpc_client_lib));
-  if (!client)
+  id = __sync_fetch_and_add(&rpc->next_clientid, 1);
+  if (id >= MAX_CLIENTS)
   {
-    LOG_ERROR("failed to allocate rpc client");
+    LOG_ERROR("exceeded max number of rpc clients");
     return NULL;
   }
+  client = &rpc->clients[id];
   memset(client, 0, sizeof(struct rpc_client_lib));
 
   client->ctx = ctx;
+  //client->client_id = id;
   client->bind_success = -1;
 
   eq = ctx->app_slow_q;
@@ -310,68 +317,129 @@ struct rpc_client_lib *rpc_new_client(struct rpc_context_lib *ctx, __u32 ip, __u
   if (!qe)
   {
     LOG_ERROR("failed to get queue tail for new sock req");
-    free(client);
     return NULL;
   }
-  nc_req = &qe->data.new_sock_req;
+  nc_req = &qe->data.new_client_req;
+  nc_req->local_ip = ip;
+  nc_req->local_port = port;
   nc_req->opaque = (__u64)client;
-  ret = queue_enqueue(eq, RPC_QUEUE_NEW_SOCK_REQ);
+  ret = queue_enqueue(eq, RPC_QUEUE_NEW_CLIENT_REQ);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue new sock req");
-    free(client);
     return NULL;
   }
 
   // poll until we get response
-  while (client->rx_len == 0)
-    rpc_poll_slow(ctx);
-
-  // binding the (ip,port) to the client
-  qe = queue_tail(eq);
-  if (!qe)
-  {
-    LOG_ERROR("failed to get queue tail for bind req");
-    free(client);
-    return NULL;
-  }
-  bind_req = &qe->data.bind_req;
-  bind_req->sock_id = client->sock_id;
-  bind_req->local_ip = ip;
-  bind_req->local_port = port;
-  bind_req->opaque = (__u64)client;
-  ret = queue_enqueue(eq, RPC_QUEUE_BIND_REQ);
-  if (ret != 0)
-  {
-    LOG_ERROR("failed to enqueue bind req");
-    free(client);
-    return NULL;
-  }
-
   while (client->bind_success == -1)
     rpc_poll_slow(ctx);
   if (!client->bind_success)
   {
     LOG_ERROR("bind failed for rpc client");
-    free(client);
     return NULL;
   }
-
-  client->tx_ip = ip;
-  client->tx_port = port;
-  client->bind_success = -1;
-
   return client;
 }
 
 struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u16 port)
-{
-  return NULL;
+{ struct rpc_server_lib *server;
+  int ret, id;
+  struct equeue *eq;
+  struct rpc_queue_entry *qe;
+  struct rpc_queue_new_server_req *ns_req;
+
+  if (!ctx || !rpc)
+  {
+    LOG_ERROR("null rpc context");
+    return NULL;
+  }
+  id = __sync_fetch_and_add(&rpc->next_serverid, 1);
+  if (id >= MAX_SERVERS)
+  {
+    LOG_ERROR("exceeded max number of rpc servers");
+    return NULL;
+  }
+  server = &rpc->servers[id];
+  server->ctx = ctx;
+  server->bind_success = -1;
+  server->nservices = 0;
+  server->nworkers = 0;
+  server->services = NULL;
+
+  eq = ctx->app_slow_q;
+  qe = queue_tail(eq);
+  if (!qe)
+  {
+    LOG_ERROR("failed to get queue tail for new server req");
+    return NULL;
+  }
+  ns_req = &qe->data.new_server_req;
+  ns_req->local_ip = ip;
+  ns_req->local_port = port;
+  ns_req->opaque = (__u64)server;
+  ret = queue_enqueue(eq, RPC_QUEUE_NEW_SERVER_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue new server req");
+    return NULL;
+  }
+  // poll until we get response
+  while (server->bind_success == -1)
+    rpc_poll_slow(ctx);
+  if (!server->bind_success)
+  {
+    LOG_ERROR("bind failed for rpc server");
+    return NULL;
+  }
+  return server;
 }
 
-struct rpc_worker_lib *rpc_new_worker(struct rpc_context_lib *ctx, struct rpc_server_lib *s)
+struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s)
 {
-  return NULL;
+  struct rpc_worker_lib *worker;
+  struct equeue *eq;
+  struct rpc_queue_entry *qe;
+  struct rpc_queue_new_worker_req *nw_req;
+  int ret, index;
+
+  if (!s || !rpc)
+  {
+    LOG_ERROR("null rpc context or server");
+    return NULL;
+  }
+  if (s->nworkers >= MAX_WORKERS)
+  {
+    LOG_ERROR("exceeded max number of rpc workers per server");
+    return NULL;
+  }
+  index = s->nworkers;
+  worker = &s->workers[index];
+  memset(worker, 0, sizeof(struct rpc_worker_lib));
+  worker->ctx = s->ctx;
+  worker->server = s;
+
+  eq = s->ctx->app_slow_q;
+  qe = queue_tail(eq);
+  if (!qe)
+  {
+    LOG_ERROR("failed to get queue tail for new worker req");
+    return NULL;
+  }
+  nw_req = &qe->data.new_worker_req;
+  nw_req->server_opaque = (__u64)s;
+  nw_req->opaque = (__u64)worker;
+  ret = queue_enqueue(eq, RPC_QUEUE_NEW_WORKER_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue new worker req");
+    return NULL; 
+  }
+
+  // poll until we get response
+  while (worker->rx_buf == NULL)
+    rpc_poll_slow(s->ctx);
+  
+  return worker;
 }
 
 int rpc_register(struct rpc_server_lib *server, __u8 service)
@@ -402,14 +470,14 @@ int rpc_call_complete(struct rpc_worker_lib *w)
   return 0;
 }
 
-static int handle_new_sock_res(struct rpc_queue_entry *qe)
+static int handle_new_client_res(struct rpc_queue_entry *qe)
 {
-  struct rpc_queue_new_sock_res *res;
+  struct rpc_queue_new_client_res *res;
   struct rpc_client_lib *client;
 
-  res = &qe->data.new_sock_res;
+  res = &qe->data.new_client_res;
   client = (struct rpc_client_lib *)res->opaque;
-  client->sock_id = res->sock_id;
+  // client->client_id = res->client_id;
   client->core = res->core;
   client->rx_qid = res->rx_qid;
   client->rx_len = res->rx_len;
@@ -417,18 +485,37 @@ static int handle_new_sock_res(struct rpc_queue_entry *qe)
   client->tx_qid = res->tx_qid;
   client->tx_len = res->tx_len;
   client->tx_buf = rpc->shm_base + res->tx_off;
+  client->bind_success = res->success;
 
   return 0;
 }
 
-static int handle_bind_res(struct rpc_queue_entry *qe)
+static int handle_new_server_res(struct rpc_queue_entry *qe)
 {
-  struct rpc_queue_bind_res *res;
-  struct rpc_client_lib *client;
+  struct rpc_queue_new_server_res *res;
+  struct rpc_server_lib *server;
 
-  res = &qe->data.bind_res;
-  client = (struct rpc_client_lib *)res->opaque;
-  client->bind_success = res->success;
+  res = &qe->data.new_server_res;
+  server = (struct rpc_server_lib *)res->opaque;
+  server->core = res->core;
+  server->bind_success = res->success;
+  return 0;
+}
+static int handle_new_worker_res(struct rpc_queue_entry *qe)
+{
+  struct rpc_queue_new_worker_res *res;
+  struct rpc_worker_lib *worker;
 
+  res = &qe->data.new_worker_res;
+  worker = (struct rpc_worker_lib *)res->opaque;
+
+  worker->rx_qid = res->rx_qid;
+  worker->rx_len = res->rx_len;
+  worker->rx_buf = rpc->shm_base + res->rx_off;
+  worker->tx_qid = res->tx_qid;
+  worker->tx_len = res->tx_len;
+  worker->tx_buf = rpc->shm_base + res->tx_off;
+
+  //TODO: increase the worker count where?
   return 0;
 }

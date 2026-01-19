@@ -18,7 +18,8 @@
 /* Number of elements in queue between slow-path and app */
 #define APPQ_SZ 128
 
-struct rpc_app_context_slow {
+struct rpc_app_context_slow
+{
   /* ID for application context */
   __u8 id;
   /* Application this context belongs to */
@@ -33,7 +34,8 @@ struct rpc_app_context_slow {
   struct proto_queue_lib *fast_bump_qs[MAX_FP_CORES];
 };
 
-struct rpc_app_slow {
+struct rpc_app_slow
+{
   /* ID of the application */
   __u8 id;
   /* Number of registered application contexts */
@@ -44,7 +46,8 @@ struct rpc_app_slow {
   struct rpc_app_context_slow ctxs[MAX_CTXS];
 };
 
-struct rpc_slow_context {
+struct rpc_slow_context
+{
   /* Listening UX sockets for new applications */
   int app_uxfd;
   /* Epoll object used by UX application socket */
@@ -68,6 +71,22 @@ struct rpc_slow_context {
   struct proto_map_lib *socks_map;
   /* Maps a port to a socket */
   struct proto_map_lib *port_map;
+
+  /* Stores all the clients */
+  struct proto_map_lib *clients_map;
+  /* Number of clients */
+  __u32 n_clients;
+
+  /* Maps a port to a server */
+  struct proto_map_lib *port_server_map;
+  /* Stores all the servers */
+  struct proto_map_lib *servers_map;
+  /* Stores all the workers */
+  struct proto_map_lib *workers_map;
+  /* Number of servers */
+  __u32 n_servers;
+  /* Number of workers */
+  __u32 n_workers;
 };
 
 #endif
