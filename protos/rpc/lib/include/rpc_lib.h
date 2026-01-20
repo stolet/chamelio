@@ -179,7 +179,7 @@ struct rpc_client_lib *rpc_new_client(struct rpc_context_lib *ctx, __u32 ip, __u
 /* Allocates an RPC server */
 struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u16 port);
 /* Creates a new worker for a server */
-struct rpc_worker_lib *rpc_new_worker(struct rpc_context_lib *ctx, struct rpc_server_lib *s);
+struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s);
 /* Registers a service with the given server */
 int rpc_register(struct rpc_server_lib *server, __u8 service);
 /* Sends an RPC request to the given IP and port */
