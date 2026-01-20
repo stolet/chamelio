@@ -52,7 +52,7 @@ enum rpc_queue_type
 struct rpc_queue_new_worker_req
 {
   /* Opaque of the server this worker is for, way easier than extracting the ID*/
-  __u64 server_opaque;
+  __u32 server_id;
   /* Opaque pointer to worker in app library */
   __u64 opaque;
 

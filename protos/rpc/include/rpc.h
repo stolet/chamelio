@@ -22,6 +22,8 @@
 #define MAX_CLIENTS 16
 /* Maximum number of workers */
 #define MAX_WORKERS 16
+/* Invalid server ID */
+#define INVALID_SERVER_ID -1
 /* Location where ebpf bytecode is located */
 #define RPC_EBPF_BYTECODE "protos/rpc/fast/rpc_fast.bpf.o"
 
@@ -94,8 +96,6 @@ struct rpc_worker
   __u32 id;
   /* Opaque pointer to worker in application */
   __u64 opaque;
-  /* Fast-path core this worker is currently running on */
-  __u16 core;
   /* Queue ID to bump app */
   __u16 app_bump_qid;
   /* Server ID */

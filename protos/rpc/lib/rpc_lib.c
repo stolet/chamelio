@@ -309,7 +309,7 @@ struct rpc_client_lib *rpc_new_client(struct rpc_context_lib *ctx, __u32 ip, __u
   memset(client, 0, sizeof(struct rpc_client_lib));
 
   client->ctx = ctx;
-  //client->client_id = id;
+  // client->client_id = id;
   client->bind_success = -1;
 
   eq = ctx->app_slow_q;
@@ -342,7 +342,8 @@ struct rpc_client_lib *rpc_new_client(struct rpc_context_lib *ctx, __u32 ip, __u
 }
 
 struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u16 port)
-{ struct rpc_server_lib *server;
+{
+  struct rpc_server_lib *server;
   int ret, id;
   struct equeue *eq;
   struct rpc_queue_entry *qe;
@@ -365,6 +366,7 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   server->nservices = 0;
   server->nworkers = 0;
   server->services = NULL;
+  server->id = INVALID_SERVER_ID;
 
   eq = ctx->app_slow_q;
   qe = queue_tail(eq);
@@ -426,19 +428,19 @@ struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s)
     return NULL;
   }
   nw_req = &qe->data.new_worker_req;
-  nw_req->server_opaque = (__u64)s;
+  nw_req->server_id = s->id;
   nw_req->opaque = (__u64)worker;
   ret = queue_enqueue(eq, RPC_QUEUE_NEW_WORKER_REQ);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue new worker req");
-    return NULL; 
+    return NULL;
   }
 
   // poll until we get response
   while (worker->rx_buf == NULL)
     rpc_poll_slow(s->ctx);
-  
+
   return worker;
 }
 
@@ -498,6 +500,7 @@ static int handle_new_server_res(struct rpc_queue_entry *qe)
   res = &qe->data.new_server_res;
   server = (struct rpc_server_lib *)res->opaque;
   server->core = res->core;
+  server->id = res->server_id;
   server->bind_success = res->success;
   return 0;
 }
@@ -515,7 +518,7 @@ static int handle_new_worker_res(struct rpc_queue_entry *qe)
   worker->tx_qid = res->tx_qid;
   worker->tx_len = res->tx_len;
   worker->tx_buf = rpc->shm_base + res->tx_off;
-
-  //TODO: increase the worker count where?
+  // increase worker count in server
+  worker->server->nworkers++;
   return 0;
 }
