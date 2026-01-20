@@ -384,7 +384,7 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   return 0;
 }
 
-static int handle_new_worker_req(struct rpc_slow_context *ctx,
+int handle_new_worker_req(struct rpc_slow_context *ctx,
                                  struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
   int ret;
