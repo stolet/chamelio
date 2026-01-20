@@ -19,8 +19,6 @@
 #include <errno.h>
 #include <fcntl.h>
 
-#define INVALID_SERVER_ID 0xFFFFFFFF
-
 int handle_new_client_req(struct rpc_slow_context *ctx,
                           struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
 
@@ -315,14 +313,13 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
     LOG_ERROR("failed to enqueue rpc new client response");
     return -1;
   }
-
   ctx->n_clients++;
   return 0;
 }
 
 int handle_new_server_req(struct rpc_slow_context *ctx,
                           struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
-{ 
+{
   struct rpc_queue_new_server_req *req;
   struct rpc_queue_new_server_res *res;
   struct rpc_queue_entry *qe_res;
@@ -331,7 +328,7 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   int ret;
   struct rpc_port_entry *pt_sers_map, *port;
   struct rpc_server *server_map = ctx->proto->shm_base + ctx->servers_map->off;
-  
+
   pt_sers_map = ctx->proto->shm_base + ctx->port_server_map->off;
 
   if (ctx->n_servers >= MAX_SERVERS)
@@ -359,7 +356,7 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   sv->n_workers = 0;
   sv->w1 = 0;
 
-  //bind the port to the server id in the port to server map
+  // bind the port to the server id in the port to server map
   port = &pt_sers_map[req->local_port];
   if (port->server_id != INVALID_SERVER_ID)
   {
@@ -388,7 +385,7 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
 }
 
 static int handle_new_worker_req(struct rpc_slow_context *ctx,
-                          struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
+                                 struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
   int ret;
   struct rpc_worker *worker;
@@ -412,12 +409,18 @@ static int handle_new_worker_req(struct rpc_slow_context *ctx,
     LOG_ERROR("failed to get tail of slow->app queue");
     return -1;
   }
+
   res = &qe_res->data.new_worker_res;
   res->opaque = req->opaque;
   res->worker_id = ctx->n_workers;
 
   worker = &worker_map[ctx->n_workers];
   worker->id = ctx->n_workers;
+  worker->app_bump_qid = actx->app_bump_qs[0]->id;
+  worker->opaque = req->opaque;
+  worker->jobs_pending = 0;
+  // TBC: is okay to add server_id field on the library side of the implementation
+  worker->server_id = req->server_id;
 
   // Create queue for RX buffer
   protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
@@ -442,19 +445,9 @@ static int handle_new_worker_req(struct rpc_slow_context *ctx,
   }
   res->tx_qid = protoq->id;
   res->tx_len = protoq->nelems * protoq->elsize;
-  res->tx_off = protoq->off; 
+  res->tx_off = protoq->off;
   worker->tx_len = protoq->nelems * protoq->elsize;
   worker->tx_off = protoq->off;
-
-  // worker->server_id = server->id;
-  // worker->core = 0;
-  // worker->app_bump_qid = actx->app_bump_qs[0]->id;
-  // worker->opaque = req->opaque;
-
-  // res->opaque = req->opaque;
-  // res->core = 0;
-  // res->worker_id = ctx->n_workers;
-
 
   ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_WORKER_RES);
   if (ret != 0)

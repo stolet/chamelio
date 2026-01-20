@@ -33,7 +33,7 @@ struct rpc_context_lib
 /* Worker that handles RPC requests */
 struct rpc_worker_lib
 {
-  //TBC: why have the ctx for the worker? Is it needed? 
+  // TBC: why have the ctx for the worker? Is it needed?
   /* Context that created this worker */
   struct rpc_context_lib *ctx;
   /* Server for this worker */
@@ -120,6 +120,9 @@ struct rpc_server_lib
 {
   /* Context that created this client */
   struct rpc_context_lib *ctx;
+
+  /* ID of this server */
+  __u32 id;
 
   /* Fast-path core of this server */
   __u16 core;
