@@ -24,6 +24,10 @@
 #define MAX_WORKERS 16
 /* Invalid server ID */
 #define INVALID_SERVER_ID -1
+/* Maximum number of services */
+#define MAX_SERVICE_NUMBER 256
+/* Invalid worker ID */
+#define INVALID_WORKER_ID -1
 /* Location where ebpf bytecode is located */
 #define RPC_EBPF_BYTECODE "protos/rpc/fast/rpc_fast.bpf.o"
 
@@ -81,13 +85,15 @@ struct rpc_server
   /* Server ID */
   __u32 id;
   /* First worker */
-  __u32 w1;
+  __u32 workers[MAX_WORKERS];
   /* Number of workers */
   __u16 n_workers;
   /* Local IP */
   __u32 local_ip;
   /* Local port */
   __u16 local_port;
+  /* Registered services for the server */
+  __u8 service_table[MAX_SERVICE_NUMBER];
 };
 
 struct rpc_worker
