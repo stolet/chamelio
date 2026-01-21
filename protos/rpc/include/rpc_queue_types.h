@@ -47,7 +47,29 @@ enum rpc_queue_type
   RPC_QUEUE_NEW_WORKER_REQ,
   /* Response for new worker created */
   RPC_QUEUE_NEW_WORKER_RES,
+  /* Request to register a service */
+  RPC_QUEUE_SERVICE_REQ,
+  /* Response to regsiter a service */
+  RPC_QUEUE_SERVICE_RES,
 };
+
+struct rpc_queue_service_req
+{
+  /* Service ID to register */
+  __u8 service_id;
+  /* ID of the server in slow-path */
+  __u32 server_id;
+  /* Opaque pointer to server in app library */
+  __u64 opaque;
+} __attribute__((packed));
+
+struct rpc_queue_service_res
+{
+  /* Opaque pointer to server in app library */
+  __u64 opaque;
+  /* Signals if registration was successful */
+  __u8 success;
+} __attribute__((packed));
 
 struct rpc_queue_new_worker_req
 {
@@ -314,6 +336,8 @@ struct rpc_queue_entry
     struct rpc_queue_new_server_res new_server_res;
     struct rpc_queue_new_worker_req new_worker_req;
     struct rpc_queue_new_worker_res new_worker_res;
+    struct rpc_queue_service_req service_req;
+    struct rpc_queue_service_res service_res;
     __u8 raw[511];
   } __attribute__((packed)) data;
 } __attribute__((packed));

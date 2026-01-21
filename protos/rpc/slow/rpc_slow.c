@@ -28,8 +28,11 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
 int handle_new_worker_req(struct rpc_slow_context *ctx,
                           struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
 
-int handle_bind_rpc(struct rpc_slow_context *ctx,
-                    struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req);
+int handle_new_service_req(struct rpc_slow_context *ctx,
+                       struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
+
+// int handle_bind_rpc(struct rpc_slow_context *ctx,
+//                     struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req);
 
 int init_rpc_slow_context(struct rpc_slow_context *ctx);
 
@@ -123,7 +126,7 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
 
   ctx->clients_map = clients_map;
   ctx->servers_map = servers_map;
-  ctx->workers_map = workers_map;
+  // ctx->workers_map = workers_map;
 
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;
@@ -133,7 +136,7 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
   ctx->next_app = 0;
   ctx->n_clients = 0;
   ctx->n_servers = 0;
-  ctx->n_workers = 0;
+  // ctx->n_workers = 0;
 
   return 0;
 }
@@ -190,6 +193,9 @@ int poll_apps(struct rpc_slow_context *ctx)
       break;
     case RPC_QUEUE_NEW_WORKER_REQ:
       handle_new_worker_req(ctx, actx, qe);
+      break;
+    case RPC_QUEUE_SERVICE_REQ:
+      handle_new_service_req(ctx, actx, qe);
       break;
     // case RPC_QUEUE_BIND_REQ:
     //   handle_bind_rpc(ctx, actx, qe);
@@ -323,7 +329,6 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   struct rpc_queue_new_server_req *req;
   struct rpc_queue_new_server_res *res;
   struct rpc_queue_entry *qe_res;
-  struct proto_queue_lib *protoq;
   struct rpc_server *sv;
   int ret;
   struct rpc_port_entry *pt_sers_map, *port;
@@ -354,7 +359,17 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   sv->local_ip = req->local_ip;
   sv->local_port = req->local_port;
   sv->n_workers = 0;
-  sv->w1 = 0;
+
+  //initialize workers IDs table to invalid id
+  for (int i = 0; i < MAX_WORKERS; i++)
+  {
+    sv->workers[i] = INVALID_WORKER_ID;
+  }
+  //initialize service table to 0
+  for (int i = 0; i < MAX_SERVICE_NUMBER; i++)
+  {
+    sv->service_table[i] = 0;
+  }
 
   // bind the port to the server id in the port to server map
   port = &pt_sers_map[req->local_port];
@@ -393,14 +408,9 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
   struct rpc_queue_new_worker_res *res;
   struct rpc_queue_entry *qe_res;
   struct proto_queue_lib *protoq;
-
+  struct rpc_server *server;
+  struct rpc_server *sv_map = ctx->proto->shm_base + ctx->servers_map->off;
   struct rpc_worker *worker_map = ctx->proto->shm_base + ctx->workers_map->off;
-
-  if (ctx->n_workers >= MAX_WORKERS)
-  {
-    LOG_ERROR("maximum number of rpc workers reached");
-    return -1;
-  }
 
   req = &qe_req->data.new_worker_req;
   qe_res = queue_tail(actx->slow_app_q);
@@ -412,6 +422,14 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
 
   res = &qe_res->data.new_worker_res;
   res->opaque = req->opaque;
+
+  server = &sv_map[req->server_id];
+  if (server->n_workers >= MAX_WORKERS)
+  {
+    LOG_ERROR("maximum number of workers for server ID %d reached", server->id);
+    return -1;
+  }
+
   res->worker_id = ctx->n_workers;
 
   worker = &worker_map[ctx->n_workers];
@@ -449,13 +467,64 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
   worker->tx_len = protoq->nelems * protoq->elsize;
   worker->tx_off = protoq->off;
 
+  server->workers[server->n_workers] = worker->id;
+  server->n_workers++;
+
   ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_WORKER_RES);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue rpc new worker response");
     return -1;
   }
-
   ctx->n_workers++;
+  return 0;
+}
+
+int handle_new_service_req(struct rpc_slow_context *ctx,
+                       struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
+{
+  int ret;
+  struct rpc_queue_service_req *req;
+  struct rpc_queue_service_res *res;
+  struct rpc_queue_entry *qe_res;
+  struct rpc_server *server;
+  struct rpc_server *s = ctx->proto->shm_base + ctx->servers_map->off;
+
+  req = &qe_req->data.service_req;
+  qe_res = queue_tail(actx->slow_app_q);
+  if (qe_res == NULL)
+  {
+    LOG_ERROR("failed to get tail of slow->app queue");
+    return -1;
+  }
+  res = &qe_res->data.service_res;
+  res->opaque = req->opaque;
+
+  server = &s[req->server_id];
+  
+  //check the table if the service alreayd exists and return failure if so
+  if (server->service_table[req->service_id])
+  {
+    LOG_ERROR("service ID %d already registered for server ID %d", req->service_id, server->id);
+    res->success = 0;
+    ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_SERVICE_RES);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue rpc service registration response");
+      return -1;
+    }
+    return -1;
+  }
+  //register service in the server's service table
+  s->service_table[req->service_id] = 1;
+  res->success = 1;
+
+  ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_SERVICE_RES);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue rpc service registration response");
+    return -1;
+  }
+
   return 0;
 }

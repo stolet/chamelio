@@ -25,6 +25,7 @@ static struct rpc_lib *rpc = NULL;
 static int handle_new_client_res(struct rpc_queue_entry *qe);
 static int handle_new_server_res(struct rpc_queue_entry *qe);
 static int handle_new_worker_res(struct rpc_queue_entry *qe);
+static int handle_new_service_res(struct rpc_queue_entry *qe);
 
 int rpc_connect_slow()
 {
@@ -268,6 +269,9 @@ int rpc_poll_slow(struct rpc_context_lib *ctx)
     case RPC_QUEUE_NEW_WORKER_RES:
       handle_new_worker_res(qe);
       break;
+    case RPC_QUEUE_SERVICE_RES:
+      handle_new_service_res(qe);
+      break;
     default:
       LOG_ERROR("unknown queue entry type from "
                 "slow-path to app type=%d",
@@ -393,6 +397,8 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
     LOG_ERROR("bind failed for rpc server");
     return NULL;
   }
+  //reset the flag for service registrations
+  server->bind_success = -1;
   return server;
 }
 
@@ -445,7 +451,69 @@ struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s)
 }
 
 int rpc_register(struct rpc_server_lib *server, __u8 service)
-{
+{ 
+  struct equeue *eq;
+  struct rpc_queue_entry *qe;
+  struct rpc_queue_service_req *srv_req;
+
+  //TBC: do we have a max number of services per server?
+  if (!server) {
+    LOG_ERROR("null rpc server");
+    return -1;
+  }
+
+  if (!server->ctx) {
+    LOG_ERROR("null rpc server context");
+    return -1;
+  }
+
+  for (int i = 0; i < server->nservices; i++) {
+    if (server->services[i] == service) {
+      LOG_WARN("service %u already registered", service);
+      return -1;
+    }
+  }
+  if (server->nservices == 0) {
+    server->services = malloc(sizeof(__u16));
+    if (!server->services) {
+      LOG_ERROR("failed to allocate services array");
+      return -1;
+    }
+  } else {
+    __u16 *new_services = realloc(server->services, 
+      sizeof(__u16) * (server->nservices + 1));
+    if (!new_services) {
+      LOG_ERROR("failed to reallocate services array");
+      return -1;
+    }
+  }
+  
+  eq = server->ctx->app_slow_q;
+  qe = queue_tail(eq);
+  if (!qe) {
+    LOG_ERROR("failed to get queue tail for service req");
+    return -1;
+  }
+  srv_req = &qe->data.service_req;
+  srv_req->service_id = service;
+  srv_req->opaque = (__u64)server;
+  srv_req->server_id = server->id;
+  int ret = queue_enqueue(eq, RPC_QUEUE_SERVICE_REQ);
+  if (ret != 0) {
+    LOG_ERROR("failed to enqueue service req");
+    return -1;
+  }
+  // poll until we get response
+  while(server->bind_success == -1)
+    rpc_poll_slow(server->ctx);
+  if (!server->bind_success) {
+    LOG_ERROR("service registration failed for rpc server");
+    return -1;
+  }
+  //reset the flag for future registrations
+  server->bind_success = -1;
+  server->services[server->nservices] = service;
+  server->nservices++;
   return 0;
 }
 
@@ -520,5 +588,16 @@ static int handle_new_worker_res(struct rpc_queue_entry *qe)
   worker->tx_buf = rpc->shm_base + res->tx_off;
   // increase worker count in server
   worker->server->nworkers++;
+  return 0;
+}
+
+static int handle_new_service_res(struct rpc_queue_entry *qe)
+{
+  struct rpc_queue_service_res *res;
+  struct rpc_server_lib *server;
+
+  res = &qe->data.service_res;
+  server = (struct rpc_server_lib *)res->opaque;
+  server->bind_success = res->success;
   return 0;
 }
