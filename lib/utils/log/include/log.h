@@ -9,6 +9,10 @@
 
 #define LOG_ERROR(...) log_error(__FILE__, __LINE__, __func__, __VA_ARGS__)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern void log_debug(const char *file, int line, 
   const char *func, const char *fmt, ...);
 
@@ -20,5 +24,9 @@ extern void log_warn(const char *file, int line,
 
 extern void log_error(const char *file, int line, 
   const char *func, const char *fmt, ...);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -6,12 +6,11 @@
 
 #include <llvmbpf/llvmbpf.hpp>
 #include "ebpf.h"
+#include "ebpf_jit.h"
 using namespace bpftime; 
 
 extern "C"
 {
-
-
   struct ebpf_vm_c
   {
     llvmbpf_vm vm;
@@ -67,9 +66,29 @@ extern "C"
   {
     if (!h)
       return -1;
+    
     auto f = h->vm.compile();
     if (!f.has_value())
       return -1;
+    
+    h->jitted_fn = f.value();
+    return 0;
+  }
+
+  int ebpf_vm_compile_combined(ebpf_vm_c *h, const void *code,
+      size_t code_len, const char *entry_sym)
+  {
+    if (!h || !code || !entry_sym)
+      return -1;
+
+    const auto *bc_bytes = reinterpret_cast<const uint8_t *>(code);
+    std::vector<uint8_t> bc_vec(bc_bytes, bc_bytes + code_len);
+    auto f = h->vm.compile_with_external_bitcode(
+        bc_vec, entry_sym, EBPF_JIT_ENTRY_STR);
+    
+    if (!f.has_value())
+      return -1;
+
     h->jitted_fn = f.value();
     return 0;
   }

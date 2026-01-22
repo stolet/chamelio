@@ -35,6 +35,8 @@ struct configuration {
   /*** Fast-path configurations ***/
   /* Enable checksum offload */
   __u32 fp_xsumoffloads;
+  /* Enable combined infra + eBPF JIT */
+  __u32 fp_jit_combined;
   /* Max number of fast-path cores */
   __u32 fp_cores_max;
   

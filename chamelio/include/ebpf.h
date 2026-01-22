@@ -27,6 +27,10 @@ extern "C"
   /* JIT compiled loaded eBPF code */
   int ebpf_vm_compile(ebpf_vm_c *h);
 
+  /* JIT compile with extra infra bytecode and a custom entry symbol */
+  int ebpf_vm_compile_combined(ebpf_vm_c *h, const void *infra_bc,
+    size_t infra_len, const char *entry_sym);
+
   /* Execute jitted function */
   int ebpf_vm_exec(ebpf_vm_c *h, void *arg, 
     size_t arg_len, int *return_value);

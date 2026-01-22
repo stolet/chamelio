@@ -1,8 +1,10 @@
-fast_inc = include_directories('include')
+fast_inc = include_directories('include', '../include')
 
 fast_srcs = files(
   'fast.c', 
+  'fast_jit.c',
   'controlif.c',
+  'infra.c',
 )
 
 deps = [

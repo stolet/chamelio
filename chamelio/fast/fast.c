@@ -5,49 +5,45 @@
 
 #include "nic_fast.h"
 #include "fast.h"
+#include "fast_jit.h"
 #include "nic.h"
 #include "nic_fast.h"
 #include "queue_fns.h"
 #include "queue_types.h"
 #include "ip_hdr.h"
 #include "eth_hdr.h"
-#include "arp_hdr.h"
 #include "gre_hdr.h"
-#include "arp.h"
 #include "log.h"
-#include "log_pkt.h"
 #include "config.h"
 #include "controlif.h"
 #include "ebpf.h"
 #include "txcache.h"
 #include "clock.h"
 #include "udp.h"
-#include "netvirt.h"
+#include "infra.h"
 
 
 struct guest_fast * init_guest(__u8 id, __u64 shm_len);
 
-static inline struct guest_fast * process_infra_rx(struct fast_context *ctx,
-    struct rte_mbuf *mbuf, __u64 *pkt_off);
-static inline int process_infra_rx_arp(struct fast_context *ctx, struct arp_pkt *pkt);
-static inline struct guest_fast * process_infra_rx_ip(struct fast_context *ctx,
-    struct rte_mbuf *mb, void *pkt, __u64 *pkt_off);
-static inline void process_arp_rx_req(struct fast_context *ctx,
-    struct queue_entry *qe, struct arp_pkt *pkt);
-static inline void process_arp_rx_rep(struct fast_context *ctx,
-    struct queue_entry *qe, struct arp_pkt *pkt);
-
-static inline int process_infra_tx(struct fast_context *ctx,
-    struct guest_fast *g, struct rte_mbuf *mb, size_t pkt_len);
-static inline void process_infra_tx_gre(struct fast_context *ctx, 
-    struct guest_fast *g, struct rte_mbuf *mb, 
-    __u32 outer_remote_ip, size_t pkt_len);
-static inline int process_infra_tx_arp(struct fast_context *ctx, 
-    struct guest_fast *g, struct rte_mbuf *mb, __u32 outer_remote_ip);
-
 static inline int poll_rx(struct fast_context *ctx);
+static inline void poll_rx_guest(struct guest_fast *g,
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start);
+static inline void poll_rx_guest_comb(struct guest_fast *g,
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start);
+
 static inline int poll_queues(struct fast_context *ctx);
+static inline void poll_queues_guest(struct fast_context *ctx,
+    struct guest_fast *g, struct cham_dqueue *qcur, struct queue_entry *qe,
+    struct rte_mbuf *mb, int *ntx, int *ndeq);
+static inline void poll_queues_guest_comb(struct fast_context *ctx,
+    struct guest_fast *g, struct cham_dqueue *qcur, struct queue_entry *qe,
+    struct rte_mbuf *mb, int *ntx, int *ndeq);
+
 static inline int poll_tx(struct fast_context *ctx);
+static inline int poll_tx_guest(struct fast_context *ctx,
+    struct guest_fast *g, struct rte_mbuf *mb, int *ntx);
+static inline int poll_tx_guest_comb(struct fast_context *ctx,
+    struct guest_fast *g, struct rte_mbuf *mb, int *ntx);
 static inline int tx_flush(struct fast_context *ctx);
 
 int fast_context_init(struct fast_context *f_ctx, 
@@ -168,10 +164,10 @@ int fast_loop(struct fast_context *ctx)
 
 static inline int poll_rx(struct fast_context *ctx)
 {
-  int i, n, ret;
+  int i, n;
   struct rte_mbuf *mbs[FAST_BATCH_SIZE];
   struct guest_fast *g;
-  __u64 tsc_start, tsc_spent, pkt_off;
+  __u64 tsc_start, pkt_off;
 
   n = FAST_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < n)
@@ -188,7 +184,7 @@ static inline int poll_rx(struct fast_context *ctx)
   {
     /* Process infrastructure protocols */
     tsc_start = clock_rdtsc();
-    g = process_infra_rx(ctx, mbs[i], &pkt_off);
+    g = infra_rx(ctx, mbs[i], &pkt_off);
     
     /* Execute custom protocol rx procedure */
     if (g != NULL)
@@ -196,15 +192,11 @@ static inline int poll_rx(struct fast_context *ctx)
       /* Drop if this guest is out of budget */
       if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
         continue;
-      
-      g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[i], __u8 *) + pkt_off;
-      g->proto.ebpf_ctx.pkt_end = (void *) (g->proto.ebpf_ctx.pkt + UDP_MSS);
-      ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx, 
-          sizeof(struct cham_ebpf_ctx), &ret);
- 
-      /* Spend guest budget */
-      tsc_spent = clock_rdtsc() - tsc_start;
-      __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+
+      if (ctx->config->fp_jit_combined)
+        poll_rx_guest_comb(g, mbs[i], pkt_off, tsc_start);
+      else
+        poll_rx_guest(g, mbs[i], pkt_off, tsc_start);
     }
   }
 
@@ -214,9 +206,44 @@ static inline int poll_rx(struct fast_context *ctx)
   return n;
 }
 
+static inline void poll_rx_guest(struct guest_fast *g,
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start)
+{
+  int ret;
+  __u64 tsc_spent;
+
+  g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mb, __u8 *) + pkt_off;
+  g->proto.ebpf_ctx.pkt_end = (void *) (g->proto.ebpf_ctx.pkt + UDP_MSS);
+  ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx,
+      sizeof(struct cham_ebpf_ctx), &ret);
+
+  tsc_spent = clock_rdtsc() - tsc_start;
+  __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+}
+
+static inline void poll_rx_guest_comb(struct guest_fast *g,
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start)
+{
+  int ret;
+  __u64 tsc_spent;
+  struct fast_jit_rx_ctx jit_ctx = {
+    .g = g,
+    .mb = mb,
+    .pkt_off = pkt_off,
+  };
+
+  ebpf_vm_exec(g->proto.event_rx_vm, &jit_ctx, sizeof(jit_ctx), &ret);
+
+  if (ret > 0)
+  {
+    tsc_spent = clock_rdtsc() - tsc_start;
+    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+  }
+}
+
 static inline int poll_queues(struct fast_context *ctx)
 {
-  int i, j, max, ret, deq_ret, ndeq, ntx;
+  int i, j, max, ret, ndeq, ntx;
   __u8 qcur_empty;
   struct guest_fast *g;
   struct cham_dqueue *qcur;
@@ -266,40 +293,10 @@ static inline int poll_queues(struct fast_context *ctx)
         continue;
       }
 
-      /* Prepare packet buffer for potential TX */
-      mbs[ntx]->data_off = 0;
-      g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[ntx], __u8 *) + 
-          sizeof(struct eth_hdr);
-      if (ctx->config->virt_gre)
-      {
-        g->proto.ebpf_ctx.pkt = g->proto.ebpf_ctx.pkt + 
-          sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
-      }
-      g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mbs[ntx], __u8 *) + UDP_MSS);
-
-      /* Add queue entry to eBPF context */
-      g->proto.ebpf_ctx.qe = qe;
-      g->proto.ebpf_ctx.qid = qcur->id;
-
-      /* Execute custom dequeue procedure */
-      ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx,
-        sizeof(struct cham_ebpf_ctx), &deq_ret);
-      ndeq++;
-
-      /* Add to transmission buffer if packet processed for TX */
-      if (deq_ret > 0)
-      {
-        /* Add destination MAC address and run infra processing */
-        ret = process_infra_tx(ctx, g, mbs[ntx], deq_ret);
-
-        /* Add to TX buffer if infra protos were successful */
-        if (ret == 0)
-        {
-          ctx->tx_mbs[ctx->tx_n] = mbs[ntx];
-          ctx->tx_n++;
-          ntx++;
-        }
-      }
+      if (ctx->config->fp_jit_combined)
+        poll_queues_guest_comb(ctx, g, qcur, qe, mbs[ntx], &ntx, &ndeq);
+      else
+        poll_queues_guest(ctx, g, qcur, qe, mbs[ntx], &ntx, &ndeq);
 
       ret = queue_dequeue(&qcur->dq);
       if (ret != 0)
@@ -333,10 +330,74 @@ static inline int poll_queues(struct fast_context *ctx)
   return 0;
 }
 
+static inline void poll_queues_guest(struct fast_context *ctx,
+    struct guest_fast *g, struct cham_dqueue *qcur, struct queue_entry *qe,
+    struct rte_mbuf *mb, int *ntx, int *ndeq)
+{
+  int ret;
+  int deq_ret;
+
+  /* Prepare packet buffer for potential TX */
+  mb->data_off = 0;
+  g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mb, __u8 *) +
+      sizeof(struct eth_hdr);
+  if (ctx->config->virt_gre)
+  {
+    g->proto.ebpf_ctx.pkt = g->proto.ebpf_ctx.pkt +
+      sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
+  }
+  g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mb, __u8 *) +
+      UDP_MSS);
+
+  /* Add queue entry to eBPF context */
+  g->proto.ebpf_ctx.qe = qe;
+  g->proto.ebpf_ctx.qid = qcur->id;
+
+  /* Execute custom dequeue procedure */
+  ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx,
+      sizeof(struct cham_ebpf_ctx), &deq_ret);
+  (*ndeq)++;
+
+  /* Add to transmission buffer if packet processed for TX */
+  if (deq_ret > 0)
+  {
+    /* Add destination MAC address and run infra processing */
+    ret = infra_tx(ctx, g, mb, deq_ret);
+
+    /* Add to TX buffer if infra protos were successful */
+    if (ret == 0)
+    {
+      ctx->tx_mbs[ctx->tx_n] = mb;
+      ctx->tx_n++;
+      (*ntx)++;
+    }
+  }
+}
+
+static inline void poll_queues_guest_comb(struct fast_context *ctx,
+    struct guest_fast *g, struct cham_dqueue *qcur, struct queue_entry *qe,
+    struct rte_mbuf *mb, int *ntx, int *ndeq)
+{
+  int deq_ret;
+  struct fast_jit_deq_ctx jit_ctx = {
+    .f_ctx = ctx,
+    .g = g,
+    .mb = mb,
+    .qe = qe,
+    .qid = qcur->id,
+  };
+
+  ebpf_vm_exec(g->proto.event_deq_vm, &jit_ctx, sizeof(jit_ctx), &deq_ret);
+  (*ndeq)++;
+
+  if (deq_ret > 0)
+    (*ntx)++;
+}
+
 static inline int poll_tx(struct fast_context *ctx)
 {
   unsigned max;
-  int i, tx_ret, ntx, ret;
+  int i, ntx;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u64 tsc_start, tsc_spent;
@@ -370,39 +431,15 @@ static inline int poll_tx(struct fast_context *ctx)
 
     for (;ntx < max;)
     {
-      /* Prepare packet */
-      mbs[ntx]->data_off = 0;
-      g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mbs[ntx], __u8 *) + 
-          sizeof(struct eth_hdr);
-      if (ctx->config->virt_gre)
+      if (ctx->config->fp_jit_combined)
       {
-        g->proto.ebpf_ctx.pkt = g->proto.ebpf_ctx.pkt +
-          sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
+        if (poll_tx_guest_comb(ctx, g, mbs[ntx], &ntx) < 0)
+          break;
+        continue;
       }
-      g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mbs[ntx], __u8 *) + UDP_MSS);
-      
-      /* Execute custom protocol tx procedure */
-      ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx.pkt, 
-          sizeof(struct cham_ebpf_ctx), &tx_ret);
 
-      if (tx_ret >= 0)
-      {
-        /* Add destination MAC address */
-        ret = process_infra_tx(ctx, g, mbs[ntx], tx_ret);
-            
-        /* TODO: Don't drop packet if ARP lookup hasn't resolved */
-        if (ret == 0)
-        {
-          /* Add to transmission buffer if packet processed for TX */
-          ctx->tx_mbs[ctx->tx_n] = mbs[ntx];
-          ctx->tx_n++;
-          ntx++;
-        }
-      }
-      else
-      {
+      if (poll_tx_guest(ctx, g, mbs[ntx], &ntx) < 0)
         break;
-      }
     }
 
     /* Subtract guest's budget */
@@ -416,6 +453,67 @@ static inline int poll_tx(struct fast_context *ctx)
   for (i = 0; i < max; i++)
     txcache_free(ctx, mbs[i]);
 
+  return 0;
+}
+
+static inline int poll_tx_guest(struct fast_context *ctx,
+    struct guest_fast *g, struct rte_mbuf *mb, int *ntx)
+{
+  int tx_ret;
+  int ret;
+
+  /* Prepare packet */
+  mb->data_off = 0;
+  g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mb, __u8 *) +
+      sizeof(struct eth_hdr);
+  if (ctx->config->virt_gre)
+  {
+    g->proto.ebpf_ctx.pkt = g->proto.ebpf_ctx.pkt +
+      sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
+  }
+  g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mb, __u8 *) +
+      UDP_MSS);
+  
+  /* Execute custom protocol tx procedure */
+  ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx.pkt, 
+      sizeof(struct cham_ebpf_ctx), &tx_ret);
+
+  if (tx_ret < 0)
+  {
+    return -1;
+  }
+
+  /* Add destination MAC address */
+  ret = infra_tx(ctx, g, mb, tx_ret);
+
+  /* TODO: Don't drop packet if ARP lookup hasn't resolved */
+  if (ret == 0)
+  {
+    /* Add to transmission buffer if packet processed for TX */
+    ctx->tx_mbs[ctx->tx_n] = mb;
+    ctx->tx_n++;
+    (*ntx)++;
+  }
+
+  return 0;
+}
+
+static inline int poll_tx_guest_comb(struct fast_context *ctx,
+    struct guest_fast *g, struct rte_mbuf *mb, int *ntx)
+{
+  int tx_ret;
+  struct fast_jit_tx_ctx jit_ctx = {
+    .f_ctx = ctx,
+    .g = g,
+    .mb = mb,
+  };
+
+  ebpf_vm_exec(g->proto.event_tx_vm, &jit_ctx, sizeof(jit_ctx), &tx_ret);
+
+  if (tx_ret < 0)
+    return -1;
+  if (tx_ret > 0)
+    (*ntx)++;
   return 0;
 }
 
@@ -442,242 +540,3 @@ static inline int tx_flush(struct fast_context *ctx)
 
   return ret;
 }
-
-static inline struct guest_fast * process_infra_rx(struct fast_context *ctx,
-    struct rte_mbuf *mb, __u64 *pkt_off)
-{
-  __u16 eth_type;
-  struct eth_hdr *eth;
-  
-  eth = (struct eth_hdr *) rte_pktmbuf_mtod(mb, __u8 *);
-  eth_type = f_beui16(eth->type);
-  
-  /* Send ARP packet to control */
-  switch (eth_type)
-  {
-    case ETH_TYPE_ARP:
-      process_infra_rx_arp(ctx, (struct arp_pkt *) eth);
-      return NULL;
-    default:
-      return process_infra_rx_ip(ctx, mb, eth, pkt_off);
-  }
-}
-
-static inline int process_infra_rx_arp(struct fast_context *ctx, struct arp_pkt *pkt)
-{
-  struct queue_entry *qe;
-
-  qe = queue_tail(ctx->fast_ctl_q);
-  if (qe == NULL)
-  {
-    LOG_ERROR("failed to get tail from fast->control queue");
-    return -1;
-  }
-  
-  if (f_beui16(pkt->arp.oper) == ARP_OPER_REQUEST)
-    process_arp_rx_req(ctx, qe, pkt);
-  else if (f_beui16(pkt->arp.oper) == ARP_OPER_REPLY)
-    process_arp_rx_rep(ctx, qe, pkt);
-  
-  return 0;
-}
-
-static inline struct guest_fast * process_infra_rx_ip(struct fast_context *ctx,
-    struct rte_mbuf *mb, void *pkt, __u64 *pkt_off)
-{
-  struct gre_pkt *pkt_gre;
-  struct netvirt_entry *e;
-
-  if (ctx->config->virt_gre)
-  {
-    pkt_gre = pkt;
-    e = netvirt_table_get(ctx->inner_table, 
-        f_beui32(pkt_gre->gre.key), f_beui32(pkt_gre->inner_ip.dst));
-    if (e == NULL)
-    {
-      LOG_WARN("received packet for unkown gueset");
-      return NULL;
-    }
-    *pkt_off = sizeof(struct eth_hdr) + sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
-    return &ctx->guests[e->gid];
-  }
-  else
-  {
-    *pkt_off = sizeof(struct eth_hdr);
-    return &ctx->guests[0];
-  }
-}
-
-static inline int process_infra_tx(struct fast_context *ctx, 
-    struct guest_fast *g, struct rte_mbuf *mb, size_t pkt_len)
-{
-  int ret;
-  __u32 outer_remote_ip;
-  struct ip_hdr *ip;
-  struct netvirt_entry *e;
-  void *pkt;
-  struct gre_pkt *gre_pkt;
-
-  pkt = rte_pktmbuf_mtod(mb, __u8 *);
-  if (ctx->config->virt_gre)
-  {
-    gre_pkt = pkt;
-    e = netvirt_table_get(ctx->inner_table, g->gre_key, 
-        f_beui32(gre_pkt->inner_ip.dst));
-    if (e == NULL)
-    {
-      LOG_WARN("could not find outer ip for destination");
-      return -1;
-    }
-    outer_remote_ip = e->outer_ip;
-  }
-  else
-  {
-    ip = (struct ip_hdr *) (pkt + sizeof(struct eth_hdr));
-    outer_remote_ip = f_beui32(ip->dst);
-  }
-
-  ret = process_infra_tx_arp(ctx, g, mb, outer_remote_ip);
-  if (ret != 0)
-    return -1;
-
-  if (ctx->config->virt_gre)
-  {
-    process_infra_tx_gre(ctx, g, mb, outer_remote_ip, pkt_len);
-  }
-  else
-  {
-    mb->pkt_len = mb->data_len = pkt_len + sizeof(struct eth_hdr);
-    mb->ol_flags |= RTE_MBUF_F_TX_IPV4 | 
-        RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_UDP_CKSUM;
-  }
-
-  return 0;
-}
-
-static inline int process_infra_tx_arp(struct fast_context *ctx, 
-    struct guest_fast *g, struct rte_mbuf *mb, __u32 outer_remote_ip)
-{
-  int ret;
-  struct eth_hdr *eth;
-  struct arp_entry *ae;
-  struct queue_entry *qe;
-  void *pkt;
-  
-  pkt = rte_pktmbuf_mtod(mb, __u8 *);
-  eth = (struct eth_hdr *) pkt;
-
-  /* Find dst MAC address for IP */
-  ae = arp_lookup(&ctx->arp_table, outer_remote_ip);
-  if (ae == NULL)
-  {
-    /* ARP entry doesn't exist so send message to control path to resolve */
-    qe = queue_tail(ctx->fast_ctl_q);
-    if (qe == NULL)
-    {
-      LOG_ERROR("failed to get tail for fast->control queue");
-      return -1;
-    }
-    
-    qe->data.arp_lookup.ip = outer_remote_ip;
-    ret = queue_enqueue(ctx->fast_ctl_q, QUEUE_ARP_LOOKUP);
-    if (ret != 0)
-    {
-      LOG_ERROR("failed to enqueue ARP lookup to control");
-      return -1;
-    }
-    
-    /* Mark ARP entry as pending */
-    ae = arp_insert_pending(&ctx->arp_table, outer_remote_ip);
-    if (ae == NULL)
-    {
-      LOG_ERROR("failed to insert pending ARP entry");
-      return -1;
-    }
-    
-    return -1;
-  }
-  
-  /* Return if ARP entry is still pending */
-  if (ae->pending)
-    return -1;
-  
-  /* Copy MAC addresses to packet */
-  memcpy(eth->dst.addr, ae->mac, ETH_ADDR_LEN);
-  memcpy(eth->src.addr, ctx->nic_ctx.eth_addr.addr_bytes, ETH_ADDR_LEN);
-
-  /* Set type of next header */
-  eth->type = t_beui16(ETH_TYPE_IP);
-
-  return 0;
-}
-
-static inline void process_infra_tx_gre(struct fast_context *ctx, 
-    struct guest_fast *g, struct rte_mbuf *mb, 
-    __u32 outer_remote_ip, size_t pkt_len)
-{
-  struct gre_pkt *pkt;
-
-  pkt = (struct gre_pkt *) rte_pktmbuf_mtod(mb, __u8 *);
-
-  IPH_VHL_SET(&pkt->outer_ip, 4, 5);
-  pkt->outer_ip._tos = 0;
-  pkt->outer_ip.len = t_beui16(pkt_len + sizeof(struct gre_hdr) 
-      + sizeof(struct ip_hdr));
-  pkt->outer_ip.id = t_beui16(3);
-  pkt->outer_ip.offset = t_beui16(0);
-  pkt->outer_ip.ttl = 0xff;
-  pkt->outer_ip.proto = IP_PROTO_GRE;
-  pkt->outer_ip.chksum = 0;
-  pkt->outer_ip.src = t_beui32(ctx->config->ip);
-  pkt->outer_ip.dst = t_beui32(outer_remote_ip);
-
-  GREH_CKSV_SET(&pkt->gre, 0, 1, 0, 0);
-  pkt->gre.proto = t_beui16(GRE_PROTO_IP);
-  pkt->gre.key = t_beui32(g->gre_key);
-
-  mb->pkt_len = mb->data_len = pkt_len + sizeof(struct eth_hdr) + sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
-  /* Enable checksum offload */
-  // mb->l2_len = 0;
-  // mb->l3_len = sizeof(struct ip_hdr);
-  // mb->l4_len = 0;
-  // mb->outer_l2_len = sizeof(struct eth_hdr);
-  // mb->outer_l3_len = sizeof(struct ip_hdr);
-  // mb->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM |
-  //   RTE_MBUF_F_TX_OUTER_IPV4 | RTE_MBUF_F_TX_OUTER_IP_CKSUM  |
-  //   RTE_MBUF_F_TX_TCP_CKSUM | RTE_MBUF_F_TX_TUNNEL_GRE;
-}
-
-static inline void process_arp_rx_req(struct fast_context *ctx,
-    struct queue_entry *qe, struct arp_pkt *pkt)
-{
-  int ret;
-  
-  qe->data.arp_pkt_rx_req.spa = f_beui32(pkt->arp.spa);
-  qe->data.arp_pkt_rx_req.tpa = f_beui32(pkt->arp.tpa);
-  rte_memcpy(&qe->data.arp_pkt_rx_req.sha, &pkt->arp.sha, ETH_ADDR_LEN);
-  
-  ret = queue_enqueue(ctx->fast_ctl_q, QUEUE_ARP_RX_REQ);
-  if (ret != 0)
-  {
-    LOG_ERROR("ARP request RX enqueue to fast->control failed");
-  }
-}
-
-static inline void process_arp_rx_rep(struct fast_context *ctx,
-    struct queue_entry *qe, struct arp_pkt *pkt)
-{
-  int ret;
-  
-  qe->data.arp_pkt_rx_rep.spa = f_beui32(pkt->arp.spa);
-  qe->data.arp_pkt_rx_rep.tpa = f_beui32(pkt->arp.tpa);
-  rte_memcpy(&qe->data.arp_pkt_rx_rep.sha, &pkt->arp.sha, ETH_ADDR_LEN);
-  rte_memcpy(&qe->data.arp_pkt_rx_rep.tha, &pkt->arp.tha, ETH_ADDR_LEN);
-  
-  ret = queue_enqueue(ctx->fast_ctl_q, QUEUE_ARP_RX_REP);
-  if (ret != 0)
-  {
-    LOG_ERROR("ARP reply RX enqueue to fast->control failed");
-  }
-}
-

@@ -1,6 +1,8 @@
 #ifndef CONTROL_H_
 #define CONTROL_H_
 
+#include <stddef.h>
+
 #include "config.h"
 #include "queue.h"
 #include "arp.h"
@@ -9,6 +11,11 @@
 
 #define CORE_INVALID UINT16_MAX
 #define CONTROL_BATCH_SIZE 16
+
+struct infra_bc_blob {
+  void *data;
+  size_t len;
+};
 
 struct proto_queue_control {
   /* Queue ID */
@@ -64,6 +71,8 @@ struct guest_control {
 struct control_context {
   /* Configuration parameters */
   struct configuration *config;
+  /* Infra bytecode blob for combined JIT */
+  struct infra_bc_blob infra_bc;
   /* NIC paremeters and configuration */
   struct nic_context *nic_ctx;
   /* Next fast-path core to poll */

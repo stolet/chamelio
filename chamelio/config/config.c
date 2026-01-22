@@ -21,6 +21,7 @@ enum cfg_params {
   CP_MAX_GUESTS,
   CP_FP_CORES_MAX,
   CP_FP_NO_XSUMOFFLOAD,
+  CP_FP_NO_JITCOMB,
   CP_PERF_ISO_OFF,
   CP_PERF_ISO_CAP,
   CP_PERF_ISO_BOOST,
@@ -63,6 +64,9 @@ static struct option opts[] = {
   { .name = "fp-no-xsumoffload",
     .has_arg = no_argument,
     .val = CP_FP_NO_XSUMOFFLOAD },
+  { .name = "fp-no-jitcomb",
+    .has_arg = no_argument,
+    .val = CP_FP_NO_JITCOMB },
   { .name = "perf-iso-off",
     .has_arg = no_argument,
     .val = CP_PERF_ISO_OFF },
@@ -173,6 +177,9 @@ int config_parse(struct configuration *c, int argc, char **argv)
       case CP_FP_NO_XSUMOFFLOAD:
         c->fp_xsumoffloads = 0;
         break;
+      case CP_FP_NO_JITCOMB:
+        c->fp_jit_combined = 0;
+        break;
       case CP_PERF_ISO_OFF:
         c->perf_iso = 0;
         break;
@@ -231,6 +238,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->max_guests = 128;
   c->fp_cores_max = 1;
   c->fp_xsumoffloads = 1;
+  c->fp_jit_combined = 1;
   c->perf_iso = 1;
   c->perf_iso_cap = 1000;
   c->perf_iso_boost = 0.5;
@@ -275,6 +283,8 @@ static void print_usage(struct configuration *c, char *progname)
       "  --fp-cores-max=CORES                    Max cores used for fast path"
            "[default: %u]\n"
       "  --fp-no-xsumoffload                     Disable TX Checksum offload"
+          "[default: enabled]\n"
+      "  --fp-no-jitcomb                         Disable combined infra+eBPF JIT"
           "[default: enabled]\n"
       "Performance isolation:\n"
       "  --perf-iso-off                          Disables performance isolation"

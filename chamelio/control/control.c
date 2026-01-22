@@ -1,7 +1,9 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <linux/types.h>
 #include <assert.h>
 #include <string.h>
+#include <limits.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <rte_ip4.h>
@@ -20,6 +22,8 @@
 #include "queue_types.h"
 #include "scheduler_fns.h"
 #include "ebpf.h"
+#include "ebpf_jit.h"
+#include "clang.h"
 #include "verifier.h"
 #include "cham_fast.h"
 
@@ -27,6 +31,8 @@ static inline int poll_fast(struct control_context *ctx);
 static inline int poll_guests(struct control_context *ctx);
 static inline int poll_timeouts(struct control_context *ctx);
 static inline void budget_refresh(struct control_context *ctx);
+
+static int load_infra_bc(struct control_context *ctx);
 
 static inline void handle_arp_lookup(struct control_context *ctx, 
     struct queue_entry *qe);
@@ -54,8 +60,8 @@ static inline void handle_free_ebpf_req(struct guest_control *g,
     struct queue_entry *qe_req);
 static inline void handle_upload_ebpf_req(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
-static inline struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, 
-    size_t size);
+static inline struct ebpf_vm_c * jit_ebpf(struct control_context *ctx,
+    const void *ebpf_instrs, size_t size, const char *entry_sym);
 
 static void ebpf_print(int a);
 static inline void * ebpf_memcpy(void *dst, void *src, size_t n);
@@ -80,6 +86,8 @@ int control_context_init(struct control_context *ctrl_ctx,
 
   ctrl_ctx->config = config;
   ctrl_ctx->nic_ctx = nic_ctx;
+  ctrl_ctx->infra_bc.data = NULL;
+  ctrl_ctx->infra_bc.len = 0;
 
   ctrl_ctx->ivshmem_uxfd = -1;
   ctrl_ctx->ivshmem_epfd = -1;
@@ -865,6 +873,9 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
   const void *event_rx_insns, *event_tx_insns, *event_deq_insns;
   struct bpf_program *event_rx_prog, *event_tx_prog, *event_deq_prog;
   struct ebpf_vm_c *event_rx_vm, *event_tx_vm, *event_deq_vm;
+  const char *rx_entry = NULL;
+  const char *tx_entry = NULL;
+  const char *deq_entry = NULL;
 
   req = &qe_req->data.up_ebpf_req;
 
@@ -903,8 +914,10 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
     return;
   }
   
-  event_rx_vm = jit_ebpf(event_rx_insns, 
-      bpf_program__insn_cnt(event_rx_prog) * 8);
+  if (ctx->config->fp_jit_combined)
+    rx_entry = EBPF_JIT_RX_STR;
+  event_rx_vm = jit_ebpf(ctx, event_rx_insns, 
+      bpf_program__insn_cnt(event_rx_prog) * 8, rx_entry);
   if (event_rx_vm == NULL)
   {
     LOG_ERROR("failed to jit event_rx");
@@ -934,8 +947,10 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
     return;
   }
   
-  event_tx_vm = jit_ebpf(event_tx_insns, 
-      bpf_program__insn_cnt(event_tx_prog) * 8);
+  if (ctx->config->fp_jit_combined)
+    tx_entry = EBPF_JIT_TX_STR;
+  event_tx_vm = jit_ebpf(ctx, event_tx_insns, 
+      bpf_program__insn_cnt(event_tx_prog) * 8, tx_entry);
   if (event_tx_vm == NULL)
   {
     LOG_ERROR("failed to jit event_tx");
@@ -964,8 +979,10 @@ static inline void handle_upload_ebpf_req(struct control_context *ctx,
     LOG_ERROR("failed to verify event_deq");
     return;
   }
-  event_deq_vm = jit_ebpf(event_deq_insns, 
-      bpf_program__insn_cnt(event_deq_prog) * 8);
+  if (ctx->config->fp_jit_combined)
+    deq_entry = EBPF_JIT_DEQ_STR;
+  event_deq_vm = jit_ebpf(ctx, event_deq_insns, 
+      bpf_program__insn_cnt(event_deq_prog) * 8, deq_entry);
   if (event_deq_vm == NULL)
   {
     LOG_ERROR("failed to jit event_deq");
@@ -1046,9 +1063,9 @@ static inline void budget_refresh(struct control_context *ctx)
   ctx->ts_refresh = clock_rdtsc();
 }
 
-/* Pointer to the memory with the jitted code inside 
-   the ebpf_vm_c struct: ebpf_jitted_fn */
-static inline struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
+static inline struct ebpf_vm_c * jit_ebpf(struct control_context *ctx,
+    const void *ebpf_instrs, size_t size, 
+    const char *entry_sym)
 {
   __u64 res;
   struct ebpf_vm_c *vm;
@@ -1067,7 +1084,7 @@ static inline struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
     return NULL;
   }
 
-  // Register helper functions here
+  /* Register helper functions here */
   res = ebpf_vm_register_helper(vm, 1001, "ebpf_queue_tail", ebpf_queue_tail);
   if (res != 0)
   {
@@ -1145,14 +1162,63 @@ static inline struct ebpf_vm_c * jit_ebpf(const void *ebpf_instrs, size_t size)
     return NULL;
   }
   
+  if (ctx->config->fp_jit_combined)
+  {
+    if (load_infra_bc(ctx) == 0)
+    {
+      res = ebpf_vm_compile_combined(vm, ctx->infra_bc.data,
+          ctx->infra_bc.len, entry_sym);
+
+      if (res != 0)
+      {
+        LOG_ERROR("failed to compile combined infra + ebpf module");
+        return NULL;
+      }
+      
+      return vm;
+    }
+    else
+    {
+      LOG_ERROR("failed to build infra bytecode");
+      return NULL;
+    }
+  }
+
   res = ebpf_vm_compile(vm);
   if (res != 0)
   {
     LOG_ERROR("failed to JIT ebpf bytecode");
     return NULL;
   }
-  
+
   return vm;
+}
+
+static int load_infra_bc(struct control_context *ctx)
+{
+  int ret;
+  char src_path[PATH_MAX];
+
+  /* These are passed as preprocessor macros during compilation */
+  const char *build_dir = CHAMELIO_BUILD_DIR;
+  const char *src_dir = CHAMELIO_SRC_DIR;
+
+  if (ctx->infra_bc.data != NULL)
+  {
+    LOG_ERROR("Already loaded infra bytecode");
+    return 0;
+  }
+
+  ret = snprintf(src_path, sizeof(src_path),
+      "%s/chamelio/fast/fast_jit.c", src_dir);
+  if (ret < 0 || ret >= (int)sizeof(src_path))
+  {
+    LOG_ERROR("failed to build infra source path");
+    return -1;
+  }
+
+  return clang_compile(build_dir, src_path,
+      &ctx->infra_bc.data, &ctx->infra_bc.len);
 }
 
 static void ebpf_print(int a)
@@ -1189,4 +1255,3 @@ static inline void * ebpf_queue_tail(struct equeue *q, __u64 elsize)
 {
   return queue_tail(q);
 }
-

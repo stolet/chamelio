@@ -34,5 +34,6 @@ executable(
   'chamelio',
   chamelio_srcs,
   include_directories: chamelio_inc,
-  dependencies : deps
+  dependencies : deps,
+  link_args : ['-rdynamic']
 )
