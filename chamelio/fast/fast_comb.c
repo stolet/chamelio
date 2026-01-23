@@ -4,7 +4,7 @@
 
 #include "fast.h"
 #include "infra.h"
-#include "fast_jit.h"
+#include "fast_comb.h"
 #include "eth_hdr.h"
 #include "ip_hdr.h"
 #include "gre_hdr.h"
@@ -12,28 +12,28 @@
 
 /* Weak stub to satisfy the host link; overridden by eBPF entry when linked. */
 __attribute__((weak))
-uint64_t __chamelio_ebpf(void *mem, size_t mem_len)
+uint64_t __cham_comb(void *mem, size_t mem_len)
 {
   return 0;
 }
 
-uint64_t fast_jit_rx(void *mem, size_t mem_len)
+uint64_t fast_comb_rx(void *mem, size_t mem_len)
 {
-  struct fast_jit_rx_ctx *ctx = (struct fast_jit_rx_ctx *) mem;
+  struct fast_comb_rx_ctx *ctx = (struct fast_comb_rx_ctx *) mem;
   struct guest_fast *g = ctx->g;
 
   g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(ctx->mb, __u8 *) + ctx->pkt_off;
   g->proto.ebpf_ctx.pkt_end = (void *) (g->proto.ebpf_ctx.pkt + UDP_MSS);
-  (void) __chamelio_ebpf(&g->proto.ebpf_ctx, sizeof(struct cham_ebpf_ctx));
+  (void) __cham_comb(&g->proto.ebpf_ctx, sizeof(struct cham_ebpf_ctx));
 
   return 1;
 }
 
-uint64_t fast_jit_deq(void *mem, size_t mem_len)
+uint64_t fast_comb_deq(void *mem, size_t mem_len)
 {
   int deq_ret;
   int ret;
-  struct fast_jit_deq_ctx *ctx = (struct fast_jit_deq_ctx *) mem;
+  struct fast_comb_deq_ctx *ctx = (struct fast_comb_deq_ctx *) mem;
   struct fast_context *f_ctx = ctx->f_ctx;
   struct guest_fast *g = ctx->g;
   struct rte_mbuf *mb = ctx->mb;
@@ -52,7 +52,7 @@ uint64_t fast_jit_deq(void *mem, size_t mem_len)
   g->proto.ebpf_ctx.qe = ctx->qe;
   g->proto.ebpf_ctx.qid = ctx->qid;
 
-  deq_ret = (int) __chamelio_ebpf(&g->proto.ebpf_ctx,
+  deq_ret = (int) __cham_comb(&g->proto.ebpf_ctx,
       sizeof(struct cham_ebpf_ctx));
 
   if (deq_ret > 0)
@@ -69,11 +69,11 @@ uint64_t fast_jit_deq(void *mem, size_t mem_len)
   return 0;
 }
 
-uint64_t fast_jit_tx(void *mem, size_t mem_len)
+uint64_t fast_comb_tx(void *mem, size_t mem_len)
 {
   int tx_ret;
   int ret;
-  struct fast_jit_tx_ctx *ctx = (struct fast_jit_tx_ctx *) mem;
+  struct fast_comb_tx_ctx *ctx = (struct fast_comb_tx_ctx *) mem;
   struct fast_context *f_ctx = ctx->f_ctx;
   struct guest_fast *g = ctx->g;
   struct rte_mbuf *mb = ctx->mb;
@@ -89,7 +89,7 @@ uint64_t fast_jit_tx(void *mem, size_t mem_len)
   g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mb, __u8 *) +
       UDP_MSS);
 
-  tx_ret = (int) __chamelio_ebpf(&g->proto.ebpf_ctx.pkt,
+  tx_ret = (int) __cham_comb(&g->proto.ebpf_ctx.pkt,
       sizeof(struct cham_ebpf_ctx));
 
   if (tx_ret < 0)

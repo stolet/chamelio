@@ -13,7 +13,6 @@ control_srcs = files(
   'control_budget.c',
   'control_ebpf.c',
   'control_guest.c',
-  'control_jit.c',
   'ivshmemif.c',
   'guestif.c',
   'verifier.cpp',

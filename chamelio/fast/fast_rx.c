@@ -4,7 +4,7 @@
 #include <rte_mbuf.h>
 
 #include "fast.h"
-#include "fast_jit.h"
+#include "fast_comb.h"
 #include "udp.h"
 #include "clock.h"
 #include "infra.h"
@@ -79,7 +79,7 @@ static inline void rx_poll_guest_comb(struct guest_fast *g,
 {
   int ret;
   __u64 tsc_spent;
-  struct fast_jit_rx_ctx jit_ctx = {
+  struct fast_comb_rx_ctx jit_ctx = {
     .g = g,
     .mb = mb,
     .pkt_off = pkt_off,

@@ -4,7 +4,7 @@
 #include <rte_mbuf.h>
 
 #include "fast.h"
-#include "fast_jit.h"
+#include "fast_comb.h"
 #include "ip_hdr.h"
 #include "gre_hdr.h"
 #include "udp.h"
@@ -126,7 +126,7 @@ static inline int tx_poll_guest_comb(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf *mb, int *ntx)
 {
   int tx_ret;
-  struct fast_jit_tx_ctx jit_ctx = {
+  struct fast_comb_tx_ctx jit_ctx = {
     .f_ctx = ctx,
     .g = g,
     .mb = mb,

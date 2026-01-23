@@ -28,8 +28,8 @@ extern "C"
   int ebpf_vm_compile(ebpf_vm_c *h);
 
   /* JIT compile with extra infra bytecode and a custom entry symbol */
-  int ebpf_vm_compile_combined(ebpf_vm_c *h, const void *infra_bc,
-    size_t infra_len, const char *entry_sym);
+  int ebpf_vm_compile_combined(ebpf_vm_c *h, const void *code,
+    size_t code_len, const char *entry_sym);
 
   /* Execute jitted function */
   int ebpf_vm_exec(ebpf_vm_c *h, void *arg, 

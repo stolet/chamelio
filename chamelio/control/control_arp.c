@@ -155,6 +155,7 @@ void control_arp_rep(struct control_context *ctx,
     ae->te = NULL;
   }
 
+  /* TODO: Don't duplicate this code */
   /* Send message to each fast-path to update their ARP tables */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {

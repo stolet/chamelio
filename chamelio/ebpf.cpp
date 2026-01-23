@@ -6,11 +6,13 @@
 
 #include <llvmbpf/llvmbpf.hpp>
 #include "ebpf.h"
-#include "ebpf_jit.h"
 using namespace bpftime; 
 
 extern "C"
 {
+  /* eBPF entry symbol used to call combined JIT modules */
+  #define EBPF_JIT_ENTRY_STR "__cham_comb"
+  
   struct ebpf_vm_c
   {
     llvmbpf_vm vm;
