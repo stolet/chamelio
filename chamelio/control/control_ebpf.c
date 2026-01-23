@@ -23,6 +23,8 @@
 #define COMB_TX_ENTRY "fast_comb_tx"
 #define COMB_DEQ_ENTRY "fast_comb_deq"
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
 static struct ebpf_vm_c *verify_and_jit(struct control_context *ctx,
     struct bpf_object *bpf_obj, const char *prog_name, const char *comb_entry);
 static struct ebpf_vm_c *jit(struct control_context *ctx,
@@ -38,6 +40,60 @@ static inline __u16 ebpf_ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr);
 static inline void *ebpf_map_get(void *map_base, __u32 len);
 static inline void *ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize);
 static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize);
+
+enum ebpf_helper_id
+{
+  EBPF_HELPER_QUEUE_TAIL = 1001,
+  EBPF_HELPER_QUEUE_ENQUEUE = 1002,
+  EBPF_HELPER_MEMCPY = 1003,
+  EBPF_HELPER_PRINT = 1004,
+  EBPF_HELPER_IPV4_CKSUM = 1005,
+  EBPF_HELPER_IPV4_UDPTCP_CKSUM = 1006,
+  EBPF_HELPER_SCHED_HEAD = 1007,
+  EBPF_HELPER_SCHED_POP = 1008,
+  EBPF_HELPER_SCHED_ADD = 1009,
+  EBPF_HELPER_MAP_GET = 1010,
+  EBPF_HELPER_MAP_LOOKUP = 1011,
+};
+
+struct ebpf_helper_desc
+{
+  __u32 id;
+  const char *name;
+  void *fn;
+};
+
+struct ebpf_prog_desc
+{
+  const char *prog_name;
+  const char *comb_entry;
+  struct ebpf_vm_c **out_vm;
+};
+
+static const struct ebpf_helper_desc ebpf_helpers[] = {
+  { EBPF_HELPER_QUEUE_TAIL, 
+      "ebpf_queue_tail", ebpf_queue_tail },
+  { EBPF_HELPER_QUEUE_ENQUEUE, 
+      "queue_enqueue", queue_enqueue },
+  { EBPF_HELPER_MEMCPY, 
+      "ebpf_memcpy", ebpf_memcpy },
+  { EBPF_HELPER_PRINT, 
+      "ebpf_print", ebpf_print },
+  { EBPF_HELPER_IPV4_CKSUM, 
+      "ebpf_ipv4_checksum", ebpf_ipv4_checksum },
+  { EBPF_HELPER_IPV4_UDPTCP_CKSUM, 
+    "ebpf_ipv4_udptcp_cksum", ebpf_ipv4_udptcp_cksum },
+  { EBPF_HELPER_SCHED_HEAD, 
+      "sched_head", sched_head },
+  { EBPF_HELPER_SCHED_POP, 
+      "sched_pop", sched_pop },
+  { EBPF_HELPER_SCHED_ADD, 
+      "sched_add", sched_add },
+  { EBPF_HELPER_MAP_GET, 
+      "ebpf_map_get", ebpf_map_get },
+  { EBPF_HELPER_MAP_LOOKUP, 
+      "ebpf_map_lookup", ebpf_map_lookup },
+};
 
 void control_ebpf_allocate(struct guest_control *g,
     struct queue_entry *qe_req)
@@ -76,12 +132,20 @@ void control_ebpf_upload(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
 {
   int ret, i;
+  int success = 0;
   void *ebpf_bytecode;
   struct queue_up_ebpf_req *req, *f_req;
   struct queue_up_ebpf_res *res;
   struct queue_entry *qe_res;
-  struct bpf_object *bpf_obj;
-  struct ebpf_vm_c *event_rx_vm, *event_tx_vm, *event_deq_vm;
+  struct bpf_object *bpf_obj = NULL;
+  struct ebpf_vm_c *event_rx_vm = NULL;
+  struct ebpf_vm_c *event_tx_vm = NULL;
+  struct ebpf_vm_c *event_deq_vm = NULL;
+  struct ebpf_prog_desc progs[] = {
+      { "event_rx", COMB_RX_ENTRY, &event_rx_vm },
+      { "event_tx", COMB_TX_ENTRY, &event_tx_vm },
+      { "event_deq", COMB_DEQ_ENTRY, &event_deq_vm },
+  };
 
   req = &qe_req->data.up_ebpf_req;
 
@@ -94,26 +158,16 @@ void control_ebpf_upload(struct control_context *ctx,
   if (bpf_obj == NULL)
   {
     LOG_ERROR("failed to open bpf_obj from bytecode");
-    res->success = 0;
-    ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
-    assert(ret == 0);
-    return;
+    goto out;
   }
 
-  /* Verify and JIT RX snippet */
-  event_rx_vm = verify_and_jit(ctx, bpf_obj, "event_rx", COMB_RX_ENTRY);
-  if (event_rx_vm == NULL)
-    goto ebpf_error;
-
-  /* Verify and JIT TX snippet */
-  event_tx_vm = verify_and_jit(ctx, bpf_obj, "event_tx", COMB_TX_ENTRY);
-  if (event_tx_vm == NULL)
-    goto ebpf_error;
-
-  /* Verify and JIT DEQ snippet */
-  event_deq_vm = verify_and_jit(ctx, bpf_obj, "event_deq", COMB_DEQ_ENTRY);
-  if (event_deq_vm == NULL)
-    goto ebpf_error;
+  for (i = 0; i < ARRAY_SIZE(progs); i++)
+  {
+    *progs[i].out_vm = verify_and_jit(ctx, bpf_obj,
+        progs[i].prog_name, progs[i].comb_entry);
+    if (*progs[i].out_vm == NULL)
+      goto out;
+  }
 
   /* Send jitted VMs for functions to fast-path  */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
@@ -131,14 +185,23 @@ void control_ebpf_upload(struct control_context *ctx,
     assert(ret == 0);
   }
 
-  res = (struct queue_up_ebpf_res *)&qe_res->data;
-  res->success = 1;
-  ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
-  assert(ret == 0);
-  return;
+  success = 1;
 
-ebpf_error:
-  res->success = 0;
+out:
+  if (!success)
+  {
+    if (event_rx_vm != NULL)
+      ebpf_vm_destroy(event_rx_vm);
+    if (event_tx_vm != NULL)
+      ebpf_vm_destroy(event_tx_vm);
+    if (event_deq_vm != NULL)
+      ebpf_vm_destroy(event_deq_vm);
+  }
+
+  if (bpf_obj != NULL)
+    bpf_object__close(bpf_obj);
+
+  res->success = success;
   ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
   assert(ret == 0);
 }
@@ -212,7 +275,7 @@ static struct ebpf_vm_c *jit(struct control_context *ctx,
   if (res != 0)
   {
     LOG_ERROR("failed to load ebpf bytecode");
-    return NULL;
+    goto error;
   }
 
   /* Registers the helper functions used by the eBPF snippets */
@@ -220,7 +283,7 @@ static struct ebpf_vm_c *jit(struct control_context *ctx,
   if (res != 0)
   {
     LOG_ERROR("failed to register helpers");
-    return NULL;
+    goto error;
   }
 
   /* Compile combined infra + ebpf */
@@ -231,7 +294,7 @@ static struct ebpf_vm_c *jit(struct control_context *ctx,
     if (res != 0)
     {
       LOG_ERROR("failed to build infra bytecode");
-      return NULL;
+      goto error;
     }
 
     /* Get a combined bytecode of the infra code + ebpf snippets */
@@ -240,7 +303,7 @@ static struct ebpf_vm_c *jit(struct control_context *ctx,
     if (res != 0)
     {
       LOG_ERROR("failed to compile combined infra + ebpf module");
-      return NULL;
+      goto error;
     }
 
     return vm;
@@ -251,94 +314,30 @@ static struct ebpf_vm_c *jit(struct control_context *ctx,
   if (res != 0)
   {
     LOG_ERROR("failed to JIT ebpf bytecode");
-    return NULL;
+    goto error;
   }
 
   return vm;
+
+error:
+  ebpf_vm_destroy(vm);
+  return NULL;
 }
 
 static int register_helpers(struct ebpf_vm_c *vm)
 {
   int res;
+  size_t i;
 
-  res = ebpf_vm_register_helper(vm, 1001, "ebpf_queue_tail", ebpf_queue_tail);
-  if (res != 0)
+  for (i = 0; i < ARRAY_SIZE(ebpf_helpers); i++)
   {
-    LOG_ERROR("failed to register ebpf_queue_tail helper");
-    return -1;
-  }
-
-  res = ebpf_vm_register_helper(vm, 1002, "queue_enqueue", queue_enqueue);
-  if (res != 0)
-  {
-    LOG_ERROR("failed to register ebpf_queue_enqueue helper");
-    return -1;
-  }
-
-  res = ebpf_vm_register_helper(vm, 1003, "ebpf_memcpy", ebpf_memcpy);
-  if (res != 0)
-  {
-    LOG_ERROR("failed to register ebpf_memcpy helper");
-    return -1;
-  }
-
-  res = ebpf_vm_register_helper(vm, 1004, "ebpf_print", ebpf_print);
-  if (res != 0)
-  {
-    LOG_ERROR("failed to register ebpf_print helper");
-    return -1;
-  }
-
-  res = ebpf_vm_register_helper(vm, 1005, "ebpf_ipv4_checksum",
-      ebpf_ipv4_checksum);
-  if (res != 0)
-  {
-    LOG_ERROR("failed to register ebpf_ipv4_checksum helper");
-    return -1;
-  }
-
-  res = ebpf_vm_register_helper(vm, 1006, "ebpf_ipv4_udptcp_cksum",
-      ebpf_ipv4_udptcp_cksum);
-  if (res != 0)
-  {
-    LOG_ERROR("failed to register ebpf_ipv4_udptcp_cksum helper");
-    return -1;
-  }
-
-  res = ebpf_vm_register_helper(vm, 1007, "sched_head", sched_head);
-  if (res != 0)
-  {
-    LOG_ERROR("failed to register sched_head helper");
-    return -1;
-  }
-
-  res = ebpf_vm_register_helper(vm, 1008, "sched_pop", sched_pop);
-  if (res != 0)
-  {
-    LOG_ERROR("failed to register sched_pop helper");
-    return -1;
-  }
-
-  res = ebpf_vm_register_helper(vm, 1009, "sched_add", sched_add);
-  if (res != 0)
-  {
-    LOG_ERROR("failed to register sched_add helper");
-    return -1;
-  }
-
-  res = ebpf_vm_register_helper(vm, 1010, "ebpf_map_get", ebpf_map_get);
-  if (res != 0)
-  {
-    LOG_ERROR("failed to register ebpf_map_get helper");
-    return -1;
-  }
-
-  res = ebpf_vm_register_helper(vm, 1011, "ebpf_map_lookup",
-      ebpf_map_lookup);
-  if (res != 0)
-  {
-    LOG_ERROR("failed to register ebpf_map_lookup helper");
-    return -1;
+    res = ebpf_vm_register_helper(vm, ebpf_helpers[i].id,
+        ebpf_helpers[i].name, ebpf_helpers[i].fn);
+    if (res != 0)
+    {
+      LOG_ERROR("failed to register %s helper", ebpf_helpers[i].name);
+      return -1;
+    }
   }
 
   return 0;
@@ -373,7 +372,7 @@ static int load_comb_bytecode(struct control_context *ctx)
 
 static void ebpf_print(int a)
 {
-  LOG_DEBUG("HERE %lld", a);
+  LOG_DEBUG("ebpf_print %d", a);
 }
 
 static inline void *ebpf_memcpy(void *dst, void *src, size_t n)
@@ -398,7 +397,7 @@ static inline void *ebpf_map_get(void *map_base, __u32 len)
 
 static inline void *ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize)
 {
-  return map_base + (id * elsize);
+  return (__u8 *)map_base + (id * elsize);
 }
 
 static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize)

@@ -5,6 +5,7 @@
 
 #include "fast.h"
 #include "fast_comb.h"
+#include "fast_ebpf.h"
 #include "udp.h"
 #include "clock.h"
 #include "infra.h"
@@ -65,8 +66,7 @@ static inline void rx_poll_guest(struct guest_fast *g,
   int ret;
   __u64 tsc_spent;
 
-  g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mb, __u8 *) + pkt_off;
-  g->proto.ebpf_ctx.pkt_end = (void *) (g->proto.ebpf_ctx.pkt + UDP_MSS);
+  fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off);
   ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx,
       sizeof(struct cham_ebpf_ctx), &ret);
 

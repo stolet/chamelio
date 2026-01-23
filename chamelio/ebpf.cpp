@@ -54,7 +54,8 @@ extern "C"
     h->jitted_fn = nullptr;
   }
 
-  int ebpf_vm_register_helper(ebpf_vm_c *h, __u32 id, char *name, void *fn)
+  int ebpf_vm_register_helper(ebpf_vm_c *h, __u32 id, const char *name,
+      void *fn)
   {
     int res; 
     if (!h || !fn)

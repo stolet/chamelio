@@ -5,6 +5,7 @@
 #include "fast.h"
 #include "infra.h"
 #include "fast_comb.h"
+#include "fast_ebpf.h"
 #include "eth_hdr.h"
 #include "ip_hdr.h"
 #include "gre_hdr.h"
@@ -17,37 +18,26 @@ uint64_t __cham_comb(void *mem, size_t mem_len)
   return 0;
 }
 
-uint64_t fast_comb_rx(void *mem, size_t mem_len)
+uint64_t fast_comb_rx(struct fast_comb_rx_ctx *ctx, size_t mem_len)
 {
-  struct fast_comb_rx_ctx *ctx = (struct fast_comb_rx_ctx *) mem;
   struct guest_fast *g = ctx->g;
 
-  g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(ctx->mb, __u8 *) + ctx->pkt_off;
-  g->proto.ebpf_ctx.pkt_end = (void *) (g->proto.ebpf_ctx.pkt + UDP_MSS);
+  fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, ctx->mb, ctx->pkt_off);
   (void) __cham_comb(&g->proto.ebpf_ctx, sizeof(struct cham_ebpf_ctx));
 
   return 1;
 }
 
-uint64_t fast_comb_deq(void *mem, size_t mem_len)
+uint64_t fast_comb_deq(struct fast_comb_deq_ctx *ctx, size_t mem_len)
 {
   int deq_ret;
   int ret;
-  struct fast_comb_deq_ctx *ctx = (struct fast_comb_deq_ctx *) mem;
   struct fast_context *f_ctx = ctx->f_ctx;
   struct guest_fast *g = ctx->g;
   struct rte_mbuf *mb = ctx->mb;
 
   mb->data_off = 0;
-  g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mb, __u8 *) +
-      sizeof(struct eth_hdr);
-  if (f_ctx->config->virt_gre)
-  {
-    g->proto.ebpf_ctx.pkt = g->proto.ebpf_ctx.pkt +
-      sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
-  }
-  g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mb, __u8 *) +
-      UDP_MSS);
+  fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, f_ctx->config->virt_gre);
 
   g->proto.ebpf_ctx.qe = ctx->qe;
   g->proto.ebpf_ctx.qid = ctx->qid;
@@ -69,27 +59,18 @@ uint64_t fast_comb_deq(void *mem, size_t mem_len)
   return 0;
 }
 
-uint64_t fast_comb_tx(void *mem, size_t mem_len)
+uint64_t fast_comb_tx(struct fast_comb_tx_ctx *ctx, size_t mem_len)
 {
   int tx_ret;
   int ret;
-  struct fast_comb_tx_ctx *ctx = (struct fast_comb_tx_ctx *) mem;
   struct fast_context *f_ctx = ctx->f_ctx;
   struct guest_fast *g = ctx->g;
   struct rte_mbuf *mb = ctx->mb;
 
   mb->data_off = 0;
-  g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mb, __u8 *) +
-      sizeof(struct eth_hdr);
-  if (f_ctx->config->virt_gre)
-  {
-    g->proto.ebpf_ctx.pkt = g->proto.ebpf_ctx.pkt +
-      sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
-  }
-  g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mb, __u8 *) +
-      UDP_MSS);
+  fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, f_ctx->config->virt_gre);
 
-  tx_ret = (int) __cham_comb(&g->proto.ebpf_ctx.pkt,
+  tx_ret = (int) __cham_comb(&g->proto.ebpf_ctx,
       sizeof(struct cham_ebpf_ctx));
 
   if (tx_ret < 0)

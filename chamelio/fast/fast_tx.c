@@ -5,6 +5,7 @@
 
 #include "fast.h"
 #include "fast_comb.h"
+#include "fast_ebpf.h"
 #include "ip_hdr.h"
 #include "gre_hdr.h"
 #include "udp.h"
@@ -88,18 +89,10 @@ static inline int tx_poll_guest(struct fast_context *ctx,
 
   /* Prepare packet */
   mb->data_off = 0;
-  g->proto.ebpf_ctx.pkt = rte_pktmbuf_mtod(mb, __u8 *) +
-      sizeof(struct eth_hdr);
-  if (ctx->config->virt_gre)
-  {
-    g->proto.ebpf_ctx.pkt = g->proto.ebpf_ctx.pkt +
-      sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
-  }
-  g->proto.ebpf_ctx.pkt_end = (void *) ((__u64) rte_pktmbuf_mtod(mb, __u8 *) +
-      UDP_MSS);
+  fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, ctx->config->virt_gre);
   
   /* Execute custom protocol tx procedure */
-  ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx.pkt, 
+  ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx,
       sizeof(struct cham_ebpf_ctx), &tx_ret);
 
   if (tx_ret < 0)

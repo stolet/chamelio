@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include <linux/types.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -22,7 +23,8 @@ extern "C"
   void ebpf_vm_unload_code(ebpf_vm_c *h);
 
   /* Register helper functions */
-  int ebpf_vm_register_helper(ebpf_vm_c *h, __u32 id, char *name, void *fn);
+  int ebpf_vm_register_helper(ebpf_vm_c *h, __u32 id, const char *name,
+    void *fn);
 
   /* JIT compiled loaded eBPF code */
   int ebpf_vm_compile(ebpf_vm_c *h);
