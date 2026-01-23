@@ -2,6 +2,7 @@
 #define CONTROL_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "config.h"
 #include "queue.h"

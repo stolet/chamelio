@@ -2,13 +2,23 @@ control_inc = include_directories('include')
 chamelio_inc = include_directories('../include')
 llvmbpf_inc = include_directories('/usr/local/include/llvmbpf')
 prevail_inc = include_directories('/usr/local/include/prevail')
+
 llvm_config = find_program('llvm-config', required: true)
 llvm_inc = run_command(llvm_config, '--includedir', check: true).stdout().strip()
 llvm_lib = run_command(llvm_config, '--libdir', check: true).stdout().strip()
 
-control_srcs = files('control.c',
-    'ivshmemif.c', 'guestif.c',
-    'verifier.cpp', 'clang.cpp')
+control_srcs = files(
+  'control.c',
+  'control_arp.c',
+  'control_budget.c',
+  'control_ebpf.c',
+  'control_guest.c',
+  'control_jit.c',
+  'ivshmemif.c',
+  'guestif.c',
+  'verifier.cpp',
+  'clang.cpp',
+)
 
 build_dir_define = '-DCHAMELIO_BUILD_DIR="' + meson.project_build_root() + '"'
 src_dir_define = '-DCHAMELIO_SRC_DIR="' + meson.project_source_root() + '"'
