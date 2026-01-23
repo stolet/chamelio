@@ -3,6 +3,9 @@ fast_inc = include_directories('include', '../include')
 fast_srcs = files(
   'fast.c', 
   'fast_jit.c',
+  'fast_rx.c',
+  'fast_tx.c',
+  'fast_queues.c',
   'controlif.c',
   'infra.c',
 )

@@ -115,6 +115,9 @@ int fast_context_init(struct fast_context *f_ctx,
 int fast_loop(struct fast_context *ctx);
 /* Cleans up the fast-path */
 void fast_context_destroy();
+/* Flushes the transmit buffer by sending packets */
+int fast_txflush(struct fast_context *ctx);
+
 
 
 
