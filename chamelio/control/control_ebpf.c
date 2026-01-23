@@ -354,7 +354,7 @@ static int load_comb_bytecode(struct control_context *ctx)
 
   if (ctx->infra_bc.data != NULL)
   {
-    LOG_ERROR("Already loaded infra bytecode");
+    LOG_ERROR("Already loaded combined bytecode");
     return 0;
   }
 
