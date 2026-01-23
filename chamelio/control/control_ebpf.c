@@ -95,6 +95,14 @@ static const struct ebpf_helper_desc ebpf_helpers[] = {
       "ebpf_map_lookup", ebpf_map_lookup },
 };
 
+int control_ebpf_init(struct control_context *ctx)
+{
+  if (!ctx->config->fp_jit_combined)
+    return 0;
+
+  return load_comb_bytecode(ctx);
+}
+
 void control_ebpf_allocate(struct guest_control *g,
     struct queue_entry *qe_req)
 {
@@ -289,17 +297,9 @@ static struct ebpf_vm_c *jit(struct control_context *ctx,
   /* Compile combined infra + ebpf */
   if (ctx->config->fp_jit_combined)
   {
-    /* Load and compile infrastructure code */
-    res = load_comb_bytecode(ctx);
-    if (res != 0)
-    {
-      LOG_ERROR("failed to build infra bytecode");
-      goto error;
-    }
-
     /* Get a combined bytecode of the infra code + ebpf snippets */
-    res = ebpf_vm_compile_combined(vm, ctx->infra_bc.data,
-        ctx->infra_bc.len, comb_entry);
+    res = ebpf_vm_compile_combined(vm, ctx->comb_bc.data,
+        ctx->comb_bc.len, comb_entry);
     if (res != 0)
     {
       LOG_ERROR("failed to compile combined infra + ebpf module");
@@ -352,11 +352,8 @@ static int load_comb_bytecode(struct control_context *ctx)
   const char *build_dir = CHAMELIO_BUILD_DIR;
   const char *src_dir = CHAMELIO_SRC_DIR;
 
-  if (ctx->infra_bc.data != NULL)
-  {
-    LOG_ERROR("Already loaded combined bytecode");
+  if (ctx->comb_bc.data != NULL)
     return 0;
-  }
 
   ret = snprintf(src_path, sizeof(src_path),
       "%s/chamelio/fast/fast_comb.c", src_dir);
@@ -367,7 +364,7 @@ static int load_comb_bytecode(struct control_context *ctx)
   }
 
   return clang_compile(build_dir, src_path,
-      &ctx->infra_bc.data, &ctx->infra_bc.len);
+      &ctx->comb_bc.data, &ctx->comb_bc.len);
 }
 
 static void ebpf_print(int a)
@@ -392,6 +389,7 @@ static inline __u16 ebpf_ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr)
 
 static inline void *ebpf_map_get(void *map_base, __u32 len)
 {
+  (void)len;
   return map_base;
 }
 
@@ -402,5 +400,6 @@ static inline void *ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize)
 
 static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize)
 {
+  (void)elsize;
   return queue_tail(q);
 }

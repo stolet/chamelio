@@ -36,8 +36,14 @@ int control_context_init(struct control_context *ctrl_ctx,
 
   ctrl_ctx->config = config;
   ctrl_ctx->nic_ctx = nic_ctx;
-  ctrl_ctx->infra_bc.data = NULL;
-  ctrl_ctx->infra_bc.len = 0;
+  ctrl_ctx->comb_bc.data = NULL;
+  ctrl_ctx->comb_bc.len = 0;
+
+  if (control_ebpf_init(ctrl_ctx) != 0)
+  {
+    LOG_ERROR("failed to build infra bytecode");
+    return -1;
+  }
 
   ctrl_ctx->ivshmem_uxfd = -1;
   ctrl_ctx->ivshmem_epfd = -1;

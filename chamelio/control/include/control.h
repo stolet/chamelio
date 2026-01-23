@@ -13,7 +13,7 @@
 #define CORE_INVALID UINT16_MAX
 #define CONTROL_BATCH_SIZE 16
 
-struct infra_bc_blob {
+struct comb_bc_blob {
   void *data;
   size_t len;
 };
@@ -73,7 +73,7 @@ struct control_context {
   /* Configuration parameters */
   struct configuration *config;
   /* Infra bytecode blob for combined JIT */
-  struct infra_bc_blob infra_bc;
+  struct comb_bc_blob comb_bc;
   /* NIC paremeters and configuration */
   struct nic_context *nic_ctx;
   /* Next fast-path core to poll */
