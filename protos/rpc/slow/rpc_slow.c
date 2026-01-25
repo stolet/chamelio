@@ -40,7 +40,7 @@ int poll_apps(struct rpc_slow_context *ctx);
 
 int init_rpc_slow_context(struct rpc_slow_context *ctx)
 {
-  int fd, ret;
+  int fd, ret, i;
   struct stat statbuf;
   struct proto_ebpf_lib *ebpf;
   __u8 *ebpf_bytecode;
@@ -52,21 +52,21 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
   g = cham_connect_guest();
   if (g == NULL)
   {
-    LOG_ERROR("UDP slow-path couldn't connect to Chamelio");
+    LOG_ERROR("RPC slow-path couldn't connect to Chamelio");
     abort();
   }
 
   p = cham_new_proto(g, 0);
   if (p == NULL)
   {
-    LOG_ERROR("UDP slow-path failed to register protocol with Chamelio");
+    LOG_ERROR("RPC slow-path failed to register protocol with Chamelio");
     abort();
   }
 
   fd = open(RPC_EBPF_BYTECODE, O_RDWR);
   if (fd < 0)
   {
-    LOG_ERROR("Failed to open UDP eBPF bytecode");
+    LOG_ERROR("Failed to open RPC eBPF bytecode");
     abort();
   }
   fstat(fd, &statbuf);
@@ -117,17 +117,12 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
     LOG_ERROR("failed to create port to server map");
     abort();
   }
-  // initialize port to server map entries to invalid server id
-  pt_sers = ctx->proto->shm_base + ctx->port_server_map->off;
-  for (int i = 0; i < MAX_PORT; i++)
-  {
-    pt_sers[i].server_id = INVALID_SERVER_ID;
-  }
-
+  
   ctx->clients_map = clients_map;
   ctx->servers_map = servers_map;
-  // ctx->workers_map = workers_map;
-
+  ctx->port_server_map = pt_to_ser_map;
+  ctx->workers_map = workers_map;
+  LOG_DEBUG("initialized rpc slow context maps");
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;
   ctx->guest = g;
@@ -136,8 +131,16 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
   ctx->next_app = 0;
   ctx->n_clients = 0;
   ctx->n_servers = 0;
-  // ctx->n_workers = 0;
 
+  // LOG_DEBUG("created port to server map with id=%d", pt_to_ser_map->id);
+  // initialize port to server map entries to invalid server id
+  pt_sers = ctx->proto->shm_base + ctx->port_server_map->off;
+  // LOG_DEBUG("initializing port to server map entries");
+  for (i = MIN_PORT; i <= MAX_PORT; i++)
+  {
+    // LOG_DEBUG("initializing port %d to invalid server id", i);
+    pt_sers[i].server_id = INVALID_SERVER_ID;
+  }
   return 0;
 }
 
@@ -189,7 +192,9 @@ int poll_apps(struct rpc_slow_context *ctx)
       handle_new_client_req(ctx, actx, qe);
       break;
     case RPC_QUEUE_NEW_SERVER_REQ:
+      LOG_DEBUG("handling new server request");
       handle_new_server_req(ctx, actx, qe);
+      LOG_DEBUG("new server request handled successfully");
       break;
     case RPC_QUEUE_NEW_WORKER_REQ:
       handle_new_worker_req(ctx, actx, qe);
@@ -326,6 +331,7 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
 int handle_new_server_req(struct rpc_slow_context *ctx,
                           struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
+  LOG_DEBUG("handling new server request");
   struct rpc_queue_new_server_req *req;
   struct rpc_queue_new_server_res *res;
   struct rpc_queue_entry *qe_res;
@@ -396,6 +402,7 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
     return -1;
   }
   ctx->n_servers++;
+  LOG_DEBUG("new server request handled successfully, server id=%d", res->server_id);
   return 0;
 }
 
@@ -419,10 +426,12 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
     LOG_ERROR("failed to get tail of slow->app queue");
     return -1;
   }
+  LOG_DEBUG("got tail of slow->app queue");
 
   res = &qe_res->data.new_worker_res;
   res->opaque = req->opaque;
 
+  LOG_DEBUG("creating new worker for server ID %d", req->server_id);
   server = &sv_map[req->server_id];
   if (server->n_workers >= MAX_WORKERS)
   {
@@ -431,14 +440,17 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
   }
 
   res->worker_id = ctx->n_workers;
-
   worker = &worker_map[ctx->n_workers];
+  // LOG_DEBUG("allocated worker structure in shared memory");
   worker->id = ctx->n_workers;
+  // LOG_DEBUG("set worker ID to %d", worker->id);
   worker->app_bump_qid = actx->app_bump_qs[0]->id;
+  // LOG_DEBUG("set worker app bump queue ID to %d", worker->app_bump_qid);
   worker->opaque = req->opaque;
   worker->jobs_pending = 0;
-  // TBC: is okay to add server_id field on the library side of the implementation
+  // LOG_DEBUG("set worker opaque to %lu", worker->opaque);
   worker->server_id = req->server_id;
+  // LOG_DEBUG("worker created with ID %d for server ID %d", worker->id, worker->server_id);
 
   // Create queue for RX buffer
   protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
@@ -477,6 +489,7 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
     return -1;
   }
   ctx->n_workers++;
+  LOG_DEBUG("new worker request handled successfully, worker id=%d", res->worker_id);
   return 0;
 }
 
