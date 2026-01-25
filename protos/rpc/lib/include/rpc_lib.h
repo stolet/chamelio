@@ -5,14 +5,15 @@
 #include <sys/socket.h>
 
 #include "queue.h"
-#include "rpc.h"
 
 /* TODO: Fix this because it's duplicated */
 #define MAX_SOCKETS 8192
-// #define MAX_SERVERS 6
-// #define MAX_CLIENTS 16
-// #define MAX_WORKERS 16
+#define MAX_SERVERS 6
+#define MAX_CLIENTS 16
+#define MAX_WORKERS 16
 #define SOCK_INACTIVE (-1U)
+/* Invalid server ID */
+#define INVALID_SERVER_ID -1
 
 struct rpc_context_lib
 {

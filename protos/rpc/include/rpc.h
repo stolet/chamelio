@@ -25,7 +25,7 @@
 /* Invalid server ID */
 #define INVALID_SERVER_ID -1
 /* Maximum number of services */
-#define MAX_SERVICE_NUMBER 256
+#define MAX_SERVICE_NUMBER 8
 /* Invalid worker ID */
 #define INVALID_WORKER_ID -1
 /* Location where ebpf bytecode is located */
