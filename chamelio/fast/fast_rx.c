@@ -22,6 +22,7 @@ int fast_rx_poll(struct fast_context *ctx)
   struct rte_mbuf *mbs[FAST_BATCH_SIZE];
   struct guest_fast *g;
   __u64 tsc_start, pkt_off;
+  const int use_comb = ctx->config->fp_jit_combined;
 
   n = FAST_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < n)
@@ -39,19 +40,17 @@ int fast_rx_poll(struct fast_context *ctx)
     /* Process infrastructure protocols */
     tsc_start = clock_rdtsc();
     g = infra_rx(ctx, mbs[i], &pkt_off);
-    
-    /* Execute custom protocol rx procedure */
-    if (g != NULL)
-    {
-      /* Drop if this guest is out of budget */
-      if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
-        continue;
+    if (g == NULL)
+      continue;
 
-      if (ctx->config->fp_jit_combined)
-        rx_poll_guest_comb(g, mbs[i], pkt_off, tsc_start);
-      else
-        rx_poll_guest(g, mbs[i], pkt_off, tsc_start);
-    }
+    /* Drop if this guest is out of budget */
+    if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+      continue;
+
+    if (use_comb)
+      rx_poll_guest_comb(g, mbs[i], pkt_off, tsc_start);
+    else
+      rx_poll_guest(g, mbs[i], pkt_off, tsc_start);
   }
 
   /* Return used mbufs to the mbuf pool */

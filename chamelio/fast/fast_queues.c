@@ -16,22 +16,24 @@
 #include "infra.h"
 #include "ebpf.h"
 
-static inline void queues_poll_guest(struct fast_context *ctx,
+static inline int queues_poll_guest(struct fast_context *ctx,
+    struct guest_fast *g, struct rte_mbuf **mbs, int max,
+    int *ntx, int *ndeq);
+static inline int queues_poll_guest_comb(struct fast_context *ctx,
+    struct guest_fast *g, struct rte_mbuf **mbs, int max,
+    int *ntx, int *ndeq);
+static inline void queues_poll_guest_dequeue(struct fast_context *ctx,
     struct guest_fast *g, struct cham_dqueue *qcur, struct queue_entry *qe,
     struct rte_mbuf *mb, int *ntx, int *ndeq);
-static inline void queues_poll_guest_comb(struct fast_context *ctx,
-    struct guest_fast *g, struct cham_dqueue *qcur, struct queue_entry *qe,
-    struct rte_mbuf *mb, int *ntx, int *ndeq);
+static inline void dqueue_rotate_head(struct guest_fast *g,
+    struct cham_dqueue *qcur);
 
 int fast_queues_poll(struct fast_context *ctx)
 {
-  int i, j, max, ret, ndeq, ntx;
-  __u8 qcur_empty;
+  int i, max, ret, ndeq, ntx;
   struct guest_fast *g;
-  struct cham_dqueue *qcur;
-  struct queue_entry *qe;
   struct rte_mbuf **mbs;
-  __u64 tsc_start, tsc_spent;
+  const int use_comb = ctx->config->fp_jit_combined;
 
   max = FAST_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
@@ -44,63 +46,20 @@ int fast_queues_poll(struct fast_context *ctx)
 
   ntx = 0;
   ndeq = 0;
-  qcur_empty = 0;
   for (i = 0; i < ctx->n_guests && ndeq < max; i++)
   {
-    tsc_start = clock_rdtsc();
     g = &ctx->guests[i];
 
-    /* Continue if there are no activated queues for this protocol */
-    if (g->proto.dqueues_head == PROTOQ_ID_INVALID)
-      continue;
+    if (use_comb)
+      ret = queues_poll_guest_comb(ctx, g, mbs, max, &ntx, &ndeq);
+    else
+      ret = queues_poll_guest(ctx, g, mbs, max, &ntx, &ndeq);
 
-    /* Continue if this guest is out of budget */
-    if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
-      continue;
-
-    for (j = 0; j < g->proto.ndqueues; j++)
+    if (ret != 0)
     {
-      qcur_empty = 0;
-      qcur = &g->proto.dqueues[g->proto.dqueues_head];
-      qe = queue_head(&qcur->dq);
-
-      /* If there are no messages in queue, continue to next */
-      if (qe == NULL)
-      {
-        g->proto.dqueues[g->proto.dqueues_tail].next = qcur->id;
-        g->proto.dqueues_tail = qcur->id;
-        g->proto.dqueues_head = qcur->next;
-        qcur->next = PROTOQ_ID_INVALID;
-        qcur_empty = 1;
-        continue;
-      }
-
-      if (ctx->config->fp_jit_combined)
-        queues_poll_guest_comb(ctx, g, qcur, qe, mbs[ntx], &ntx, &ndeq);
-      else
-        queues_poll_guest(ctx, g, qcur, qe, mbs[ntx], &ntx, &ndeq);
-
-      ret = queue_dequeue(&qcur->dq);
-      if (ret != 0)
-      {
-        LOG_ERROR("failed to dequeue queue for proto=%d", g->id);
-        return -1;
-      }
+      LOG_ERROR("failed to dequeue queue for proto=%d", g->id);
+      return -1;
     }
-
-    /* Rotate head if last polled queue didn't increment head */
-    if (!qcur_empty)
-    {
-      qcur = &g->proto.dqueues[g->proto.dqueues_head];
-      g->proto.dqueues[g->proto.dqueues_tail].next = qcur->id;
-      g->proto.dqueues_tail = qcur->id;
-      g->proto.dqueues_head = qcur->next;
-      qcur->next = PROTOQ_ID_INVALID;
-    }
-
-    /* Subtract from guest's budget */
-    tsc_spent = clock_rdtsc() - tsc_start;
-    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
   }
 
   fast_txflush(ctx);
@@ -112,12 +71,68 @@ int fast_queues_poll(struct fast_context *ctx)
   return 0;
 }
 
-static inline void queues_poll_guest(struct fast_context *ctx,
+static inline int queues_poll_guest(struct fast_context *ctx,
+    struct guest_fast *g, struct rte_mbuf **mbs, int max,
+    int *ntx, int *ndeq)
+{
+  int j;
+  int ret;
+  int last_queue_empty;
+  struct cham_dqueue *qcur;
+  struct queue_entry *qe;
+  __u64 tsc_start, tsc_spent;
+
+  /* Continue if there are no activated queues for this protocol */
+  if (g->proto.dqueues_head == PROTOQ_ID_INVALID)
+    return 0;
+
+  /* Continue if this guest is out of budget */
+  if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+    return 0;
+
+  tsc_start = clock_rdtsc();
+  last_queue_empty = 1;
+  for (j = 0; j < g->proto.ndqueues; j++)
+  {
+    qcur = &g->proto.dqueues[g->proto.dqueues_head];
+    qe = queue_head(&qcur->dq);
+
+    /* If there are no messages in queue, continue to next */
+    if (qe == NULL)
+    {
+      dqueue_rotate_head(g, qcur);
+      last_queue_empty = 1;
+      continue;
+    }
+
+    last_queue_empty = 0;
+    queues_poll_guest_dequeue(ctx, g, qcur, qe, mbs[*ntx], ntx, ndeq);
+
+    ret = queue_dequeue(&qcur->dq);
+    if (ret != 0)
+      return -1;
+  }
+
+  /* Rotate head if last polled queue didn't increment head */
+  if (!last_queue_empty)
+  {
+    qcur = &g->proto.dqueues[g->proto.dqueues_head];
+    dqueue_rotate_head(g, qcur);
+  }
+
+  /* Subtract from guest's budget */
+  tsc_spent = clock_rdtsc() - tsc_start;
+  __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+
+  return 0;
+}
+
+static inline void queues_poll_guest_dequeue(struct fast_context *ctx,
     struct guest_fast *g, struct cham_dqueue *qcur, struct queue_entry *qe,
     struct rte_mbuf *mb, int *ntx, int *ndeq)
 {
-  int ret;
   int deq_ret;
+  int ret;
 
   /* Prepare packet buffer for potential TX */
   mb->data_off = 0;
@@ -148,22 +163,37 @@ static inline void queues_poll_guest(struct fast_context *ctx,
   }
 }
 
-static inline void queues_poll_guest_comb(struct fast_context *ctx,
-    struct guest_fast *g, struct cham_dqueue *qcur, struct queue_entry *qe,
-    struct rte_mbuf *mb, int *ntx, int *ndeq)
+static inline int queues_poll_guest_comb(struct fast_context *ctx,
+    struct guest_fast *g, struct rte_mbuf **mbs, int max,
+    int *ntx, int *ndeq)
 {
   int deq_ret;
   struct fast_comb_deq_ctx jit_ctx = {
     .f_ctx = ctx,
     .g = g,
-    .mb = mb,
-    .qe = qe,
-    .qid = qcur->id,
+    .mbs = mbs,
+    .max = max,
+    .ntx = ntx,
+    .ndeq = ndeq,
   };
 
-  ebpf_vm_exec(g->proto.event_deq_vm, &jit_ctx, sizeof(jit_ctx), &deq_ret);
-  (*ndeq)++;
+  /* Continue if there are no activated queues for this protocol */
+  if (g->proto.dqueues_head == PROTOQ_ID_INVALID)
+    return 0;
 
-  if (deq_ret > 0)
-    (*ntx)++;
+  ebpf_vm_exec(g->proto.event_deq_vm, &jit_ctx, sizeof(jit_ctx), &deq_ret);
+
+  if (deq_ret < 0)
+    return -1;
+
+  return 0;
+}
+
+static inline void dqueue_rotate_head(struct guest_fast *g,
+    struct cham_dqueue *qcur)
+{
+  g->proto.dqueues[g->proto.dqueues_tail].next = qcur->id;
+  g->proto.dqueues_tail = qcur->id;
+  g->proto.dqueues_head = qcur->next;
+  qcur->next = PROTOQ_ID_INVALID;
 }

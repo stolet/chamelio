@@ -24,12 +24,14 @@ struct fast_comb_deq_ctx {
   struct fast_context *f_ctx;
   /* Guest VM that uploaded the combined snipped for this ctx */
   struct guest_fast *g;
-  /* Mbuf containing packet data */
-  struct rte_mbuf *mb;
-  /* Dequeued queue entry */
-  struct queue_entry *qe;
-  /* ID of dequeued queue */
-  __u16 qid;
+  /* Mbufs containing packet data */
+  struct rte_mbuf **mbs;
+  /* Max number of mbufs to process */
+  int max;
+  /* In/out count of mbufs processed */
+  int *ntx;
+  /* In/out count of dequeued entries */
+  int *ndeq;
 };
 
 /* Context for combined JIT of TX event. */
@@ -38,8 +40,12 @@ struct fast_comb_tx_ctx {
   struct fast_context *f_ctx;
   /* Guest VM that uploaded the combined snipped for this ctx */
   struct guest_fast *g;
-  /* Mbuf containing packet data */
-  struct rte_mbuf *mb;
+  /* Mbufs containing packet data */
+  struct rte_mbuf **mbs;
+  /* Max number of mbufs to process */
+  int max;
+  /* In/out count of mbufs processed */
+  int *ntx;
 };
 
 #endif
