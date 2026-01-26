@@ -403,7 +403,7 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
     LOG_ERROR("bad socket file descriptor");
     return -1;
   }
-  
+
   if (len == 0)
     return 0;
 
@@ -422,19 +422,8 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
   if (sock->tx_head + sock->tx_avail > sock->tx_len)
     tail = sock->tx_head + sock->tx_avail - sock->tx_len;
 
-  if (tail + n > sock->tx_len)
-  {
-    /* Split copy */
-    n1 = sock->tx_len - tail;
-    n2 = n - n1;
-    memcpy(sock->tx_buf + tail, buf, n1);
-    memcpy(sock->tx_buf, buf + n1, n2);
-  }
-  else
-  {
-    /* Simple copy */
-    memcpy(sock->tx_buf + tail, buf, n);
-  }
+  /* Prefetch txbuf */
+  utils_prefetch0(sock->tx_buf + tail);
 
   sock->tx_avail = sock->tx_avail + n;
   sock->tx_ip = ntohl(sin->sin_addr.s_addr);
@@ -454,6 +443,21 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
   bump->tx_ip = ntohl(sin->sin_addr.s_addr);
   bump->tx_port = ntohs(sin->sin_port);
   bump->tx_avail = n;
+
+  /* Only do copy here so prefetch has time to go through */
+  if (tail + n > sock->tx_len)
+  {
+    /* Split copy */
+    n1 = sock->tx_len - tail;
+    n2 = n - n1;
+    memcpy(sock->tx_buf + tail, buf, n1);
+    memcpy(sock->tx_buf, buf + n1, n2);
+  }
+  else
+  {
+    /* Simple copy */
+    memcpy(sock->tx_buf + tail, buf, n);
+  }
 
   ret = queue_enqueue(q, UDP_QUEUE_BUMP_CHAM_TX);
   if (ret != 0)
@@ -484,6 +488,9 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
     return -1;
   }
 
+  /* Prefetch rxbuf */
+  utils_prefetch0(sock->rx_buf + sock->rx_head);
+
   /* Copy to buffer */
   n = len;
   if (len > sock->rx_avail)
@@ -494,21 +501,6 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
   {
     errno = EAGAIN;
     return -1;
-  }
-    
-  assert(sock->rx_head >= 0);
-  if (sock->rx_head + n > sock->rx_len)
-  {
-    /* Split copy */
-    n1 = sock->rx_len - sock->rx_head;
-    n2 = n - n1;
-    memcpy(buf, sock->rx_buf + sock->rx_head, n1);
-    memcpy(buf + n1, sock->rx_buf, n2);
-  }
-  else
-  {
-    /* Simple copy */
-    memcpy(buf, sock->rx_buf + sock->rx_head, n);
   }
   
   sock->rx_avail -= n;
@@ -535,6 +527,22 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
   bump = &qe->data.bump_cham_rx;
   bump->sock_id = sock->sock_id;
   bump->rx_head = n;
+
+  /* Only do copy here so prefetch has time to go through */
+  assert(sock->rx_head >= 0);
+  if (sock->rx_head + n > sock->rx_len)
+  {
+    /* Split copy */
+    n1 = sock->rx_len - sock->rx_head;
+    n2 = n - n1;
+    memcpy(buf, sock->rx_buf + sock->rx_head, n1);
+    memcpy(buf + n1, sock->rx_buf, n2);
+  }
+  else
+  {
+    /* Simple copy */
+    memcpy(buf, sock->rx_buf + sock->rx_head, n);
+  }
   
   ret = queue_enqueue(q, UDP_QUEUE_BUMP_CHAM_RX);
   if (ret != 0)

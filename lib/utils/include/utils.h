@@ -40,4 +40,10 @@ static inline beui64_t t_beui64(__u64 x)
   return b;
 }
 
+static inline void utils_prefetch0(const volatile void *p)
+{
+  asm volatile ("prefetcht0 %[p]" : : [p] "m" (*(const volatile char *) p));
+}
+
+
 #endif

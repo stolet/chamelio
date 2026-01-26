@@ -177,7 +177,6 @@ void control_ebpf_upload(struct control_context *ctx,
       goto out;
   }
 
-  LOG_DEBUG("JITTED COMBINED FUNCTIONS");
   /* Send jitted VMs for functions to fast-path  */
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
@@ -194,7 +193,6 @@ void control_ebpf_upload(struct control_context *ctx,
     assert(ret == 0);
   }
 
-  LOG_DEBUG("UPLOADED EBPF BYTECODE TO FAST-PATH");
   success = 1;
 
 out:

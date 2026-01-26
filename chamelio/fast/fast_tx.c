@@ -38,12 +38,24 @@ int fast_tx_poll(struct fast_context *ctx)
 
   /* Allocate mbufs to use for transmission from mempool cache */
   max = txcache_alloc(ctx, &mbs, max);
+  if (max == 0)
+    return 0;
+
+  /* Prefetch first two mbuf cachelines */
+  utils_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
+  utils_prefetch0(rte_pktmbuf_mtod(mbs[0] + 64, __u8 *));
 
   ntx = 0;
   for (i = 0; i < n_guests && ntx < max; i++)
   {
-    g = &ctx->guests[i];
+    /* Prefetch next mbuf two cachelines */
+    if (ntx + 1 < max)
+    {
+      utils_prefetch0(rte_pktmbuf_mtod(mbs[ntx + 1], __u8 *));
+      utils_prefetch0(rte_pktmbuf_mtod(mbs[ntx + 1] + 64, __u8 *));
+    }
 
+    g = &ctx->guests[i];
     if (use_comb)
       tx_poll_guest_comb(ctx, g, mbs, max, &ntx);
     else
