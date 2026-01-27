@@ -44,12 +44,17 @@ struct proto_control {
   __u16 nmaps;
 };
 
+#ifndef CHAM_CACHE_LINE_SIZE
+#define CHAM_CACHE_LINE_SIZE 64
+#endif
+
 struct guest_control {
+  /* Isolate to own cache line because this is shared with fast-path */
+  __s64 budget;
+  char __budget_pad[CHAM_CACHE_LINE_SIZE - sizeof(__s64)];
+
   /* ID of registered guest */
   __u8 id;
-
-  /* Guest budget counter shared with control */
-  __s64 budget;
 
   /* File descriptor for shared memory region for this guest */
   int shm_fd;
@@ -67,7 +72,7 @@ struct guest_control {
   
   /* Protocol registered for this guest */
   struct proto_control proto;
-};
+} __attribute__((aligned(CHAM_CACHE_LINE_SIZE)));
 
 struct control_context {
   /* Configuration parameters */

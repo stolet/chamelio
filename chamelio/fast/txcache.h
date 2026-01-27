@@ -3,6 +3,7 @@
 
 #include <linux/types.h>
 
+/* Allocates mbufs from the cache or from dpdk if the cache is empty */
 static inline int txcache_alloc(struct fast_context *ctx, 
     struct rte_mbuf ***mbs, __u16 num)
 {
@@ -40,6 +41,7 @@ static inline int txcache_alloc(struct fast_context *ctx,
   return num;
 }
 
+/* Returns mbuf to the cache but if cache is full free to DPDK */
 static inline void txcache_free(struct fast_context *ctx, 
     struct rte_mbuf *mb)
 {
@@ -60,6 +62,16 @@ static inline void txcache_free(struct fast_context *ctx,
     mb->ol_flags = 0;
     rte_pktmbuf_free(mb);
   }
+}
+
+/* Unallocate top num buffers to return them to the cache */
+static inline void txcache_unalloc(struct fast_context *ctx, __u16 num)
+{
+  if (num == 0)
+    return;
+
+  ctx->tx_cache_head = (ctx->tx_cache_head - num) & (TX_CACHE_SIZE - 1);
+  ctx->tx_cache_n += num;
 }
 
 #endif

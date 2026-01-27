@@ -31,6 +31,8 @@ int fast_context_init(struct fast_context *f_ctx,
 
   f_ctx->id = thread_id;
   f_ctx->config = config;
+  f_ctx->fp_jit_combined = config->fp_jit_combined;
+  f_ctx->virt_gre = config->virt_gre;
   f_ctx->shm_fd_internal = shm_fd_internal;
   f_ctx->shm_base_internal= shm_base_internal;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);

@@ -33,7 +33,7 @@ int fast_queues_poll(struct fast_context *ctx)
   int i, max, ret, ndeq, ntx;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
-  const int use_comb = ctx->config->fp_jit_combined;
+  const int use_comb = ctx->fp_jit_combined;
 
   max = FAST_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
@@ -46,7 +46,7 @@ int fast_queues_poll(struct fast_context *ctx)
 
   /* Prefetch first two mbuf cachelines */
   rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
-  rte_prefetch0(rte_pktmbuf_mtod(mbs[0] + 64, __u8 *));
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *) + 64);
 
   ntx = 0;
   ndeq = 0;
@@ -56,7 +56,7 @@ int fast_queues_poll(struct fast_context *ctx)
     if (ndeq + 1 < max)
     {
       rte_prefetch0(rte_pktmbuf_mtod(mbs[ndeq + 1], __u8 *));
-      rte_prefetch0(rte_pktmbuf_mtod(mbs[ndeq + 1] + 64, __u8 *));
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[ndeq + 1], __u8 *) + 64);
     }
 
     g = &ctx->guests[i];
@@ -74,9 +74,8 @@ int fast_queues_poll(struct fast_context *ctx)
 
   fast_txflush(ctx);
 
-  /* Free buffers that were not used */
-  for (i = 0; i < max; i++)
-    txcache_free(ctx, mbs[i]);
+  /* Roll back unused mbufs in the cache */
+  txcache_unalloc(ctx, max - ntx);
 
   return 0;
 }
@@ -146,7 +145,7 @@ static inline void queues_poll_guest_dequeue(struct fast_context *ctx,
 
   /* Prepare packet buffer for potential TX */
   mb->data_off = 0;
-  fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, ctx->config->virt_gre);
+  fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, ctx->virt_gre);
 
   /* Add queue entry to eBPF context */
   g->proto.ebpf_ctx.qe = qe;

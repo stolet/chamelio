@@ -22,7 +22,7 @@ int fast_rx_poll(struct fast_context *ctx)
   struct rte_mbuf *mbs[FAST_BATCH_SIZE];
   struct guest_fast *g;
   __u64 tsc_start, pkt_off;
-  const int use_comb = ctx->config->fp_jit_combined;
+  const int use_comb = ctx->fp_jit_combined;
 
   n = FAST_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < n)
@@ -37,7 +37,7 @@ int fast_rx_poll(struct fast_context *ctx)
 
   /* Prefetch first two mbuf cachelines */
   rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
-  rte_prefetch0(rte_pktmbuf_mtod(mbs[0] + 64, __u8 *));
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *) + 64);
 
   for (i = 0; i < n; i++)
   {
@@ -45,7 +45,7 @@ int fast_rx_poll(struct fast_context *ctx)
     if (i + 1 < n)
     {
       rte_prefetch0(rte_pktmbuf_mtod(mbs[i + 1], __u8 *));
-      rte_prefetch0(rte_pktmbuf_mtod(mbs[i + 1] + 64, __u8 *));
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[i + 1], __u8 *) + 64);
     }
 
     /* Process infrastructure protocols */

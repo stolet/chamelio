@@ -68,7 +68,7 @@ uint64_t fast_comb_deq(struct fast_comb_deq_ctx *ctx, size_t mem_len)
     last_queue_empty = 0;
     mb = ctx->mbs[*ctx->ntx];
     mb->data_off = 0;
-    fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, f_ctx->config->virt_gre);
+    fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, f_ctx->virt_gre);
 
     g->proto.ebpf_ctx.qe = qe;
     g->proto.ebpf_ctx.qid = qcur->id;
@@ -135,7 +135,7 @@ uint64_t fast_comb_tx(struct fast_comb_tx_ctx *ctx, size_t mem_len)
   {
     mb = mbs[ntx];
     mb->data_off = 0;
-    fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, f_ctx->config->virt_gre);
+    fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, f_ctx->virt_gre);
 
     tx_ret = (int) __cham_comb(&g->proto.ebpf_ctx,
         sizeof(struct cham_ebpf_ctx));

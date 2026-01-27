@@ -65,6 +65,11 @@ struct fast_context {
   struct nic_fast_context nic_ctx;
   /* Chamelio configuration */
   struct configuration *config;
+  /* Hot config flags cached locally */
+  /* Use combined LLVM IR when jitting */
+  __u8 fp_jit_combined;
+  /* Encapsulate packets with GRE */
+  __u8 virt_gre;
   
   /* Number of guests registered so far in this fast-path */
   __u8 n_guests;

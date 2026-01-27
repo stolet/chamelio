@@ -56,7 +56,7 @@ int infra_tx(struct fast_context *ctx,
   struct gre_pkt *gre_pkt;
 
   pkt = rte_pktmbuf_mtod(mb, __u8 *);
-  if (ctx->config->virt_gre)
+  if (ctx->virt_gre)
   {
     gre_pkt = pkt;
     e = netvirt_table_get(ctx->inner_table, g->gre_key, 
@@ -78,7 +78,7 @@ int infra_tx(struct fast_context *ctx,
   if (ret != 0)
     return -1;
 
-  if (ctx->config->virt_gre)
+  if (ctx->virt_gre)
   {
     process_tx_gre(ctx, g, mb, outer_remote_ip, pkt_len);
   }
@@ -117,7 +117,7 @@ static inline struct guest_fast * process_rx_ip(struct fast_context *ctx,
   struct gre_pkt *pkt_gre;
   struct netvirt_entry *e;
 
-  if (ctx->config->virt_gre)
+  if (ctx->virt_gre)
   {
     pkt_gre = pkt;
     e = netvirt_table_get(ctx->inner_table, 

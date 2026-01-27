@@ -26,7 +26,7 @@ int fast_tx_poll(struct fast_context *ctx)
   struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
-  const int use_comb = ctx->config->fp_jit_combined;
+  const int use_comb = ctx->fp_jit_combined;
   
   /* Return if no guests have registered */
   if (ctx->guests == NULL)
@@ -43,7 +43,7 @@ int fast_tx_poll(struct fast_context *ctx)
 
   /* Prefetch first two mbuf cachelines */
   rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
-  rte_prefetch0(rte_pktmbuf_mtod(mbs[0] + 64, __u8 *));
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *) + 64);
 
   ntx = 0;
   for (i = 0; i < n_guests && ntx < max; i++)
@@ -52,7 +52,7 @@ int fast_tx_poll(struct fast_context *ctx)
     if (ntx + 1 < max)
     {
       rte_prefetch0(rte_pktmbuf_mtod(mbs[ntx + 1], __u8 *));
-      rte_prefetch0(rte_pktmbuf_mtod(mbs[ntx + 1] + 64, __u8 *));
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[ntx + 1], __u8 *) + 64);
     }
 
     g = &ctx->guests[i];
@@ -62,10 +62,9 @@ int fast_tx_poll(struct fast_context *ctx)
       tx_poll_guest(ctx, g, mbs, max, &ntx);
   }
 
-  /* Free buffers that were not used */
+  /* Flush TX and roll back unused mbufs in the cache */
   fast_txflush(ctx);
-  for (i = 0; i < max; i++)
-    txcache_free(ctx, mbs[i]);
+  txcache_unalloc(ctx, max - ntx);
 
   return 0;
 }
@@ -93,7 +92,7 @@ static inline int tx_poll_guest(struct fast_context *ctx,
 
     /* Prepare packet */
     mb->data_off = 0;
-    fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, ctx->config->virt_gre);
+    fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, ctx->virt_gre);
   
     /* Execute custom protocol tx procedure */
     ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx,

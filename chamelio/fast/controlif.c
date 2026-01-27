@@ -113,7 +113,7 @@ static inline void handle_new_guest(struct fast_context *ctx,
   g->proto.event_deq_vm = NULL;
 
   /* Add network virtualization configuration if enabled */
-  if (ctx->config->virt_gre)
+  if (ctx->virt_gre)
   {
     g->gre_key = req->gre_key;
     g->ip = req->guest_ip;
