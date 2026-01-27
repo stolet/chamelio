@@ -36,16 +36,16 @@ int fast_rx_poll(struct fast_context *ctx)
     return 0;
 
   /* Prefetch first two mbuf cachelines */
-  utils_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
-  utils_prefetch0(rte_pktmbuf_mtod(mbs[0] + 64, __u8 *));
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0] + 64, __u8 *));
 
   for (i = 0; i < n; i++)
   {
     /* Prefetch next mbuf two cachelines */
     if (i + 1 < n)
     {
-      utils_prefetch0(rte_pktmbuf_mtod(mbs[i + 1], __u8 *));
-      utils_prefetch0(rte_pktmbuf_mtod(mbs[i + 1] + 64, __u8 *));
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[i + 1], __u8 *));
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[i + 1] + 64, __u8 *));
     }
 
     /* Process infrastructure protocols */

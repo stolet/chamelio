@@ -45,8 +45,8 @@ int fast_queues_poll(struct fast_context *ctx)
     return 0;
 
   /* Prefetch first two mbuf cachelines */
-  utils_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
-  utils_prefetch0(rte_pktmbuf_mtod(mbs[0] + 64, __u8 *));
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0] + 64, __u8 *));
 
   ntx = 0;
   ndeq = 0;
@@ -55,8 +55,8 @@ int fast_queues_poll(struct fast_context *ctx)
     /* Prefetch next mbuf two cachelines */
     if (ndeq + 1 < max)
     {
-      utils_prefetch0(rte_pktmbuf_mtod(mbs[ndeq + 1], __u8 *));
-      utils_prefetch0(rte_pktmbuf_mtod(mbs[ndeq + 1] + 64, __u8 *));
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[ndeq + 1], __u8 *));
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[ndeq + 1] + 64, __u8 *));
     }
 
     g = &ctx->guests[i];

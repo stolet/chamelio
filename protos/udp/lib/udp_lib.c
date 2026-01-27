@@ -507,7 +507,6 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
   new_head = sock->rx_head + n;
   if (new_head > sock->rx_len)
     new_head -= sock->rx_len;
-  sock->rx_head = new_head;
   
   if (addr != NULL)
   {
@@ -543,6 +542,7 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
     /* Simple copy */
     memcpy(buf, sock->rx_buf + sock->rx_head, n);
   }
+  sock->rx_head = new_head;
   
   ret = queue_enqueue(q, UDP_QUEUE_BUMP_CHAM_RX);
   if (ret != 0)
