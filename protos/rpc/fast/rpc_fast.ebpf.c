@@ -25,10 +25,12 @@ static struct cham_sched_entry * (*sched_head)(struct cham_scheduler *sched) = (
 static int (*sched_pop)(struct cham_scheduler *sched) = (void *) 1008;
 static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u32 priority) = (void *) 1009;
 
+static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx);
+static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx);
 
 SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
-{
+{ 
   return 0;
 }
 
@@ -40,6 +42,31 @@ int event_tx(struct cham_ebpf_ctx *ctx)
 
 SEC("chamelio/event_deq")
 int event_deq(struct cham_ebpf_ctx *ctx)
+{
+  int ret;
+  switch(ctx->qe->type) {
+    case RPC_QUEUE_BUMP_CHAM_RX:
+      ret = handle_bump_rx(ctx);
+      break;
+    case RPC_QUEUE_BUMP_CHAM_TX:
+      ret = handle_bump_tx(ctx);
+      break;
+    default:
+      ret = -1;
+  }
+  return ret;
+}
+
+static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
+{
+  __u32 new_head;
+  struct rpc_queue_bump_cham_rx *bump;
+  struct rpc_queue_bump_entry *qe;
+
+  return 0;
+}
+
+static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 {
   return 0;
 }
