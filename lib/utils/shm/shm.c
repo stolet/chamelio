@@ -5,12 +5,19 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdio.h>
+#include <numaif.h>
+#include <sys/syscall.h>
 
 #include "shm.h"
 #include "log.h"
 
-void *shm_create_huge(const char *name, size_t size, void *addr, int *fd)
+#define MAX_NODES 32
+static int bind_numa(void *addr, size_t size, int numa_node);
+
+void *shm_create_huge(const char *name, size_t size, 
+    void *addr, int *fd, int numa_node)
 {
+  int ret;
   void *p;
   char path[128];
 
@@ -40,6 +47,13 @@ void *shm_create_huge(const char *name, size_t size, void *addr, int *fd)
     goto error_remove;
   }
 
+  if (numa_node >= 0)
+  {
+    ret = bind_numa(p, size, numa_node);
+    if (ret != 0)
+      goto error_remove;
+  }
+
   memset(p, 0, size);
   return p;
 
@@ -62,4 +76,18 @@ void shm_destroy_huge(const char *name, size_t size, void *addr, int fd)
   }
   unlink(path);
   close(fd);
+}
+
+static int bind_numa(void *addr, size_t size, int numa_node)
+{
+  unsigned long nmask[MAX_NODES];
+  nmask[0] = 1UL << numa_node;
+  if (mbind(addr, size, MPOL_BIND, nmask, 
+      MAX_NODES, MPOL_MF_MOVE_ALL | MPOL_MF_STRICT) < 0)
+  {
+    LOG_ERROR("mbind failed");
+    return -1;
+  }
+
+  return 0;
 }

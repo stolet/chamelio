@@ -4,6 +4,7 @@ shm_srcs = files('shmalloc.c', 'shm.c')
 
 deps = [
   dependency('log_dep'),
+  numa_dep,
 ]
 
 shm_lib = static_library(

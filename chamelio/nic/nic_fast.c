@@ -19,7 +19,7 @@ static volatile __u32 tx_init_done = 0;
 static volatile __u32 rx_init_done = 0;
 static volatile __u32 start_done = 0;
 
-static struct rte_mempool *mempool_alloc(__u16 pool_id);
+static struct rte_mempool *mempool_alloc(__u16 pool_id, int socket_id);
 static int reta_setup(__u8 port_id, 
     __u16 fp_cores_max, __u16 reta_size);
 
@@ -28,23 +28,27 @@ int nic_fast_init(struct nic_context *nic_ctx,
     struct configuration *config)
 {
   int ret;
-  unsigned int rx_socket_id, tx_socket_id;
+  int numa_id;
   
   nic_fast_ctx->port_id = nic_ctx->port_id;
   nic_fast_ctx->queue_id = queue_id;
   nic_fast_ctx->eth_addr = nic_ctx->eth_addr;
 
+  numa_id = config->numa_mpool >= 0 ?
+      config->numa_mpool : rte_socket_id();
+
   /* Allocate memory pool that will hold packets */
-  if ((nic_fast_ctx->pool = mempool_alloc(queue_id)) == NULL) 
+  if ((nic_fast_ctx->pool = mempool_alloc(queue_id, numa_id)) == NULL) 
   {
     goto error_mempool;
   }
 
   /* Initialize TX queue */
   rte_spinlock_lock(&initlock);
-  tx_socket_id = rte_socket_id();
+  numa_id = config->numa_txring >= 0 ? 
+      config->numa_txring : rte_socket_id();
   ret = rte_eth_tx_queue_setup(nic_ctx->port_id, nic_fast_ctx->queue_id, 
-      TX_DESCRIPTORS, tx_socket_id, 
+      TX_DESCRIPTORS, numa_id, 
       &nic_ctx->eth_dev_info.default_txconf);
   rte_spinlock_unlock(&initlock);
 
@@ -60,9 +64,10 @@ int nic_fast_init(struct nic_context *nic_ctx,
 
   /* Initialize RX queue */
   rte_spinlock_lock(&initlock);
-  rx_socket_id = rte_socket_id();
+  numa_id = config->numa_rxring >= 0 ? 
+      config->numa_rxring : rte_socket_id();
   ret = rte_eth_rx_queue_setup(nic_ctx->port_id, nic_fast_ctx->queue_id, 
-      RX_DESCRIPTORS, rx_socket_id, 
+      RX_DESCRIPTORS, numa_id, 
       &nic_ctx->eth_dev_info.default_rxconf, nic_fast_ctx->pool);
   rte_spinlock_unlock(&initlock);
 
@@ -109,14 +114,11 @@ error_mempool:
   return -1;
 }
 
-static struct rte_mempool *mempool_alloc(__u16 pool_id)
+static struct rte_mempool *mempool_alloc(__u16 pool_id, int socket_id)
 {
-  unsigned int socket_id;
   char name[32];
 
   snprintf(name, 32, "mbuf_pool_%u\n", pool_id);
-
-  socket_id = rte_socket_id();
 
   return rte_mempool_create(name, PERTHREAD_MBUFS, MBUF_SIZE, 32,
         sizeof(struct rte_pktmbuf_pool_private), rte_pktmbuf_pool_init, NULL,

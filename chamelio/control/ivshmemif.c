@@ -201,7 +201,8 @@ static int uxsocket_accept(struct control_context *ctx)
   /* Create shared memory region */
   snprintf(shm_name, sizeof(shm_name), "%s_%d", 
       CHAMELIO_SHM_NAME, ctx->n_guests);
-  shm_base = shm_create_huge(shm_name, ctx->config->shm_len, NULL, &sfd);
+  shm_base = shm_create_huge(shm_name, ctx->config->shm_len, NULL, &sfd,
+      ctx->config->numa_shm);
   if (shm_base == NULL)
   {
     LOG_ERROR("failed to initialise shared memory for guest %d", ctx->n_guests);

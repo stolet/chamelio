@@ -55,6 +55,16 @@ struct configuration {
   char virt_path[MAX_PATH];
 
   /*** DPDK configurations ***/
+  /* NUMA node for shared memory allocations */
+  int numa_shm;
+  /* NUMA node for internal shared memory */
+  int numa_shm_internal;
+  /* NUMA node for DPDK RX rings */
+  int numa_rxring;
+  /* NUMA node for DPDK TX rings */
+  int numa_txring;
+  /* NUMA node for DPDK mbuf pool */
+  int numa_mpool;
   /* DPDK extra argument count */
   int dpdk_argc;
   /* DPDK extra argument vector */

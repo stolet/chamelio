@@ -5,6 +5,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <inttypes.h>
+#include <limits.h>
 
 #include "config.h"
 #include "log.h"
@@ -12,6 +13,12 @@
 enum cfg_params {
   CP_SHM_LEN,
   CP_SHM_INTERNAL_LEN,
+  CP_NUMA_SHM,
+  CP_NUMA_SHM_INTERNAL,
+  CP_NUMA_RXRING,
+  CP_NUMA_TXRING,
+  CP_NUMA_MPOOL,
+  CP_DPDK_EXTRA,
   CP_CHAM_QUEUE_LEN,
   CP_AGT_QUEUE_LEN,
   CP_CONTROL_TXQ_LEN,
@@ -27,7 +34,6 @@ enum cfg_params {
   CP_PERF_ISO_BOOST,
   CP_VIRT_GRE,
   CP_VIRT_PATH,
-  CP_DPDK_EXTRA,
 };
 
 static struct option opts[] = {
@@ -37,6 +43,21 @@ static struct option opts[] = {
   { .name = "shm-internal-len",
     .has_arg = required_argument,
     .val = CP_SHM_INTERNAL_LEN },
+  { .name = "numa-shm",
+    .has_arg = required_argument,
+    .val = CP_NUMA_SHM },
+  { .name = "numa-shm-internal",
+    .has_arg = required_argument,
+    .val = CP_NUMA_SHM_INTERNAL },
+  { .name = "numa-rxring",
+    .has_arg = required_argument,
+    .val = CP_NUMA_RXRING },
+  { .name = "numa-txring",
+    .has_arg = required_argument,
+    .val = CP_NUMA_TXRING },
+  { .name = "numa-mpool",
+    .has_arg = required_argument,
+    .val = CP_NUMA_MPOOL },
   { .name = "cham-queue-len",
     .has_arg = required_argument,
     .val = CP_CHAM_QUEUE_LEN },
@@ -92,6 +113,7 @@ static void print_usage(struct configuration *c, char *progname);
 static int parse_string(const char *s, char *str);
 static int parse_int64(const char *s, __u64 *pi);
 static int parse_int32(const char *s, __u32 *pu32);
+static int parse_int(const char *s, int *pi);
 static int parse_double(const char *s, double *pd);
 static int parse_arg_append(char *s, struct configuration *c);
 static int parse_cidr(char *s, __u32 *ip, __u8 *prefix);
@@ -123,6 +145,37 @@ int config_parse(struct configuration *c, int argc, char **argv)
       case CP_SHM_INTERNAL_LEN:
         if (parse_int64(optarg, &c->shm_internal_len) != 0) {
           LOG_ERROR("shm internal len parsing failed");
+          goto failed;
+        }
+        break;
+      case CP_NUMA_SHM:
+        if (parse_int(optarg, &c->numa_shm) != 0 || c->numa_shm < 0) {
+          LOG_ERROR("numa shm parsing failed");
+          goto failed;
+        }
+        break;
+      case CP_NUMA_SHM_INTERNAL:
+        if (parse_int(optarg, &c->numa_shm_internal) != 0 ||
+            c->numa_shm_internal < 0) {
+          LOG_ERROR("numa shm internal parsing failed");
+          goto failed;
+        }
+        break;
+      case CP_NUMA_RXRING:
+        if (parse_int(optarg, &c->numa_rxring) != 0 || c->numa_rxring < 0) {
+          LOG_ERROR("numa rx ring parsing failed");
+          goto failed;
+        }
+        break;
+      case CP_NUMA_TXRING:
+        if (parse_int(optarg, &c->numa_txring) != 0 || c->numa_txring < 0) {
+          LOG_ERROR("numa tx ring parsing failed");
+          goto failed;
+        }
+        break;
+      case CP_NUMA_MPOOL:
+        if (parse_int(optarg, &c->numa_mpool) != 0 || c->numa_mpool < 0) {
+          LOG_ERROR("numa mempool parsing failed");
           goto failed;
         }
         break;
@@ -244,6 +297,11 @@ static int config_defaults(struct configuration *c, char *progname)
   c->perf_iso_boost = 0.5;
   c->virt_gre = 0;
   strcpy(c->virt_path, "net_virt.csv");
+  c->numa_shm = -1;
+  c->numa_shm_internal = -1;
+  c->numa_rxring = -1;
+  c->numa_txring = -1;
+  c->numa_mpool = -1;
 
   c->dpdk_argc = 1;
   if ((c->dpdk_argv = calloc(2, sizeof(*c->dpdk_argv))) == NULL) 
@@ -298,6 +356,12 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: disabled]\n"
       "  --virt-path                             Path to network virtualization config file"
           "[default: %s]\n"
+      "NUMA placement:\n"
+      "  --numa-rxring=NUM                        NUMA node for DPDK RX rings\n"
+      "  --numa-txring=NUM                        NUMA node for DPDK TX rings\n"
+      "  --numa-mpool=NUM                         NUMA node for DPDK mbuf pool\n"
+      "  --numa-shm=NUM                           NUMA node for shared memory\n"
+      "  --numa-shm-internal=NUM                  NUMA node for internal shared memory\n"
       "Miscelaneous:\n"
       "  --dpdk-extra=ARG                        Add extra DPDK argument"
       "\n"
@@ -330,6 +394,20 @@ static int parse_int32(const char *s, __u32 *pi)
   *pi = strtoul(s, &end, 10);
   if (!*s || *end)
     return -1;
+  return 0;
+}
+
+static int parse_int(const char *s, int *pi)
+{
+  char *end;
+  long val;
+
+  val = strtol(s, &end, 10);
+  if (!*s || *end)
+    return -1;
+  if (val > INT_MAX || val < INT_MIN)
+    return -1;
+  *pi = (int) val;
   return 0;
 }
 

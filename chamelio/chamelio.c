@@ -72,7 +72,7 @@ int main (int argc, char **argv)
 
   /* Create internal shared memory region */
   shm_base = shm_create_huge(CHAMELIO_SHM_NAME_INTERNAL, 
-      config->shm_internal_len, NULL, &sfd);
+      config->shm_internal_len, NULL, &sfd, config->numa_shm_internal);
   if (shm_base == NULL)
   {
     LOG_ERROR("failed to initialise internal shared memory region");
