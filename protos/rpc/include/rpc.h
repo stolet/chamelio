@@ -52,23 +52,19 @@ struct rpc_client
 
   /* Length of RX buffer */
   __u32 rx_len;
-
   /* Number of available bytes to be read */
-  // __u32 rx_avail;
-  // /* Head of RX buffer */
-  // __u32 rx_head;
-
+  __u32 rx_avail;
+  /* Head of RX buffer */
+  __u32 rx_head;
   /* Pointer to start of RX buffer in shared memory */
   __u64 rx_off;
 
   /* Length of the TX buffer */
   __u32 tx_len;
-
   /* Number of bytes written to buffer */
-  // __u32 tx_avail;
+  __u32 tx_avail;
   /* Head of the TX buffer */
-  // __u32 tx_head;
-
+  __u32 tx_head;
   /* Offset to the start of the TX buffer in shared memory */
   __u64 tx_off;
 } __attribute__((packed));
@@ -113,9 +109,20 @@ struct rpc_worker
   __u32 rx_len;
   /* Pointer to start of RX buffer in shared memory */
   __u64 rx_off;
+  /* Number of available bytes to be read */
+  __u32 rx_avail;
+  /* Head of RX buffer */
+  __u32 rx_head;
+
+
   /* Length of TX buffer */
   __u32 tx_len;
   /* Pointer to start of TX buffer in shared memory */
   __u64 tx_off;
+  /* Number of bytes written to buffer */
+  __u32 tx_avail;
+  /* Head of the TX buffer */
+  __u32 tx_head;
+
 };
 #endif

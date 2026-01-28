@@ -125,6 +125,7 @@ struct rpc_queue_new_server_res
 /* Request to create new client in slow-path */
 struct rpc_queue_new_client_req
 { 
+  __u32 client_id;
   /* IP of the client */
   __u32 local_ip;
   /* Port of the client */
