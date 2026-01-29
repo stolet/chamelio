@@ -412,7 +412,7 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   server->nservices = 0;
   server->nworkers = 0;
   server->services = NULL;
-  server->id = INVALID_SERVER_ID;
+  server->id = INVALID_ID;
 
   eq = ctx->app_slow_q;
   qe = queue_tail(eq);
@@ -763,7 +763,7 @@ int rpc_handle_call(struct rpc_worker_lib *w,
     LOG_ERROR("failed to enqueue bump req");
     return -1;
   }
-  
+
   return 0;
 }
 

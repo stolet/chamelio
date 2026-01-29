@@ -46,8 +46,8 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
   __u8 *ebpf_bytecode;
   struct guest_lib *g;
   struct proto_lib *p;
-  struct proto_map_lib *pt_to_ser_map, *servers_map, *workers_map, *clients_map;
-  struct rpc_port_entry *pt_sers;
+  struct proto_map_lib *pt_map, *servers_map, *workers_map, *clients_map;
+  struct rpc_port_entry *ports;
 
   g = cham_connect_guest();
   if (g == NULL)
@@ -111,16 +111,17 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
     LOG_ERROR("failed to create map to hold workers");
     abort();
   }
-  pt_to_ser_map = cham_new_map(p, MAX_PORT, sizeof(struct rpc_port_entry));
-  if (pt_to_ser_map == NULL)
+  pt_map = cham_new_map(p, MAX_PORT, sizeof(struct rpc_port_entry));
+  if (pt_map == NULL)
   {
     LOG_ERROR("failed to create port to server map");
     abort();
   }
+  ctx->port_map = pt_map;
   
   ctx->clients_map = clients_map;
   ctx->servers_map = servers_map;
-  ctx->port_server_map = pt_to_ser_map;
+  // ctx->port_server_map = pt_to_ser_map;
   ctx->workers_map = workers_map;
   LOG_DEBUG("initialized rpc slow context maps");
   ctx->app_uxfd = -1;
@@ -134,12 +135,13 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
 
   // LOG_DEBUG("created port to server map with id=%d", pt_to_ser_map->id);
   // initialize port to server map entries to invalid server id
-  pt_sers = ctx->proto->shm_base + ctx->port_server_map->off;
+  ports = ctx->proto->shm_base + ctx->port_map->off;
   // LOG_DEBUG("initializing port to server map entries");
   for (i = MIN_PORT; i <= MAX_PORT; i++)
   {
     // LOG_DEBUG("initializing port %d to invalid server id", i);
-    pt_sers[i].server_id = INVALID_SERVER_ID;
+    ports[i].server_id = INVALID_ID;
+    ports[i].client_id = INVALID_ID;
   }
   return 0;
 }
@@ -258,8 +260,10 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
   struct rpc_queue_new_client_res *res;
   struct rpc_queue_entry *qe_res;
   struct proto_queue_lib *protoq;
+  struct rpc_port_entry *pt_cl_map, *port;
 
   struct rpc_client *client = ctx->proto->shm_base + ctx->clients_map->off;
+  pt_cl_map = ctx->proto->shm_base + ctx->port_map->off;
 
   if (ctx->n_clients >= MAX_CLIENTS)
   {
@@ -287,6 +291,21 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
   cl->local_ip = req->local_ip;
   cl->local_port = req->local_port;
 
+  // bind the port to the client id in the port to client map
+  port = &pt_cl_map[req->local_port];
+  if (port->client_id != INVALID_ID || port->server_id != INVALID_ID)
+  {
+    LOG_ERROR("port already bound to another client or server");
+    res->success = 0;
+    ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_CLIENT_RES);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue rpc new client response");
+      return -1;
+    }
+    return -1;
+  }
+  
   // Create queue for RX buffer
   protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
   if (protoq == NULL)
@@ -340,7 +359,7 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   struct rpc_port_entry *pt_sers_map, *port;
   struct rpc_server *server_map = ctx->proto->shm_base + ctx->servers_map->off;
 
-  pt_sers_map = ctx->proto->shm_base + ctx->port_server_map->off;
+  pt_sers_map = ctx->proto->shm_base + ctx->port_map->off;
 
   if (ctx->n_servers >= MAX_SERVERS)
   {
@@ -358,7 +377,7 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   res->opaque = req->opaque;
   res->core = 0;
   res->server_id = ctx->n_servers;
-
+  
   sv = &server_map[res->server_id];
 
   sv->id = res->server_id;
@@ -369,7 +388,7 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   //initialize workers IDs table to invalid id
   for (int i = 0; i < MAX_WORKERS; i++)
   {
-    sv->workers[i] = INVALID_WORKER_ID;
+    sv->workers[i] = INVALID_ID;
   }
   //initialize service table to 0
   for (int i = 0; i < MAX_SERVICE_NUMBER; i++)
@@ -379,9 +398,9 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
 
   // bind the port to the server id in the port to server map
   port = &pt_sers_map[req->local_port];
-  if (port->server_id != INVALID_SERVER_ID)
+  if (port->server_id != INVALID_ID || port->client_id != INVALID_ID)
   {
-    LOG_ERROR("port already bound to another server");
+    LOG_ERROR("port already bound to another server or client");
     res->success = 0;
     ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_SERVER_RES);
     if (ret != 0)

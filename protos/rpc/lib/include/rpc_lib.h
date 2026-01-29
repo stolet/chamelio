@@ -13,7 +13,7 @@
 #define MAX_WORKERS 16
 #define SOCK_INACTIVE (-1U)
 /* Invalid server ID */
-#define INVALID_SERVER_ID -1
+#define INVALID_ID -1
 
 enum rpc_entity_type
 {

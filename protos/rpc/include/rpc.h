@@ -22,12 +22,10 @@
 #define MAX_CLIENTS 16
 /* Maximum number of workers */
 #define MAX_WORKERS 16
-/* Invalid server ID */
-#define INVALID_SERVER_ID -1
+/* Invalid server/worker ID */
+#define INVALID_ID -1
 /* Maximum number of services */
 #define MAX_SERVICE_NUMBER 8
-/* Invalid worker ID */
-#define INVALID_WORKER_ID -1
 /* Location where ebpf bytecode is located */
 #define RPC_EBPF_BYTECODE "protos/rpc/fast/rpc_fast.bpf.o"
 
@@ -74,6 +72,8 @@ struct rpc_port_entry
 {
   /* Server ID */
   __u32 server_id;
+  /* Client ID */
+  __u32 client_id;
 };
 
 struct rpc_server
