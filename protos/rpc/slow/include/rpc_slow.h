@@ -77,8 +77,8 @@ struct rpc_slow_context
   /* Number of clients */
   __u32 n_clients;
 
-  /* Maps a port to a server */
-  struct proto_map_lib *port_server_map;
+  // /* Maps a port to a server */
+  // struct proto_map_lib *port_server_map;
   /* Stores all the servers */
   struct proto_map_lib *servers_map;
   /* Stores all the workers */
