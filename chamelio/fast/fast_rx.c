@@ -10,6 +10,7 @@
 #include "clock.h"
 #include "infra.h"
 #include "ebpf.h"
+#include "txcache.h"
 
 static inline void rx_poll_guest(struct guest_fast *g,
     struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start);
@@ -64,8 +65,9 @@ int fast_rx_poll(struct fast_context *ctx)
       rx_poll_guest(g, mbs[i], pkt_off, tsc_start);
   }
 
-  /* Return used mbufs to the mbuf pool */
-  rte_pktmbuf_free_bulk(mbs, n);
+  /* Reuse mbufs in txcache */
+  for (i = 0; i < n; i++)
+    txcache_free(ctx, mbs[i]);
 
   return n;
 }

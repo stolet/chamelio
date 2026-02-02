@@ -140,6 +140,9 @@ int fast_txflush(struct fast_context *ctx)
 {
   int i, ret;
 
+  if (ctx->tx_n == 0)
+    return 0;
+  
   /* Push packets to the NIC */
   ret = nic_fast_tx(&ctx->nic_ctx, ctx->tx_n, ctx->tx_mbs);
 

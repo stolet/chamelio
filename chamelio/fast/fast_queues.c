@@ -73,8 +73,6 @@ int fast_queues_poll(struct fast_context *ctx)
   }
 
   fast_txflush(ctx);
-
-  /* Roll back unused mbufs in the cache */
   txcache_unalloc(ctx, max - ntx);
 
   return 0;
