@@ -48,14 +48,18 @@ static inline int txcache_alloc(struct fast_context *ctx,
 static inline void txcache_free(struct fast_context *ctx, 
     struct rte_mbuf *mb)
 {
-  __u16 n, tail;
+  __u16 n, head;
 
   n = ctx->tx_cache_n;
   if (n < TX_CACHE_SIZE)
   {
     /* Return mbuf to the cache */
-    tail = (ctx->tx_cache_head + n) & (TX_CACHE_SIZE - 1);
-    ctx->tx_cache_mbs[tail] = mb;
+    if (ctx->tx_cache_head == 0)
+      head = TX_CACHE_SIZE - 1;
+    else
+      head = (ctx->tx_cache_head - 1) & (TX_CACHE_SIZE - 1);
+    
+    ctx->tx_cache_mbs[head] = mb;
     ctx->tx_cache_n = n + 1;
     mb->ol_flags = 0;
   }
