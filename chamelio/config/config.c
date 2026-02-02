@@ -28,8 +28,8 @@ enum cfg_params {
   CP_MAX_GUESTS,
   CP_FP_CORES_MAX,
   CP_FP_NO_XSUMOFFLOAD,
-  CP_FP_NO_JITCOMB,
-  CP_PERF_ISO_OFF,
+  CP_FP_JITCOMB,
+  CP_PERF_ISO,
   CP_PERF_ISO_CAP,
   CP_PERF_ISO_BOOST,
   CP_VIRT_GRE,
@@ -85,12 +85,12 @@ static struct option opts[] = {
   { .name = "fp-no-xsumoffload",
     .has_arg = no_argument,
     .val = CP_FP_NO_XSUMOFFLOAD },
-  { .name = "fp-no-jitcomb",
+  { .name = "fp-jitcomb",
     .has_arg = no_argument,
-    .val = CP_FP_NO_JITCOMB },
-  { .name = "perf-iso-off",
+    .val = CP_FP_JITCOMB },
+  { .name = "perf-iso",
     .has_arg = no_argument,
-    .val = CP_PERF_ISO_OFF },
+    .val = CP_PERF_ISO },
   { .name = "perf-iso-cap",
     .has_arg = required_argument,
     .val = CP_PERF_ISO_CAP },
@@ -230,11 +230,11 @@ int config_parse(struct configuration *c, int argc, char **argv)
       case CP_FP_NO_XSUMOFFLOAD:
         c->fp_xsumoffloads = 0;
         break;
-      case CP_FP_NO_JITCOMB:
-        c->fp_jit_combined = 0;
+      case CP_FP_JITCOMB:
+        c->fp_jit_combined = 1;
         break;
-      case CP_PERF_ISO_OFF:
-        c->perf_iso = 0;
+      case CP_PERF_ISO:
+        c->perf_iso = 1;
         break;
       case CP_PERF_ISO_CAP:
         if (parse_int32(optarg, &c->perf_iso_cap) != 0) {
@@ -291,8 +291,8 @@ static int config_defaults(struct configuration *c, char *progname)
   c->max_guests = 128;
   c->fp_cores_max = 1;
   c->fp_xsumoffloads = 1;
-  c->fp_jit_combined = 1;
-  c->perf_iso = 1;
+  c->fp_jit_combined = 0;
+  c->perf_iso = 0;
   c->perf_iso_cap = 1000;
   c->perf_iso_boost = 0.5;
   c->virt_gre = 0;
@@ -342,11 +342,11 @@ static void print_usage(struct configuration *c, char *progname)
            "[default: %u]\n"
       "  --fp-no-xsumoffload                     Disable TX Checksum offload"
           "[default: enabled]\n"
-      "  --fp-no-jitcomb                         Disable combined infra+eBPF JIT"
-          "[default: enabled]\n"
+      "  --fp-jitcomb                            Enable combined infra+eBPF JIT"
+          "[default: disabled]\n"
       "Performance isolation:\n"
-      "  --perf-iso-off                          Disables performance isolation"
-          "[default: enabled]\n"
+      "  --perf-iso                              Enable performance isolation"
+          "[default: disabled]\n"
       "  --perf-iso-cap                          Per guest budget cap in microseconds"
           "[default: %u]\n"
       "  --perf-iso-boost                        Budget boost multiplier"
