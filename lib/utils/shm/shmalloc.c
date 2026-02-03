@@ -5,6 +5,9 @@
 #include "shmalloc.h"
 #include "log.h"
 
+#define SHMALLOC_ALIGN 64
+#define ALIGN_UP(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
+
 static inline struct shm_handle *sh_alloc(void);
 static inline void sh_free(struct shm_handle *sh);
 static inline void merge_items(struct shm_allocator *alloc, 
@@ -42,6 +45,8 @@ int shmalloc_alloc(struct shm_allocator *alloc, size_t length,
     struct shm_handle **handle)
 {
   struct shm_handle *sh, *sh_prev, *ph_new;
+
+  length = ALIGN_UP(length, SHMALLOC_ALIGN);
 
   /* look for first fit */
   sh_prev = NULL;
