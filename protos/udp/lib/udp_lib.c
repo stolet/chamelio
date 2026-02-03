@@ -415,7 +415,12 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
   tx_len = sock->tx_len;
   tx_avail = sock->tx_avail;
   tx_head = sock->tx_head;
+  tx_buf = sock->tx_buf;
+  tail = tx_head + tx_avail;
   src = buf;
+
+  /* Prefetch txbuf */
+  utils_prefetch0(tx_buf + tail);
 
   n = len;
   if (n > tx_len - tx_avail)
@@ -437,13 +442,8 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
     return -1;
   }
 
-  tail = tx_head + tx_avail;
   if (tail >= tx_len)
     tail -= tx_len;
-
-  /* Prefetch txbuf */
-  tx_buf = sock->tx_buf;
-  utils_prefetch0(tx_buf + tail);
 
   bump = &qe->data.bump_cham_tx;
   bump->sock_id = sock->sock_id;
@@ -508,6 +508,8 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
   rx_len = sock->rx_len;
   rx_avail = sock->rx_avail;
   rx_head = sock->rx_head;
+  rx_buf = sock->rx_buf;
+
   n = len;
   if (n > rx_avail)
     n = rx_avail;
@@ -538,13 +540,12 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
   bump->sock_id = sock->sock_id;
   bump->rx_head = n;
 
-  /* Only do copy here so prefetch has time to go through */
-  rx_buf = sock->rx_buf;
-  utils_prefetch0(rx_buf + rx_head);
   new_head = rx_head + n;
   if (new_head >= rx_len)
-    new_head -= rx_len;
+  new_head -= rx_len;
   assert(rx_head >= 0);
+  
+  /* Only do copy here so prefetch has time to go through */
   if (rx_head + n > rx_len)
   {
     /* Split copy */
@@ -589,6 +590,11 @@ int udp_poll_fast(struct udp_context_lib *ctx)
     q = fast_app_qs[i];
     while (n < LIB_BATCH_SIZE && (qe = queue_head(q)) != NULL)
     {       
+      __u32 next_head = q->head + q->elsize;
+      if (next_head >= (q->elsize * q->nelems))
+        next_head = 0;
+      utils_prefetch0((__u8 *) q->entries + next_head);
+
       n++;
     
       switch (qe->type)
@@ -722,6 +728,7 @@ static int handle_rx_bump(struct udp_queue_bump_entry *qe)
 
   bump = &qe->data.bump_app_rx;
   sock = (struct udp_socket_lib *) bump->opaque;
+  utils_prefetch0(sock->rx_buf + sock->rx_head);
   sock->rx_avail += bump->rx_avail;
   sock->rx_port = bump->rx_port;
   sock->rx_ip = bump->rx_ip;
