@@ -44,59 +44,99 @@ struct shm_allocator * shmalloc_init(void *shm_base, __u64 len)
 int shmalloc_alloc(struct shm_allocator *alloc, size_t length, 
     struct shm_handle **handle)
 {
-  struct shm_handle *sh, *sh_prev, *ph_new;
+  struct shm_handle *sh, *sh_prev, *ph_new, *sh_suffix;
+  __u64 aligned_off;
+  size_t prefix_len, suffix_len;
 
   length = ALIGN_UP(length, SHMALLOC_ALIGN);
 
-  /* look for first fit */
+  /* look for first fit with aligned start */
   sh_prev = NULL;
   sh = alloc->freelist;
-  while (sh != NULL && sh->len < length) 
+  while (sh != NULL)
   {
-    sh_prev = sh;
-    sh = sh->next;
+    aligned_off = ALIGN_UP(sh->off, SHMALLOC_ALIGN);
+    if (aligned_off < sh->off)
+    {
+      sh_prev = sh;
+      sh = sh->next;
+      continue;
+    }
+
+    prefix_len = aligned_off - sh->off;
+    if (prefix_len > sh->len || prefix_len + length > sh->len)
+    {
+      sh_prev = sh;
+      sh = sh->next;
+      continue;
+    }
+
+    suffix_len = sh->len - prefix_len - length;
+
+    if (prefix_len == 0 && suffix_len == 0)
+    {
+      /* exact fit, remove from freelist */
+      if (sh_prev == NULL)
+        alloc->freelist = sh->next;
+      else
+        sh_prev->next = sh->next;
+      ph_new = sh;
+    }
+    else
+    {
+      /* need to split */
+      ph_new = sh_alloc();
+      if (ph_new == NULL)
+      {
+        LOG_ERROR("sh_alloc failed");
+        return -1;
+      }
+
+      ph_new->addr = alloc->shm_base + aligned_off;
+      ph_new->off = aligned_off;
+      ph_new->len = length;
+      ph_new->next = NULL;
+
+      if (prefix_len == 0)
+      {
+        /* reuse current free block as suffix */
+        sh->off = aligned_off + length;
+        sh->addr = alloc->shm_base + sh->off;
+        sh->len = suffix_len;
+      }
+      else
+      {
+        /* keep current block as prefix */
+        if (suffix_len > 0)
+        {
+          sh_suffix = sh_alloc();
+          if (sh_suffix == NULL)
+          {
+            sh_free(ph_new);
+            LOG_ERROR("sh_alloc failed");
+            return -1;
+          }
+
+          sh_suffix->off = aligned_off + length;
+          sh_suffix->addr = alloc->shm_base + sh_suffix->off;
+          sh_suffix->len = suffix_len;
+          sh_suffix->next = sh->next;
+          sh->len = prefix_len;
+          sh->next = sh_suffix;
+        }
+        else
+        {
+          sh->len = prefix_len;
+        }
+      }
+    }
+
+    *handle = ph_new;
+    return 0;
   }
 
   /* didn't find a fit */
-  if (sh == NULL) 
-    return -1;
-
-  if (sh->len == length) 
-  {
-    /* simple case, don't need to split this handle */
-
-    /* pointer to previous next pointer for removal */
-    if (sh_prev == NULL) 
-      alloc->freelist = sh->next;
-    else 
-      sh_prev->next = sh->next;
-
-    ph_new = sh;
-  } 
-  else 
-  {
-    /* need to split */
-
-    /* new packetmem handle for splitting */
-    if ((ph_new = sh_alloc()) == NULL) 
-    {
-      LOG_ERROR("sh_alloc failed");
-      return -1;
-    }
-
-    ph_new->addr = sh->addr;
-    ph_new->off = sh->off;
-    ph_new->len = length;
-    ph_new->next = NULL;
-
-    sh->off += length;
-    sh->addr = alloc->shm_base + sh->off;
-    sh->len -= length;
-  }
-
-  *handle = ph_new;
-
-  return 0;
+  return -1;
 }
 
 void shmalloc_free(struct shm_allocator *alloc, struct shm_handle *handle)
