@@ -389,8 +389,13 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
     const void *buf, size_t len, 
     const struct sockaddr *addr, socklen_t addrlen)
 {
-  int n, ret;
-  __u32 tail, n1, n2;
+  int ret;
+  __u32 tail, n, n1, n2;
+  __u32 tx_len, tx_avail, tx_head;
+  __u32 tx_ip;
+  __u16 tx_port;
+  __u8 *tx_buf;
+  const __u8 *src;
   struct udp_socket_lib *sock;
   struct equeue *q;
   struct udp_queue_bump_entry *qe;
@@ -407,9 +412,14 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
   if (len == 0)
     return 0;
 
+  tx_len = sock->tx_len;
+  tx_avail = sock->tx_avail;
+  tx_head = sock->tx_head;
+  src = buf;
+
   n = len;
-  if (len > sock->tx_len - sock->tx_avail)
-    n = sock->tx_len - sock->tx_avail;
+  if (n > tx_len - tx_avail)
+    n = tx_len - tx_avail;
   
   /* No space available in tx buffer */
   if (n == 0)
@@ -418,51 +428,55 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
     return -1;
   }
 
-  tail = sock->tx_head + sock->tx_avail;
-  if (sock->tx_head + sock->tx_avail > sock->tx_len)
-    tail = sock->tx_head + sock->tx_avail - sock->tx_len;
-
-  /* Prefetch txbuf */
-  utils_prefetch0(sock->tx_buf + tail);
-
-  sock->tx_avail = sock->tx_avail + n;
-  sock->tx_ip = ntohl(sin->sin_addr.s_addr);
-  sock->tx_port = ntohs(sin->sin_port);
-    
   /* Send bump message to update TX available */
   q = ctx->app_fast_qs[sock->core];
   qe = queue_tail(q);
   if (qe == NULL)
   {
-    LOG_ERROR("failed to get queue tail");
+    errno = EAGAIN;
     return -1;
   }
 
+  tail = tx_head + tx_avail;
+  if (tail >= tx_len)
+    tail -= tx_len;
+
+  /* Prefetch txbuf */
+  tx_buf = sock->tx_buf;
+  utils_prefetch0(tx_buf + tail);
+
   bump = &qe->data.bump_cham_tx;
   bump->sock_id = sock->sock_id;
-  bump->tx_ip = ntohl(sin->sin_addr.s_addr);
-  bump->tx_port = ntohs(sin->sin_port);
+  tx_ip = ntohl(sin->sin_addr.s_addr);
+  tx_port = ntohs(sin->sin_port);
+  bump->tx_ip = tx_ip;
+  bump->tx_port = tx_port;
   bump->tx_avail = n;
 
   /* Only do copy here so prefetch has time to go through */
-  if (tail + n > sock->tx_len)
+  if (tail + n > tx_len)
   {
     /* Split copy */
-    n1 = sock->tx_len - tail;
+    n1 = tx_len - tail;
     n2 = n - n1;
-    memcpy(sock->tx_buf + tail, buf, n1);
-    memcpy(sock->tx_buf, buf + n1, n2);
+    memcpy(tx_buf + tail, src, n1);
+    memcpy(tx_buf, src + n1, n2);
   }
   else
   {
     /* Simple copy */
-    memcpy(sock->tx_buf + tail, buf, n);
+    memcpy(tx_buf + tail, src, n);
   }
+
+  sock->tx_avail = tx_avail + n;
+  sock->tx_ip = tx_ip;
+  sock->tx_port = tx_port;
 
   ret = queue_enqueue(q, UDP_QUEUE_BUMP_CHAM_TX);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue bump");
+    sock->tx_avail = tx_avail;
     return -1;
   }
 
@@ -475,6 +489,8 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
 {
   int n, ret;
   __u32 n1, n2, new_head;
+  __u32 rx_len, rx_avail, rx_head;
+  __u8 *rx_buf;
   struct equeue *q;
   struct udp_queue_bump_entry *qe;
   struct udp_queue_bump_cham_rx *bump; 
@@ -488,13 +504,13 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
     return -1;
   }
 
-  /* Prefetch rxbuf */
-  utils_prefetch0(sock->rx_buf + sock->rx_head);
-
   /* Copy to buffer */
+  rx_len = sock->rx_len;
+  rx_avail = sock->rx_avail;
+  rx_head = sock->rx_head;
   n = len;
-  if (len > sock->rx_avail)
-    n = sock->rx_avail;
+  if (n > rx_avail)
+    n = rx_avail;
     
   /* There is nothing available */
   if (n == 0)
@@ -502,11 +518,6 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
     errno = EAGAIN;
     return -1;
   }
-  
-  sock->rx_avail -= n;
-  new_head = sock->rx_head + n;
-  if (new_head > sock->rx_len)
-    new_head -= sock->rx_len;
   
   if (addr != NULL)
   {
@@ -519,7 +530,7 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
   qe = queue_tail(q);
   if (qe == NULL)
   {
-    LOG_ERROR("failed to get queue tail");
+    errno = EAGAIN;
     return -1;
   }
 
@@ -528,20 +539,27 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
   bump->rx_head = n;
 
   /* Only do copy here so prefetch has time to go through */
-  assert(sock->rx_head >= 0);
-  if (sock->rx_head + n > sock->rx_len)
+  rx_buf = sock->rx_buf;
+  utils_prefetch0(rx_buf + rx_head);
+  new_head = rx_head + n;
+  if (new_head >= rx_len)
+    new_head -= rx_len;
+  assert(rx_head >= 0);
+  if (rx_head + n > rx_len)
   {
     /* Split copy */
-    n1 = sock->rx_len - sock->rx_head;
+    n1 = rx_len - rx_head;
     n2 = n - n1;
-    memcpy(buf, sock->rx_buf + sock->rx_head, n1);
-    memcpy(buf + n1, sock->rx_buf, n2);
+    memcpy(buf, rx_buf + rx_head, n1);
+    memcpy(buf + n1, rx_buf, n2);
   }
   else
   {
     /* Simple copy */
-    memcpy(buf, sock->rx_buf + sock->rx_head, n);
+    memcpy(buf, rx_buf + rx_head, n);
   }
+
+  sock->rx_avail = rx_avail - n;
   sock->rx_head = new_head;
   
   ret = queue_enqueue(q, UDP_QUEUE_BUMP_CHAM_RX);
@@ -689,7 +707,7 @@ static int handle_tx_bump(struct udp_queue_bump_entry *qe)
   sock = (struct udp_socket_lib *) bump->opaque;
 
   new_head = sock->tx_head + bump->tx_head;
-  if (new_head > sock->tx_len)
+  if (new_head >= sock->tx_len)
     new_head -= sock->tx_len;
   sock->tx_head = new_head;
   sock->tx_avail -= bump->tx_head;

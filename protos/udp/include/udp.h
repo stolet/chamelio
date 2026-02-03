@@ -3,6 +3,8 @@
 
 #include <linux/types.h>
 
+#include "utils.h"
+
 /* Maximum segment size for UDP */
 #define UDP_MSS 1400
 /* TODO: Pass MAX_APPS and MAX_CTXS as a parameter to UDP slow-path */
