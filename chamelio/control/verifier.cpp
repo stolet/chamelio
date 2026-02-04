@@ -215,6 +215,36 @@ extern "C"
                 .context_descriptor = nullptr,
                 .unsupported = false,
             };
+        case 1012:
+            return EbpfHelperPrototype{
+                .name = "ebpf_queue_head",
+                .return_type = EBPF_RETURN_TYPE_INTEGER,
+                .argument_type = {
+                    EBPF_ARGUMENT_TYPE_ANYTHING,
+                    EBPF_ARGUMENT_TYPE_ANYTHING,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                },
+                .reallocate_packet = false,
+                .context_descriptor = nullptr,
+                .unsupported = false,
+            };
+        case 1013:
+            return EbpfHelperPrototype{
+                .name = "queue_dequeue",
+                .return_type = EBPF_RETURN_TYPE_INTEGER,
+                .argument_type = {
+                    EBPF_ARGUMENT_TYPE_ANYTHING,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                },
+                .reallocate_packet = false,
+                .context_descriptor = nullptr,
+                .unsupported = false,
+            };
         default:
             std::cerr << "could not find helper id=" << id << "\n";
             EbpfHelperPrototype unknown{};
@@ -241,6 +271,8 @@ extern "C"
             case 1009:
             case 1010:
             case 1011:
+            case 1012:
+            case 1013:
                 return true;
             default:
                 return false;

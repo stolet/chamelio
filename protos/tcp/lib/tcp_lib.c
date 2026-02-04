@@ -1,0 +1,1302 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <assert.h>
+#include <unistd.h>
+#include <sys/un.h>
+#include <sys/socket.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <netinet/in.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+
+#include <cham_lib.h>
+
+#include "tcp_lib.h"
+#include "queue_fns.h"
+#include "tcp_queue_types.h"
+#include "log.h"
+#include "uxsocket.h"
+
+#define LIB_BATCH_SIZE 16
+
+static struct tcp_lib *tcp = NULL;
+
+static int handle_new_sock_res(struct tcp_queue_entry *qe);
+static int handle_bind_res(struct tcp_queue_entry *qe);
+static int handle_setopt_res(struct tcp_queue_entry *qe);
+static int handle_connect_res(struct tcp_queue_entry *qe);
+static int handle_listen_res(struct tcp_queue_entry *qe);
+static int handle_listen_newconn(struct tcp_queue_entry *qe);
+static int handle_accept_res(struct tcp_queue_entry *qe);
+static int handle_tx_bump(struct tcp_queue_bump_entry *qe);
+static int handle_rx_bump(struct tcp_queue_bump_entry *qe);
+
+static struct tcp_socket_lib *alloc_lib_sock(struct tcp_context_lib *ctx);
+static struct tcp_socket_lib *lookup_sock(struct tcp_context_lib *ctx,
+    int sockfd);
+static int validate_sockaddr_in(const struct sockaddr *addr,
+    socklen_t addrlen);
+static int validate_nonblock_flags(int flags);
+static void fill_sockaddr(struct tcp_socket_lib *sock, struct sockaddr *addr,
+    socklen_t *addrlen);
+
+int tcp_lib_connect_slow()
+{
+  int i;
+  struct tcp_lib *u;
+  struct sockaddr_un s_un;
+  int shm_fd, ret, sock_fd;
+  int64_t tmp;
+
+  if (tcp != NULL)
+  {
+    LOG_WARN("library already connected to tcp slow-path");
+    return -1;
+  }
+
+  sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock_fd < 0)
+  {
+    LOG_ERROR("failed to create socket");
+    return -1;
+  }
+
+  s_un.sun_family = AF_UNIX;
+  ret = snprintf(s_un.sun_path, sizeof(s_un.sun_path), "%s", APP_SOCKET_PATH);
+  if (ret < 0 || ret >= (int) sizeof(s_un.sun_path))
+  {
+    LOG_ERROR("could not copy unix socket path");
+    goto close_sockfd;
+  }
+
+  if (connect(sock_fd, (struct sockaddr *) &s_un, sizeof(s_un)) < 0)
+  {
+    LOG_ERROR("cannot connect to slow-path, %s", APP_SOCKET_PATH);
+    perror("");
+    goto close_sockfd;
+  }
+
+  if (uxsocket_read_one_msg(sock_fd, &tmp, &shm_fd) < 0 ||
+      tmp != -1 || shm_fd < 0)
+  {
+    if (shm_fd >= 0)
+      close(shm_fd);
+
+    LOG_ERROR("cannot read shared memory fd from slow-path");
+    goto close_sockfd;
+  }
+
+  u = malloc(sizeof(struct tcp_lib));
+  if (u == NULL)
+  {
+    LOG_ERROR("failed to allocate tcp_lib struct");
+    goto close_sockfd;
+  }
+
+  memset(u, 0, sizeof(*u));
+  for (i = 0; i < MAX_SOCKETS; i++)
+    u->socks[i].fd = SOCK_INACTIVE;
+
+  u->uxsocket_fd = sock_fd;
+  u->shm_fd = shm_fd;
+  u->shm_base = NULL;
+  u->next_ctxid = 0;
+  u->next_sockfd = 0;
+  tcp = u;
+
+  return 0;
+
+close_sockfd:
+  close(sock_fd);
+  return -1;
+}
+
+struct tcp_context_lib * tcp_lib_ctx_new()
+{
+  int i;
+  ssize_t sz, off;
+  void *shm_base;
+  struct tcp_context_lib *ctx;
+  struct tcp_queue_new_actx_res *res;
+  __u8 resp_buf[sizeof(*res)];
+  struct equeue *eq, **eq_list;
+  struct dqueue *dq, **dq_list;
+  struct tcp_queue_new_actx_req req = {
+    .req = 1,
+  };
+  struct iovec iov = {
+    .iov_base = &req,
+    .iov_len = sizeof(req),
+  };
+  struct msghdr msg = {
+    .msg_name = NULL,
+    .msg_namelen = 0,
+    .msg_iov = &iov,
+    .msg_iovlen = 1,
+    .msg_control = NULL,
+    .msg_controllen = 0,
+    .msg_flags = 0,
+  };
+
+  sz = sendmsg(tcp->uxsocket_fd, &msg, 0);
+  if (sz != sizeof(req))
+  {
+    LOG_ERROR("failed to send msg to register tcp app ctx");
+    perror("");
+    return NULL;
+  }
+
+  res = (struct tcp_queue_new_actx_res *) resp_buf;
+  off = 0;
+  while (off < (ssize_t) sizeof(*res))
+  {
+    sz = read(tcp->uxsocket_fd, (__u8 *) res + off, sizeof(*res) - off);
+    if (sz < 0)
+    {
+      LOG_ERROR("read failed");
+      perror("");
+      return NULL;
+    }
+    off += sz;
+  }
+
+  ctx = malloc(sizeof(struct tcp_context_lib));
+  if (ctx == NULL)
+  {
+    LOG_ERROR("failed to allocate tcp context struct");
+    return NULL;
+  }
+
+  ctx->id = __sync_fetch_and_add(&tcp->next_ctxid, 1);
+  ctx->ncores = res->n_fp_cores;
+
+  if (ctx->id == 0)
+  {
+    shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE,
+        MAP_SHARED | MAP_POPULATE, tcp->shm_fd, res->shm_off);
+    if (shm_base == (void *) -1)
+    {
+      LOG_ERROR("failed to map shm region");
+      return NULL;
+    }
+    tcp->shm_base = shm_base;
+  }
+
+  while (tcp->shm_base == NULL) {}
+
+  eq = equeue_new(res->as_nelems, res->as_elsize,
+      tcp->shm_base + res->as_off, res->as_off);
+  if (eq == NULL)
+  {
+    LOG_ERROR("failed to create queue from app to slow-path");
+    return NULL;
+  }
+  ctx->app_slow_q = eq;
+
+  dq = dqueue_new(res->sa_nelems, res->sa_elsize,
+      tcp->shm_base + res->sa_off, res->sa_off);
+  if (dq == NULL)
+  {
+    LOG_ERROR("failed to create queue from slow-path to app");
+    return NULL;
+  }
+  ctx->slow_app_q = dq;
+
+  eq_list = malloc(sizeof(struct equeue *) * res->n_fp_cores);
+  if (eq_list == NULL)
+  {
+    LOG_ERROR("failed to allocate list for queues app->fast");
+    return NULL;
+  }
+  ctx->app_fast_qs = eq_list;
+
+  dq_list = malloc(sizeof(struct dqueue *) * res->n_fp_cores);
+  if (dq_list == NULL)
+  {
+    LOG_ERROR("failed to allocate list for queues fast->app");
+    return NULL;
+  }
+  ctx->fast_app_qs = dq_list;
+
+  for (i = 0; i < (int) res->n_fp_cores; i++)
+  {
+    eq = equeue_new(res->af_nelems, res->af_elsize,
+        tcp->shm_base + res->af_offs[i], res->af_offs[i]);
+    if (eq == NULL)
+    {
+      LOG_ERROR("failed to create app->fast bump queue");
+      return NULL;
+    }
+    eq_list[i] = eq;
+
+    dq = dqueue_new(res->fa_nelems, res->fa_elsize,
+        tcp->shm_base + res->fa_offs[i], res->fa_offs[i]);
+    if (dq == NULL)
+    {
+      LOG_ERROR("failed to create fast->app bump queue");
+      return NULL;
+    }
+    dq_list[i] = dq;
+  }
+
+  return ctx;
+}
+
+int tcp_lib_socket(struct tcp_context_lib *ctx)
+{
+  int ret;
+  struct tcp_socket_lib *sock;
+  struct equeue *q;
+  struct tcp_queue_entry *qe;
+  struct tcp_queue_new_sock_req *req;
+
+  if (ctx == NULL)
+  {
+    LOG_ERROR("passed NULL tcp_context_lib");
+    errno = EINVAL;
+    return -1;
+  }
+
+  sock = alloc_lib_sock(ctx);
+  if (sock == NULL)
+    return -1;
+
+  q = ctx->app_slow_q;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    sock->fd = SOCK_INACTIVE;
+    errno = EAGAIN;
+    return -1;
+  }
+
+  req = &qe->data.new_sock_req;
+  req->opaque = (__u64) sock;
+  ret = queue_enqueue(q, TCP_QUEUE_NEW_SOCK_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue new sock req");
+    sock->fd = SOCK_INACTIVE;
+    errno = EAGAIN;
+    return -1;
+  }
+
+  while (sock->rx_len == 0)
+    tcp_poll_slow(ctx);
+
+  return sock->fd;
+}
+
+int tcp_lib_bind(struct tcp_context_lib *ctx, int sockfd,
+    const struct sockaddr *addr, socklen_t addrlen)
+{
+  int ret;
+  struct equeue *q;
+  struct tcp_queue_entry *qe;
+  struct tcp_queue_bind_req *req;
+  struct sockaddr_in *sin;
+  struct tcp_socket_lib *sock;
+
+  if (validate_sockaddr_in(addr, addrlen) != 0)
+    return -1;
+
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  sin = (struct sockaddr_in *) addr;
+  q = ctx->app_slow_q;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    errno = EAGAIN;
+    return -1;
+  }
+
+  req = &qe->data.bind_req;
+  req->sock_id = sock->sock_id;
+  req->local_ip = ntohl(sin->sin_addr.s_addr);
+  req->local_port = ntohs(sin->sin_port);
+  req->opaque = (__u64) sock;
+  ret = queue_enqueue(q, TCP_QUEUE_BIND_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue bind req");
+    errno = EAGAIN;
+    return -1;
+  }
+
+  while (sock->bind_success == -1)
+    tcp_poll_slow(ctx);
+
+  if (!sock->bind_success)
+  {
+    errno = EADDRINUSE;
+    sock->bind_success = -1;
+    return -1;
+  }
+
+  sock->local_port = ntohs(sin->sin_port);
+  sock->local_ip = ntohl(sin->sin_addr.s_addr);
+  sock->state = TCP_LIB_STATE_BOUND;
+  sock->bind_success = -1;
+  return 0;
+}
+
+int tcp_lib_connect(struct tcp_context_lib *ctx, int sockfd,
+    const struct sockaddr *addr, socklen_t addrlen, int flags)
+{
+  int ret;
+  struct equeue *q;
+  struct tcp_queue_entry *qe;
+  struct tcp_queue_connect_req *req;
+  struct sockaddr_in *sin;
+  struct tcp_socket_lib *sock;
+
+  if (validate_nonblock_flags(flags) != 0)
+    return -1;
+  if (validate_sockaddr_in(addr, addrlen) != 0)
+    return -1;
+
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  if (sock->state == TCP_LIB_STATE_LISTEN)
+  {
+    errno = EOPNOTSUPP;
+    return -1;
+  }
+
+  if (sock->state == TCP_LIB_STATE_ESTABLISHED)
+    return 0;
+
+  if (sock->state == TCP_LIB_STATE_CONNECTING)
+  {
+    if (sock->op_status == TCP_LIB_STATUS_PENDING)
+    {
+      if ((flags & SOCK_NONBLOCK) != 0)
+      {
+        errno = EALREADY;
+        return -1;
+      }
+
+      while (sock->op_status == TCP_LIB_STATUS_PENDING)
+        tcp_poll_slow(ctx);
+    }
+
+    if (sock->op_status == 0 && sock->state == TCP_LIB_STATE_ESTABLISHED)
+      return 0;
+
+    if (sock->op_status > 0)
+    {
+      errno = sock->op_status;
+      sock->op_status = TCP_LIB_STATUS_IDLE;
+      return -1;
+    }
+  }
+
+  sin = (struct sockaddr_in *) addr;
+  q = ctx->app_slow_q;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  req = &qe->data.connect_req;
+  req->sock_id = sock->sock_id;
+  req->remote_ip = ntohl(sin->sin_addr.s_addr);
+  req->remote_port = ntohs(sin->sin_port);
+  req->opaque = (__u64) sock;
+
+  ret = queue_enqueue(q, TCP_QUEUE_CONNECT_REQ);
+  if (ret != 0)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  sock->remote_ip = ntohl(sin->sin_addr.s_addr);
+  sock->remote_port = ntohs(sin->sin_port);
+  sock->state = TCP_LIB_STATE_CONNECTING;
+  sock->op_status = TCP_LIB_STATUS_PENDING;
+
+  if ((flags & SOCK_NONBLOCK) != 0)
+  {
+    errno = EINPROGRESS;
+    return -1;
+  }
+
+  while (sock->op_status == TCP_LIB_STATUS_PENDING)
+    tcp_poll_slow(ctx);
+
+  if (sock->op_status != 0)
+  {
+    errno = sock->op_status;
+    sock->op_status = TCP_LIB_STATUS_IDLE;
+    return -1;
+  }
+
+  return 0;
+}
+
+int tcp_lib_listen(struct tcp_context_lib *ctx, int sockfd, int backlog)
+{
+  int ret;
+  struct equeue *q;
+  struct tcp_queue_entry *qe;
+  struct tcp_queue_listen_req *req;
+  struct tcp_socket_lib *sock;
+
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  if (backlog <= 0)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  if (sock->local_port == 0 || sock->state == TCP_LIB_STATE_CONNECTING ||
+      sock->state == TCP_LIB_STATE_ESTABLISHED)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  if (sock->state == TCP_LIB_STATE_LISTEN)
+    return 0;
+
+  if (sock->op_status == TCP_LIB_STATUS_PENDING)
+  {
+    errno = EALREADY;
+    return -1;
+  }
+
+  if (sock->op_status > 0)
+  {
+    errno = sock->op_status;
+    sock->op_status = TCP_LIB_STATUS_IDLE;
+    return -1;
+  }
+
+  q = ctx->app_slow_q;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  req = &qe->data.listen_req;
+  req->sock_id = sock->sock_id;
+  req->backlog = backlog;
+  req->opaque = (__u64) sock;
+
+  ret = queue_enqueue(q, TCP_QUEUE_LISTEN_REQ);
+  if (ret != 0)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  sock->op_status = TCP_LIB_STATUS_PENDING;
+  return 0;
+}
+
+int tcp_lib_accept(struct tcp_context_lib *ctx, int sockfd,
+    struct sockaddr *addr, socklen_t *addrlen, int flags)
+{
+  int ret;
+  struct equeue *q;
+  struct tcp_queue_entry *qe;
+  struct tcp_queue_accept_req *req;
+  struct tcp_socket_lib *listen_sock;
+  struct tcp_socket_lib *sock;
+
+  if (validate_nonblock_flags(flags) != 0)
+    return -1;
+
+  listen_sock = lookup_sock(ctx, sockfd);
+  if (listen_sock == NULL)
+    return -1;
+
+  if (listen_sock->state != TCP_LIB_STATE_LISTEN)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  if ((flags & SOCK_NONBLOCK) != 0 && listen_sock->pending_conn == 0)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  while (listen_sock->pending_conn == 0)
+    tcp_poll_slow(ctx);
+
+  sock = alloc_lib_sock(ctx);
+  if (sock == NULL)
+    return -1;
+
+  q = ctx->app_slow_q;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    sock->fd = SOCK_INACTIVE;
+    errno = EAGAIN;
+    return -1;
+  }
+
+  req = &qe->data.accept_req;
+  req->sock_id = listen_sock->sock_id;
+  req->opaque = (__u64) sock;
+  ret = queue_enqueue(q, TCP_QUEUE_ACCEPT_REQ);
+  if (ret != 0)
+  {
+    sock->fd = SOCK_INACTIVE;
+    errno = EAGAIN;
+    return -1;
+  }
+
+  sock->op_status = TCP_LIB_STATUS_PENDING;
+  while (sock->op_status == TCP_LIB_STATUS_PENDING)
+    tcp_poll_slow(ctx);
+
+  if (sock->op_status != 0)
+  {
+    errno = sock->op_status;
+    sock->fd = SOCK_INACTIVE;
+    sock->state = TCP_LIB_STATE_CLOSED;
+    return -1;
+  }
+
+  fill_sockaddr(sock, addr, addrlen);
+  return sock->fd;
+}
+
+int tcp_lib_setsockopt(struct tcp_context_lib *ctx, int sockfd, __u8 opt)
+{
+  int ret;
+  struct equeue *q;
+  struct tcp_queue_entry *qe;
+  struct tcp_queue_setopt_req *req;
+  struct tcp_socket_lib *sock;
+
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  q = ctx->app_slow_q;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    LOG_ERROR("failed to get queue tail");
+    errno = EAGAIN;
+    return -1;
+  }
+
+  req = &qe->data.setopt_req;
+  req->opt = opt;
+  req->sock_id = sock->sock_id;
+  req->opaque = (__u64) sock;
+
+  ret = queue_enqueue(q, TCP_QUEUE_SETOPT_REQ);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue setsockopt req");
+    errno = EAGAIN;
+    return -1;
+  }
+
+  while (sock->setopt_success == -1)
+    tcp_poll_slow(ctx);
+
+  if (!sock->setopt_success)
+  {
+    errno = ENOPROTOOPT;
+    sock->setopt_success = -1;
+    return -1;
+  }
+
+  if (opt == SO_REUSEPORT)
+    sock->reuseport = 1;
+  sock->setopt_success = -1;
+  return 0;
+}
+
+int tcp_lib_sendto(struct tcp_context_lib *ctx, int sockfd,
+    const void *buf, size_t len,
+    const struct sockaddr *addr, socklen_t addrlen)
+{
+  int ret;
+  __u32 tail, n, n1, n2;
+  __u32 tx_len, tx_avail, tx_head;
+  __u32 tx_ip;
+  __u16 tx_port;
+  __u8 *tx_buf;
+  const __u8 *src;
+  struct tcp_socket_lib *sock;
+  struct equeue *q;
+  struct tcp_queue_bump_entry *qe;
+  struct tcp_queue_bump_cham_tx *bump;
+  struct sockaddr_in sa;
+  struct sockaddr_in *sin;
+
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  if (sock->state != TCP_LIB_STATE_ESTABLISHED)
+  {
+    errno = ENOTCONN;
+    return -1;
+  }
+
+  if (addr == NULL)
+  {
+    if (sock->remote_port == 0)
+    {
+      errno = ENOTCONN;
+      return -1;
+    }
+    memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = htonl(sock->remote_ip);
+    sa.sin_port = htons(sock->remote_port);
+    sin = &sa;
+  }
+  else
+  {
+    if (validate_sockaddr_in(addr, addrlen) != 0)
+      return -1;
+    sin = (struct sockaddr_in *) addr;
+  }
+
+  if (len == 0)
+    return 0;
+
+  tx_len = sock->tx_len;
+  tx_avail = sock->tx_avail;
+  tx_head = sock->tx_head;
+  tx_buf = sock->tx_buf;
+  tail = tx_head + tx_avail;
+  src = buf;
+
+  utils_prefetch0(tx_buf + tail);
+
+  n = len;
+  if (n > tx_len - tx_avail)
+    n = tx_len - tx_avail;
+
+  if (n == 0)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  q = ctx->app_fast_qs[sock->core];
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  if (tail >= tx_len)
+    tail -= tx_len;
+
+  bump = &qe->data.bump_cham_tx;
+  bump->sock_id = sock->sock_id;
+  tx_ip = ntohl(sin->sin_addr.s_addr);
+  tx_port = ntohs(sin->sin_port);
+  bump->tx_ip = tx_ip;
+  bump->tx_port = tx_port;
+  bump->tx_avail = n;
+
+  if (tail + n > tx_len)
+  {
+    n1 = tx_len - tail;
+    n2 = n - n1;
+    memcpy(tx_buf + tail, src, n1);
+    memcpy(tx_buf, src + n1, n2);
+  }
+  else
+  {
+    memcpy(tx_buf + tail, src, n);
+  }
+
+  sock->tx_avail = tx_avail + n;
+  sock->remote_ip = tx_ip;
+  sock->remote_port = tx_port;
+
+  ret = queue_enqueue(q, TCP_QUEUE_BUMP_CHAM_TX);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue bump");
+    sock->tx_avail = tx_avail;
+    errno = EAGAIN;
+    return -1;
+  }
+
+  return n;
+}
+
+int tcp_lib_recvfrom(struct tcp_context_lib *ctx, int sockfd,
+    void *buf, size_t len,
+    struct sockaddr *addr, socklen_t addr_len)
+{
+  int n, ret;
+  __u32 n1, n2, new_head;
+  __u32 rx_len, rx_avail, rx_head;
+  __u8 *rx_buf;
+  struct equeue *q;
+  struct tcp_queue_bump_entry *qe;
+  struct tcp_queue_bump_cham_rx *bump;
+  struct tcp_socket_lib *sock;
+  struct sockaddr_in *sin = (struct sockaddr_in *) addr;
+
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  if (sock->state != TCP_LIB_STATE_ESTABLISHED &&
+      sock->state != TCP_LIB_STATE_CLOSING)
+  {
+    errno = ENOTCONN;
+    return -1;
+  }
+
+  if (addr != NULL && addr_len < sizeof(struct sockaddr_in))
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  rx_len = sock->rx_len;
+  rx_avail = sock->rx_avail;
+  rx_head = sock->rx_head;
+  rx_buf = sock->rx_buf;
+
+  n = len;
+  if ((__u32) n > rx_avail)
+    n = rx_avail;
+
+  if (n == 0)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  if (addr != NULL)
+  {
+    sin->sin_family = AF_INET;
+    sin->sin_addr.s_addr = htonl(sock->remote_ip);
+    sin->sin_port = htons(sock->remote_port);
+  }
+
+  q = ctx->app_fast_qs[sock->core];
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  bump = &qe->data.bump_cham_rx;
+  bump->sock_id = sock->sock_id;
+  bump->rx_head = n;
+
+  new_head = rx_head + n;
+  if (new_head >= rx_len)
+    new_head -= rx_len;
+
+  if (rx_head + n > rx_len)
+  {
+    n1 = rx_len - rx_head;
+    n2 = n - n1;
+    memcpy(buf, rx_buf + rx_head, n1);
+    memcpy((__u8 *) buf + n1, rx_buf, n2);
+  }
+  else
+  {
+    memcpy(buf, rx_buf + rx_head, n);
+  }
+
+  sock->rx_avail = rx_avail - n;
+  sock->rx_head = new_head;
+
+  ret = queue_enqueue(q, TCP_QUEUE_BUMP_CHAM_RX);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue bump");
+    errno = EAGAIN;
+    return -1;
+  }
+
+  return n;
+}
+
+int tcp_lib_shutdown(struct tcp_context_lib *ctx, int sockfd, int how)
+{
+  int ret;
+  struct equeue *q;
+  struct tcp_queue_entry *qe;
+  struct tcp_queue_shutdown_req *req;
+  struct tcp_socket_lib *sock;
+
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  if (how != SHUT_RDWR)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  if (sock->state != TCP_LIB_STATE_ESTABLISHED &&
+      sock->state != TCP_LIB_STATE_CLOSING)
+  {
+    errno = ENOTCONN;
+    return -1;
+  }
+
+  q = ctx->app_slow_q;
+  qe = queue_tail(q);
+  if (qe == NULL)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  req = &qe->data.shutdown_req;
+  req->sock_id = sock->sock_id;
+  req->how = how;
+  req->opaque = (__u64) sock;
+
+  ret = queue_enqueue(q, TCP_QUEUE_SHUTDOWN_REQ);
+  if (ret != 0)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  sock->state = TCP_LIB_STATE_CLOSING;
+  return 0;
+}
+
+int tcp_lib_close(struct tcp_context_lib *ctx, int sockfd)
+{
+  int ret;
+  struct equeue *q;
+  struct tcp_queue_entry *qe;
+  struct tcp_queue_close_req *req;
+  struct tcp_socket_lib *sock;
+
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  q = ctx->app_slow_q;
+  qe = queue_tail(q);
+  if (qe != NULL)
+  {
+    req = &qe->data.close_req;
+    req->sock_id = sock->sock_id;
+    req->opaque = (__u64) sock;
+    ret = queue_enqueue(q, TCP_QUEUE_CLOSE_REQ);
+    if (ret != 0)
+    {
+      errno = EAGAIN;
+      return -1;
+    }
+  }
+
+  sock->state = TCP_LIB_STATE_CLOSED;
+  sock->fd = SOCK_INACTIVE;
+  return 0;
+}
+
+int tcp_lib_poll_fast(struct tcp_context_lib *ctx)
+{
+  int i, n, ncores;
+  struct dqueue *q;
+  struct tcp_queue_bump_entry *qe;
+  struct dqueue **fast_app_qs;
+
+  n = 0;
+  ncores = ctx->ncores;
+  fast_app_qs = ctx->fast_app_qs;
+  for (i = 0; i < ncores && n < LIB_BATCH_SIZE; i++)
+  {
+    q = fast_app_qs[i];
+    while (n < LIB_BATCH_SIZE && (qe = queue_head(q)) != NULL)
+    {
+      __u32 next_head = q->head + q->elsize;
+      if (next_head >= (q->elsize * q->nelems))
+        next_head = 0;
+      utils_prefetch0((__u8 *) q->entries + next_head);
+
+      n++;
+      switch (qe->type)
+      {
+        case TCP_QUEUE_BUMP_APP_TX:
+          handle_tx_bump(qe);
+          break;
+        case TCP_QUEUE_BUMP_APP_RX:
+          handle_rx_bump(qe);
+          break;
+        default:
+          LOG_ERROR("unknown queue entry type from fast-path to app type=%d",
+              qe->type);
+          abort();
+      }
+
+      queue_dequeue(q);
+    }
+  }
+
+  return n;
+}
+
+int tcp_lib_poll_slow(struct tcp_context_lib *ctx)
+{
+  int n;
+  struct dqueue *q;
+  struct tcp_queue_entry *qe;
+
+  n = 0;
+  q = ctx->slow_app_q;
+  while (n < LIB_BATCH_SIZE)
+  {
+    qe = queue_head(q);
+    if (qe == NULL)
+      return -1;
+
+    n++;
+    switch (qe->type)
+    {
+      case TCP_QUEUE_NEW_SOCK_RES:
+        handle_new_sock_res(qe);
+        break;
+      case TCP_QUEUE_BIND_RES:
+        handle_bind_res(qe);
+        break;
+      case TCP_QUEUE_SETOPT_RES:
+        handle_setopt_res(qe);
+        break;
+      case TCP_QUEUE_CONNECT_RES:
+        handle_connect_res(qe);
+        break;
+      case TCP_QUEUE_LISTEN_RES:
+        handle_listen_res(qe);
+        break;
+      case TCP_QUEUE_LISTEN_NEWCONN:
+        handle_listen_newconn(qe);
+        break;
+      case TCP_QUEUE_ACCEPT_RES:
+        handle_accept_res(qe);
+        break;
+      default:
+        LOG_ERROR("unknown queue entry type from slow-path to app type=%d",
+            qe->type);
+        abort();
+    }
+    queue_dequeue(q);
+  }
+
+  return n;
+}
+
+static int handle_new_sock_res(struct tcp_queue_entry *qe)
+{
+  struct tcp_queue_new_sock_res *res;
+  struct tcp_socket_lib *sock;
+
+  res = &qe->data.new_sock_res;
+  sock = (struct tcp_socket_lib *) res->opaque;
+  sock->core = res->core;
+  sock->sock_id = res->sock_id;
+  sock->rx_qid = res->rx_qid;
+  sock->rx_len = res->rx_len;
+  sock->rx_buf = tcp->shm_base + res->rx_off;
+  sock->tx_qid = res->tx_qid;
+  sock->tx_len = res->tx_len;
+  sock->tx_buf = tcp->shm_base + res->tx_off;
+
+  return 0;
+}
+
+static int handle_bind_res(struct tcp_queue_entry *qe)
+{
+  struct tcp_queue_bind_res *res;
+  struct tcp_socket_lib *sock;
+
+  res = &qe->data.bind_res;
+  sock = (struct tcp_socket_lib *) res->opaque;
+  sock->bind_success = res->success;
+  return 0;
+}
+
+static int handle_setopt_res(struct tcp_queue_entry *qe)
+{
+  struct tcp_queue_setopt_res *res;
+  struct tcp_socket_lib *sock;
+
+  res = &qe->data.setopt_res;
+  sock = (struct tcp_socket_lib *) res->opaque;
+  sock->setopt_success = res->success;
+  return 0;
+}
+
+static int handle_connect_res(struct tcp_queue_entry *qe)
+{
+  struct tcp_queue_connect_res *res;
+  struct tcp_socket_lib *sock;
+
+  res = &qe->data.connect_res;
+  sock = (struct tcp_socket_lib *) res->opaque;
+  if (sock->state == TCP_LIB_STATE_CLOSED || sock->fd == SOCK_INACTIVE)
+    return 0;
+
+  sock->op_status = res->status;
+  if (res->status == 0)
+  {
+    sock->local_ip = res->local_ip;
+    sock->local_port = res->local_port;
+    sock->remote_ip = res->remote_ip;
+    sock->remote_port = res->remote_port;
+    sock->state = TCP_LIB_STATE_ESTABLISHED;
+  }
+  else if (sock->local_port != 0)
+  {
+    sock->state = TCP_LIB_STATE_BOUND;
+  }
+  else
+  {
+    sock->state = TCP_LIB_STATE_INIT;
+  }
+
+  return 0;
+}
+
+static int handle_listen_res(struct tcp_queue_entry *qe)
+{
+  struct tcp_queue_listen_res *res;
+  struct tcp_socket_lib *sock;
+
+  res = &qe->data.listen_res;
+  sock = (struct tcp_socket_lib *) res->opaque;
+  if (sock->state == TCP_LIB_STATE_CLOSED || sock->fd == SOCK_INACTIVE)
+    return 0;
+
+  sock->op_status = res->status;
+  if (res->status == 0)
+    sock->state = TCP_LIB_STATE_LISTEN;
+  else if (sock->local_port != 0)
+    sock->state = TCP_LIB_STATE_BOUND;
+  else
+    sock->state = TCP_LIB_STATE_INIT;
+
+  return 0;
+}
+
+static int handle_listen_newconn(struct tcp_queue_entry *qe)
+{
+  struct tcp_queue_listen_newconn *res;
+  struct tcp_socket_lib *sock;
+
+  res = &qe->data.listen_newconn;
+  sock = (struct tcp_socket_lib *) res->opaque;
+  if (sock->state != TCP_LIB_STATE_LISTEN)
+    return 0;
+
+  sock->pending_conn++;
+  return 0;
+}
+
+static int handle_accept_res(struct tcp_queue_entry *qe)
+{
+  struct tcp_queue_accept_res *res;
+  struct tcp_socket_lib *listen_sock;
+  struct tcp_socket_lib *sock;
+
+  res = &qe->data.accept_res;
+  sock = (struct tcp_socket_lib *) res->opaque;
+  if (sock->fd == SOCK_INACTIVE && sock->state == TCP_LIB_STATE_CLOSED)
+    return 0;
+
+  listen_sock = (struct tcp_socket_lib *) res->listen_opaque;
+  if (listen_sock != NULL && listen_sock->pending_conn > 0)
+    listen_sock->pending_conn--;
+
+  sock->op_status = res->status;
+  if (res->status != 0)
+    return 0;
+
+  sock->core = res->core;
+  sock->sock_id = res->sock_id;
+  sock->rx_qid = res->rx_qid;
+  sock->rx_len = res->rx_len;
+  sock->rx_buf = tcp->shm_base + res->rx_off;
+  sock->tx_qid = res->tx_qid;
+  sock->tx_len = res->tx_len;
+  sock->tx_buf = tcp->shm_base + res->tx_off;
+  sock->local_ip = res->local_ip;
+  sock->local_port = res->local_port;
+  sock->remote_ip = res->remote_ip;
+  sock->remote_port = res->remote_port;
+  sock->state = TCP_LIB_STATE_ESTABLISHED;
+
+  return 0;
+}
+
+static int handle_tx_bump(struct tcp_queue_bump_entry *qe)
+{
+  __u32 new_head;
+  struct tcp_queue_bump_app_tx *bump;
+  struct tcp_socket_lib *sock;
+
+  bump = &qe->data.bump_app_tx;
+  sock = (struct tcp_socket_lib *) bump->opaque;
+
+  new_head = sock->tx_head + bump->tx_head;
+  if (new_head >= sock->tx_len)
+    new_head -= sock->tx_len;
+  sock->tx_head = new_head;
+  sock->tx_avail -= bump->tx_head;
+
+  return 0;
+}
+
+static int handle_rx_bump(struct tcp_queue_bump_entry *qe)
+{
+  struct tcp_queue_bump_app_rx *bump;
+  struct tcp_socket_lib *sock;
+
+  bump = &qe->data.bump_app_rx;
+  sock = (struct tcp_socket_lib *) bump->opaque;
+  utils_prefetch0(sock->rx_buf + sock->rx_head);
+  sock->rx_avail += bump->rx_avail;
+  sock->remote_port = bump->rx_port;
+  sock->remote_ip = bump->rx_ip;
+
+  return 0;
+}
+
+static struct tcp_socket_lib *lookup_sock(struct tcp_context_lib *ctx,
+    int sockfd)
+{
+  struct tcp_socket_lib *sock;
+
+  if (tcp == NULL)
+  {
+    errno = ENOTCONN;
+    return NULL;
+  }
+
+  if (ctx == NULL)
+  {
+    LOG_ERROR("passed NULL tcp_context_lib");
+    errno = EINVAL;
+    return NULL;
+  }
+
+  if (sockfd < 0 || sockfd >= MAX_SOCKETS)
+  {
+    errno = EBADF;
+    return NULL;
+  }
+
+  sock = &tcp->socks[sockfd];
+  if (sock->fd != sockfd || sock->ctx != ctx ||
+      sock->state == TCP_LIB_STATE_CLOSED)
+  {
+    errno = EBADF;
+    return NULL;
+  }
+
+  return sock;
+}
+
+static int validate_sockaddr_in(const struct sockaddr *addr,
+    socklen_t addrlen)
+{
+  if (addr == NULL || addrlen < sizeof(struct sockaddr_in))
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  if (addr->sa_family != AF_INET)
+  {
+    errno = EAFNOSUPPORT;
+    return -1;
+  }
+
+  return 0;
+}
+
+static int validate_nonblock_flags(int flags)
+{
+  if ((flags & ~SOCK_NONBLOCK) != 0)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  return 0;
+}
+
+static void fill_sockaddr(struct tcp_socket_lib *sock, struct sockaddr *addr,
+    socklen_t *addrlen)
+{
+  struct sockaddr_in *sin;
+
+  if (addr == NULL || addrlen == NULL)
+    return;
+
+  if (*addrlen < sizeof(struct sockaddr_in))
+    return;
+
+  sin = (struct sockaddr_in *) addr;
+  memset(sin, 0, sizeof(*sin));
+  sin->sin_family = AF_INET;
+  sin->sin_addr.s_addr = htonl(sock->remote_ip);
+  sin->sin_port = htons(sock->remote_port);
+  *addrlen = sizeof(*sin);
+}
+
+static struct tcp_socket_lib *alloc_lib_sock(struct tcp_context_lib *ctx)
+{
+  int fd;
+  struct tcp_socket_lib *sock;
+
+  fd = __sync_fetch_and_add(&tcp->next_sockfd, 1);
+  if (fd >= MAX_SOCKETS)
+  {
+    LOG_ERROR("exceeded max number of sockets");
+    errno = EMFILE;
+    return NULL;
+  }
+
+  sock = &tcp->socks[fd];
+  memset(sock, 0, sizeof(*sock));
+  sock->fd = fd;
+  sock->ctx = ctx;
+  sock->bind_success = -1;
+  sock->setopt_success = -1;
+  sock->op_status = TCP_LIB_STATUS_IDLE;
+  sock->state = TCP_LIB_STATE_INIT;
+
+  return sock;
+}

@@ -131,6 +131,7 @@ static inline void handle_new_guest(struct fast_context *ctx,
   sched_init(&g->proto.ebpf_ctx.sched);
   g->proto.ebpf_ctx.shm_base = g->shm_base;
   g->proto.ebpf_ctx.shm_end = g->shm_base + g->shm_len;
+  g->proto.ebpf_ctx.dqueues = g->proto.dqueues;
   g->proto.ebpf_ctx.nmaps = 0;
 
   ctx->n_guests++;
@@ -142,6 +143,7 @@ static inline void handle_new_queue(struct fast_context *ctx,
   struct guest_fast *g;
   struct proto_fast *p;
   struct cham_equeue *q;
+  struct cham_dqueue *dq;
   
   struct queue_new_queue_req *req = &qe->data.new_queue_req;
 
@@ -151,6 +153,17 @@ static inline void handle_new_queue(struct fast_context *ctx,
   q->id = req->qid;
 
   equeue_init(&q->eq, req->nelems, req->elsize, g->shm_base + req->off, req->off);
+
+  dq = &p->dqueues[req->qid];
+  dq->id = req->qid;
+  dq->dq.head = 0;
+  dq->dq.nelems = req->nelems;
+  dq->dq.elsize = req->elsize;
+  dq->dq.off = req->off;
+  dq->dq.entries = g->shm_base + req->off;
+  dq->next = PROTOQ_ID_INVALID;
+  dq->prev = PROTOQ_ID_INVALID;
+
   LOG_DEBUG("created queue qid=%d in fast-path", req->qid);
 }
 

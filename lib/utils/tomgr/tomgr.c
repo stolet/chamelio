@@ -10,9 +10,11 @@ static inline void swap(struct tomgr *mgr,
     struct to_heap_entry *a, struct to_heap_entry *b);
 static inline void heapify_down(struct tomgr *mgr, int idx);
 static inline void heapify_up(struct tomgr *mgr, int idx);
+static inline int find_free_entry(struct tomgr *mgr);
 
 struct tomgr *tomgr_init()
 {
+  int i;
   struct tomgr *mgr;
 
   mgr = malloc(sizeof(struct tomgr));
@@ -20,26 +22,33 @@ struct tomgr *tomgr_init()
     return NULL;
 
   mgr->size = 0;
+  for (i = 0; i < TOMGR_SIZE; i++)
+    mgr->entries[i].heap_idx = TO_INVALID;
   return mgr;
 }
 
 struct to_entry *tomgr_insert(struct tomgr *mgr, __u8 type, __u64 to, void *data)
 {
+  int idx;
   struct to_entry *entry;
 
   /* Heap is full */
   if (mgr->size >= TOMGR_SIZE)
     return NULL;
 
+  idx = find_free_entry(mgr);
+  if (idx < 0)
+    return NULL;
+
   /* Add new entry to the entries array */
-  entry = &mgr->entries[mgr->size];
+  entry = &mgr->entries[idx];
   entry->type = type;
   entry->to = to;
   entry->data = data;
   entry->heap_idx = mgr->size; /* Set heap index */
 
   /* Add index to the heap */
-  mgr->heap[mgr->size].idx = mgr->size;
+  mgr->heap[mgr->size].idx = idx;
   mgr->heap[mgr->size].to = to;
   mgr->size++;
 
@@ -71,7 +80,18 @@ int tomgr_cancel(struct tomgr *mgr, struct to_entry *e)
   mgr->size--;
 
   /* Restore heap property */
-  heapify_down(mgr, heap_idx);
+  if (heap_idx < mgr->size)
+  {
+    if (heap_idx > 0 &&
+        mgr->heap[PARENT(heap_idx)].to > mgr->heap[heap_idx].to)
+    {
+      heapify_up(mgr, heap_idx);
+    }
+    else
+    {
+      heapify_down(mgr, heap_idx);
+    }
+  }
   return 0;
 }
 
@@ -145,4 +165,17 @@ static inline void heapify_up(struct tomgr *mgr, int idx)
     swap(mgr, &mgr->heap[idx], &mgr->heap[PARENT(idx)]);
     idx = PARENT(idx);
   }
+}
+
+static inline int find_free_entry(struct tomgr *mgr)
+{
+  int i;
+
+  for (i = 0; i < TOMGR_SIZE; i++)
+  {
+    if (mgr->entries[i].heap_idx == TO_INVALID)
+      return i;
+  }
+
+  return -1;
 }

@@ -1,7 +1,9 @@
 subdir('udp')
+subdir('tcp')
 
 deps = [
   dependency('udp_dep'),
+  dependency('tcp_dep'),
 ]
 
 protos_dep = declare_dependency(

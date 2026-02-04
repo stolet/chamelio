@@ -40,6 +40,7 @@ static inline __u16 ebpf_ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr);
 static inline void *ebpf_map_get(void *map_base, __u32 len);
 static inline void *ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize);
 static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize);
+static inline void *ebpf_queue_head(struct dqueue *q, __u64 elsize);
 
 enum ebpf_helper_id
 {
@@ -54,6 +55,8 @@ enum ebpf_helper_id
   EBPF_HELPER_SCHED_ADD = 1009,
   EBPF_HELPER_MAP_GET = 1010,
   EBPF_HELPER_MAP_LOOKUP = 1011,
+  EBPF_HELPER_QUEUE_HEAD = 1012,
+  EBPF_HELPER_QUEUE_DEQUEUE = 1013,
 };
 
 struct ebpf_helper_desc
@@ -93,6 +96,10 @@ static const struct ebpf_helper_desc ebpf_helpers[] = {
       "ebpf_map_get", ebpf_map_get },
   { EBPF_HELPER_MAP_LOOKUP, 
       "ebpf_map_lookup", ebpf_map_lookup },
+  { EBPF_HELPER_QUEUE_HEAD,
+      "ebpf_queue_head", ebpf_queue_head },
+  { EBPF_HELPER_QUEUE_DEQUEUE,
+      "queue_dequeue", queue_dequeue },
 };
 
 int control_ebpf_init(struct control_context *ctx)
@@ -402,4 +409,10 @@ static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize)
 {
   (void)elsize;
   return queue_tail(q);
+}
+
+static inline void *ebpf_queue_head(struct dqueue *q, __u64 elsize)
+{
+  (void)elsize;
+  return queue_head(q);
 }

@@ -4,7 +4,7 @@
 #include <linux/types.h>
 
 /* Max number of entries in timeout manager */
-#define TOMGR_SIZE 64
+#define TOMGR_SIZE 1024
 #define TO_INVALID TOMGR_SIZE
 
 enum to_type {

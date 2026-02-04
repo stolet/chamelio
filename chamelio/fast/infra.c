@@ -75,6 +75,8 @@ int infra_tx(struct fast_context *ctx,
   }
   else
   {
+    struct ip_hdr *ip;
+
     ip = (struct ip_hdr *) (pkt + sizeof(struct eth_hdr));
     outer_remote_ip = f_beui32(ip->dst);
   }
@@ -97,11 +99,24 @@ int infra_tx(struct fast_context *ctx,
     mb->l3_len = sizeof(struct ip_hdr);
     mb->l4_len = sizeof(struct udp_hdr);
 
-    mb->ol_flags = RTE_MBUF_F_TX_IPV4 |
-        RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_UDP_CKSUM;
-    ip->chksum = 0;
-    udp->chksum = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *) ip,
-        mb->ol_flags);
+    ip = (struct ip_hdr *) (pkt + sizeof(struct eth_hdr));
+    mb->pkt_len = mb->data_len = pkt_len + sizeof(struct eth_hdr);
+    
+    /* TODO: Deal with the offloads in the protocol code */
+    if (ip->proto == IP_PROTO_TCP)
+    {
+      mb->ol_flags = 0;
+      mb->ol_flags = RTE_MBUF_F_TX_IPV4 |
+          RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_TCP_CKSUM;
+    }
+    else
+    {
+      mb->ol_flags |= RTE_MBUF_F_TX_IPV4 |
+          RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_UDP_CKSUM;
+      ip->chksum = 0;
+      udp->chksum = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *) ip,
+          mb->ol_flags);
+    }
   }
 
   return 0;
