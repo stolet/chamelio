@@ -15,10 +15,11 @@
 #include "queue_types.h"
 #include "infra.h"
 #include "ebpf.h"
+#include "log.h"
 
 static inline int queues_poll_guest(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf **mbs, int max,
-    int *ntx, int *ndeq);
+    int *ntx, int *ndeq, int charge_budget);
 static inline int queues_poll_guest_comb(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf **mbs, int max,
     int *ntx, int *ndeq);
@@ -34,6 +35,7 @@ int fast_queues_poll(struct fast_context *ctx)
   struct guest_fast *g;
   struct rte_mbuf **mbs;
   const int use_comb = ctx->fp_jit_combined;
+  const int charge_budget = ctx->perf_iso;
 
   max = FAST_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
@@ -63,7 +65,7 @@ int fast_queues_poll(struct fast_context *ctx)
     if (use_comb)
       ret = queues_poll_guest_comb(ctx, g, mbs, max, &ntx, &ndeq);
     else
-      ret = queues_poll_guest(ctx, g, mbs, max, &ntx, &ndeq);
+      ret = queues_poll_guest(ctx, g, mbs, max, &ntx, &ndeq, charge_budget);
 
     if (ret != 0)
     {
@@ -80,24 +82,25 @@ int fast_queues_poll(struct fast_context *ctx)
 
 static inline int queues_poll_guest(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf **mbs, int max,
-    int *ntx, int *ndeq)
+    int *ntx, int *ndeq, int charge_budget)
 {
   int j;
   int ret;
   int last_queue_empty;
   struct cham_dqueue *qcur;
   struct queue_entry *qe;
-  __u64 tsc_start, tsc_spent;
+  __u64 tsc_start = 0, tsc_spent;
 
   /* Continue if there are no activated queues for this protocol */
   if (g->proto.dqueues_head == PROTOQ_ID_INVALID)
     return 0;
 
   /* Continue if this guest is out of budget */
-  if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+  if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
     return 0;
 
-  tsc_start = clock_rdtsc();
+  if (charge_budget)
+    tsc_start = clock_rdtsc();
   last_queue_empty = 1;
   for (j = 0; j < g->proto.ndqueues; j++)
   {
@@ -128,8 +131,11 @@ static inline int queues_poll_guest(struct fast_context *ctx,
   }
 
   /* Subtract from guest's budget */
-  tsc_spent = clock_rdtsc() - tsc_start;
-  __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+  if (charge_budget)
+  {
+    tsc_spent = clock_rdtsc() - tsc_start;
+    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+  }
 
   return 0;
 }

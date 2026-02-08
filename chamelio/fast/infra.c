@@ -13,6 +13,7 @@
 #include "arp_hdr.h"
 #include "queue_types.h"
 #include "queue_fns.h"
+#include "log.h"
 
 static inline int process_rx_arp(struct fast_context *ctx, struct arp_pkt *pkt);
 static inline struct guest_fast * process_rx_ip(struct fast_context *ctx,

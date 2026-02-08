@@ -4,6 +4,7 @@
 #include "scheduler_fns.h"
 #include "arp_hdr.h"
 #include "txcache.h"
+#include "log.h"
 
 static inline void handle_new_guest(struct fast_context *ctx, 
     struct queue_entry *qe);

@@ -13,17 +13,18 @@
 #include "txcache.h"
 
 static inline void rx_poll_guest(struct guest_fast *g,
-    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start);
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget);
 static inline void rx_poll_guest_comb(struct guest_fast *g,
-    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start);
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget);
 
 int fast_rx_poll(struct fast_context *ctx)
 {
   int i, n;
   struct rte_mbuf *mbs[FAST_BATCH_SIZE];
   struct guest_fast *g;
-  __u64 tsc_start, pkt_off;
+  __u64 tsc_start = 0, pkt_off;
   const int use_comb = ctx->fp_jit_combined;
+  const int charge_budget = ctx->perf_iso;
 
   n = FAST_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < n)
@@ -50,19 +51,21 @@ int fast_rx_poll(struct fast_context *ctx)
     }
 
     /* Process infrastructure protocols */
-    tsc_start = clock_rdtsc();
+    if (charge_budget)
+      tsc_start = clock_rdtsc();
+
     g = infra_rx(ctx, mbs[i], &pkt_off);
     if (g == NULL)
       continue;
 
     /* Drop if this guest is out of budget */
-    if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+    if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
       continue;
 
     if (use_comb)
-      rx_poll_guest_comb(g, mbs[i], pkt_off, tsc_start);
+      rx_poll_guest_comb(g, mbs[i], pkt_off, tsc_start, charge_budget);
     else
-      rx_poll_guest(g, mbs[i], pkt_off, tsc_start);
+      rx_poll_guest(g, mbs[i], pkt_off, tsc_start, charge_budget);
   }
 
   /* Reuse mbufs in txcache */
@@ -73,7 +76,7 @@ int fast_rx_poll(struct fast_context *ctx)
 }
 
 static inline void rx_poll_guest(struct guest_fast *g,
-    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start)
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget)
 {
   int ret;
   __u64 tsc_spent;
@@ -82,12 +85,15 @@ static inline void rx_poll_guest(struct guest_fast *g,
   ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx,
       sizeof(struct cham_ebpf_ctx), &ret);
 
-  tsc_spent = clock_rdtsc() - tsc_start;
-  __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+  if (charge_budget)
+  {
+    tsc_spent = clock_rdtsc() - tsc_start;
+    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+  }
 }
 
 static inline void rx_poll_guest_comb(struct guest_fast *g,
-    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start)
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget)
 {
   int ret;
   __u64 tsc_spent;
@@ -99,7 +105,7 @@ static inline void rx_poll_guest_comb(struct guest_fast *g,
 
   ebpf_vm_exec(g->proto.event_rx_vm, &jit_ctx, sizeof(jit_ctx), &ret);
 
-  if (ret > 0)
+  if (charge_budget && ret > 0)
   {
     tsc_spent = clock_rdtsc() - tsc_start;
     __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);

@@ -70,6 +70,8 @@ struct fast_context {
   __u8 fp_jit_combined;
   /* Encapsulate packets with GRE */
   __u8 virt_gre;
+  /* Enable per-packet budget accounting in fast-path */
+  __u8 perf_iso;
   
   /* Number of guests registered so far in this fast-path */
   __u8 n_guests;

@@ -12,6 +12,7 @@
 #include "udp.h"
 #include "clock.h"
 #include "queue_fns.h"
+#include "scheduler_fns.h"
 
 static inline void dqueue_rotate_head(struct guest_fast *g,
     struct cham_dqueue *qcur);
@@ -44,13 +45,15 @@ uint64_t fast_comb_deq(struct fast_comb_deq_ctx *ctx, size_t mem_len)
   struct rte_mbuf *mb;
   struct cham_dqueue *qcur;
   struct queue_entry *qe;
-  __u64 tsc_start, tsc_spent;
+  __u64 tsc_start = 0, tsc_spent;
+  const int charge_budget = f_ctx->perf_iso;
 
   /* Continue if this guest is out of budget */
-  if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+  if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
     return 0;
 
-  tsc_start = clock_rdtsc();
+  if (charge_budget)
+    tsc_start = clock_rdtsc();
   last_queue_empty = 1;
   for (j = 0; j < g->proto.ndqueues; j++)
   {
@@ -101,8 +104,11 @@ uint64_t fast_comb_deq(struct fast_comb_deq_ctx *ctx, size_t mem_len)
   }
 
   /* Subtract from guest's budget */
-  tsc_spent = clock_rdtsc() - tsc_start;
-  __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+  if (charge_budget)
+  {
+    tsc_spent = clock_rdtsc() - tsc_start;
+    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+  }
 
   return 0;
 }
@@ -117,19 +123,24 @@ uint64_t fast_comb_tx(struct fast_comb_tx_ctx *ctx, size_t mem_len)
   struct guest_fast *g = ctx->g;
   struct rte_mbuf *mb;
   struct rte_mbuf **mbs;
-  __u64 tsc_start, tsc_spent;
+  __u64 tsc_start = 0, tsc_spent;
+  const int charge_budget = f_ctx->perf_iso;
 
   if (g->proto.event_tx_vm == NULL)
     return 0;
 
-  if (__atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+  if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
+    return 0;
+
+  if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
     return 0;
 
   mbs = ctx->mbs;
   max = ctx->max;
   ntx = *ctx->ntx;
 
-  tsc_start = clock_rdtsc();
+  if (charge_budget)
+    tsc_start = clock_rdtsc();
   tx_ret = 0;
   while (ntx < max)
   {
@@ -152,8 +163,11 @@ uint64_t fast_comb_tx(struct fast_comb_tx_ctx *ctx, size_t mem_len)
     }
   }
 
-  tsc_spent = clock_rdtsc() - tsc_start;
-  __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+  if (charge_budget)
+  {
+    tsc_spent = clock_rdtsc() - tsc_start;
+    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+  }
   *ctx->ntx = ntx;
 
   if (tx_ret < 0)

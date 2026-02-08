@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 
 #include <rte_malloc.h>
@@ -32,6 +33,7 @@ int fast_context_init(struct fast_context *f_ctx,
   f_ctx->config = config;
   f_ctx->fp_jit_combined = config->fp_jit_combined;
   f_ctx->virt_gre = config->virt_gre;
+  f_ctx->perf_iso = config->perf_iso;
   f_ctx->shm_fd_internal = shm_fd_internal;
   f_ctx->shm_base_internal= shm_base_internal;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
@@ -130,7 +132,7 @@ int fast_loop(struct fast_context *ctx)
 
 int fast_txflush(struct fast_context *ctx)
 {
-  int i, ret;
+  int ret, unsent;
 
   if (ctx->tx_n == 0)
     return 0;
@@ -146,10 +148,9 @@ int fast_txflush(struct fast_context *ctx)
   else if (ret > 0)
   {
     /* Move unsent packets to front */
-    for (i = ret; i < ctx->tx_n; i++)
-      ctx->tx_mbs[i - ret] = ctx->tx_mbs[i];
-
-    ctx->tx_n -= ret;
+    unsent = ctx->tx_n - ret;
+    memmove(ctx->tx_mbs, ctx->tx_mbs + ret, unsent * sizeof(ctx->tx_mbs[0]));
+    ctx->tx_n = unsent;
   }
 
   return ret;

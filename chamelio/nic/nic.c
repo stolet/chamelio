@@ -37,7 +37,8 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   port_conf->txmode.offloads = 0;
 
   /* Setup interrupt configuration */
-  port_conf->intr_conf.rxq = 1;
+  /* Datapath is poll-mode, so keep RX queue interrupts disabled. */
+  port_conf->intr_conf.rxq = 0;
 
   /* Get port id */
   RTE_ETH_FOREACH_DEV(p) {

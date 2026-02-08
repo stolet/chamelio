@@ -8,7 +8,6 @@
 
 #include "config.h"
 #include "nic.h"
-#include "log.h"
 
 /* NIC context in the fast-path */
 struct nic_fast_context {
@@ -56,14 +55,6 @@ static inline int nic_fast_tx(struct nic_fast_context *ctx,
   queue_id = ctx->queue_id;
 
   sent = rte_eth_tx_burst(port_id, queue_id, mbs, num);
-  
-  /* TODO: Deal with the case where we don't send everything 
-  (queue is full) gracefully */
-  if (sent == 0)
-  {
-    LOG_ERROR("We didn't send everything for some reason");
-    abort();
-  }
 
   return sent;
 }
