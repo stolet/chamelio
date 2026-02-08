@@ -120,7 +120,7 @@ struct control_context {
   /* Next guest to poll */
   __u16 next_guest;
   /* Guests that have registered with chamelio */
-  struct guest_control *guests;
+  struct guest_control guests[CHAMELIO_MAX_GUESTS];
 
 /* Read-only after being initialized */
   /* Network virtualization table indexed by GRE key and inner IP */

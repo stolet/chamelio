@@ -25,7 +25,6 @@ enum cfg_params {
   CP_CONTROL_TXQ_PKT_LEN,
   CP_IP_ADDR,
   CP_IP_ROUTE,
-  CP_MAX_GUESTS,
   CP_FP_CORES_MAX,
   CP_FP_NO_XSUMOFFLOAD,
   CP_FP_JITCOMB,
@@ -76,9 +75,6 @@ static struct option opts[] = {
   { .name = "ip-route",
     .has_arg = required_argument,
     .val = CP_IP_ROUTE },
-  { .name = "max-guests",
-    .has_arg = required_argument,
-    .val = CP_MAX_GUESTS },
   { .name = "fp-cores-max",
     .has_arg = required_argument,
     .val = CP_FP_CORES_MAX },
@@ -106,6 +102,7 @@ static struct option opts[] = {
   { .name = "dpdk-extra",
     .has_arg = required_argument,
     .val = CP_DPDK_EXTRA },
+  { 0 },
 };
 
 static int config_defaults(struct configuration *c, char *progname);
@@ -215,12 +212,6 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
-      case CP_MAX_GUESTS:
-        if (parse_int32(optarg, &c->max_guests) != 0) {
-          LOG_ERROR("max guests parsing failed");
-          goto failed;
-        }
-        break;
       case CP_FP_CORES_MAX:
         if (parse_int32(optarg, &c->fp_cores_max) != 0) {
           LOG_ERROR("fp cores max parsing failed");
@@ -268,7 +259,8 @@ int config_parse(struct configuration *c, int argc, char **argv)
       case '?':
         goto failed;
       default:
-        abort();
+        LOG_ERROR("unknown option");
+        goto failed;
     }
   }
 
@@ -288,7 +280,6 @@ static int config_defaults(struct configuration *c, char *progname)
   c->control_txq_len = 1024;
   c->control_txq_pkt_len = 1500;
   c->ip = 0;
-  c->max_guests = 128;
   c->fp_cores_max = 1;
   c->fp_xsumoffloads = 1;
   c->fp_jit_combined = 0;
@@ -334,9 +325,6 @@ static void print_usage(struct configuration *c, char *progname)
       "IP protocol parameters:\n"
       "  --ip-route=DEST[/PREFIX],NEXTHOP        Add route\n"
       "  --ip-addr=ADDR[/PREFIXLEN]              Set local IP address\n"
-      "Max values:\n"
-      "  --max-guests=GUESTS                     Max number of guests\n"
-          "[default: %u]\n"
       "Fast path:\n"
       "  --fp-cores-max=CORES                    Max cores used for fast path"
            "[default: %u]\n"
@@ -369,7 +357,7 @@ static void print_usage(struct configuration *c, char *progname)
       c->shm_len, c->shm_internal_len,
       c->cham_queue_len, c->agt_queue_len, c->control_txq_len,
       c->control_txq_pkt_len,
-      c->max_guests, c->fp_cores_max, 
+      c->fp_cores_max,
       c->perf_iso_cap, c->perf_iso_boost, c->virt_path);
 }
 

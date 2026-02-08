@@ -74,7 +74,7 @@ struct fast_context {
   /* Number of guests registered so far in this fast-path */
   __u8 n_guests;
   /* List of guests registered so far in this fast-path */
-  struct guest_fast *guests;
+  struct guest_fast guests[CHAMELIO_MAX_GUESTS];
 
   /* Number of mbufs that are processed and ready to be transmitted */
   __u16 tx_n;

@@ -97,6 +97,13 @@ static inline void handle_new_guest(struct fast_context *ctx,
   struct guest_fast *g;
   struct queue_new_guest_req *req = &qe->data.new_guest_req;
 
+  if (req->id >= CHAMELIO_MAX_GUESTS)
+  {
+    LOG_ERROR("invalid guest id=%u (max=%u)",
+        (unsigned)req->id, (unsigned)CHAMELIO_MAX_GUESTS);
+    return;
+  }
+  
   g = &ctx->guests[req->id];
   g->id = req->id;
   g->budget = req->budget;

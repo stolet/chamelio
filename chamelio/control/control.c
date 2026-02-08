@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <linux/types.h>
 #include <assert.h>
+#include <string.h>
 
 #include "control.h"
 #include "tomgr.h"
@@ -28,7 +29,6 @@ int control_context_init(struct control_context *ctrl_ctx,
 {
   int i;
   struct tomgr *tomgr;
-  struct guest_control *guests;
   struct equeue *cfq, *txq;
   struct dqueue *fcq;
   struct dqueue **fast_ctl_qs;
@@ -129,15 +129,6 @@ int control_context_init(struct control_context *ctrl_ctx,
     ctrl_ctx->txqs[i] = txq;
   }
 
-  /* Allocate guests */
-  guests = calloc(config->max_guests, sizeof(struct guest_control));
-  if (guests == NULL)
-  {
-    LOG_ERROR("failed to allocate guest list");
-    goto free_control_txqs;
-  }
-  
-  ctrl_ctx->guests = guests;
   ctrl_ctx->n_guests = 0;
   ctrl_ctx->next_guest = 0;
   if (config->perf_iso)

@@ -2,8 +2,10 @@
 #define CONFIG_H_
 
 #include <linux/types.h>
+#include <limits.h>
 
 #define MAX_PATH 128
+#define CHAMELIO_MAX_GUESTS 4
 
 struct configuration {
   /*** SHM configurations ***/
@@ -27,10 +29,6 @@ struct configuration {
   __u8 ip_prefix;
   /* List of routes */
   struct config_route *routes;
-
-  /*** Max values ***/
-  /* Max number of guests supported */
-  __u32 max_guests;
 
   /*** Fast-path configurations ***/
   /* Enable checksum offload */

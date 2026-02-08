@@ -29,7 +29,7 @@ int fast_tx_poll(struct fast_context *ctx)
   const int use_comb = ctx->fp_jit_combined;
   
   /* Return if no guests have registered */
-  if (ctx->guests == NULL)
+  if (n_guests == 0)
     return 0;
 
   max = FAST_BATCH_SIZE;

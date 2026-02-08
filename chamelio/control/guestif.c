@@ -204,6 +204,14 @@ static inline int uxsocket_accept(struct control_context *ctx)
     return -1;
   }
 
+  if (ctx->n_guests >= CHAMELIO_MAX_GUESTS)
+  {
+    LOG_WARN("rejecting guest: max guest limit reached (%u)",
+        (unsigned)CHAMELIO_MAX_GUESTS);
+    close(cfd);
+    return -1;
+  }
+
   /* Create shared memory region */
   snprintf(shm_name, sizeof(shm_name), "%s_%d", 
       CHAMELIO_SHM_NAME, ctx->n_guests);

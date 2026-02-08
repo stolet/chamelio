@@ -27,7 +27,6 @@ int fast_context_init(struct fast_context *f_ctx,
   int i, j, ret;
   struct dqueue *cfq, *ctxq;
   struct equeue *fcq;
-  struct guest_fast *guests;
 
   f_ctx->id = thread_id;
   f_ctx->config = config;
@@ -68,17 +67,10 @@ int fast_context_init(struct fast_context *f_ctx,
   }
   f_ctx->ctl_txq = ctxq;
 
-  guests = rte_calloc("fast path guests", config->max_guests, 
-      sizeof(struct guest_fast), 0);
-  if (guests == NULL)
-  {
-    LOG_ERROR("failed to allocate guest list");
-    return -1;
-  }
-  f_ctx->guests = guests;
+  f_ctx->n_guests = 0;
 
   /* Set initial ID to invalid for each scheduler entry in guest */
-  for (i = 0; i < config->max_guests; i++)
+  for (i = 0; i < CHAMELIO_MAX_GUESTS; i++)
   {
     for (j = 0; j < MAX_SCHED_ENTRIES; j++)
     {
