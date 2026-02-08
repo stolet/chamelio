@@ -7,6 +7,7 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
 {
   int ret;
   __u16 n_ports, p;
+  __u64 requested_tx_offloads;
   
   __u8 port_id = 0;
   struct rte_eth_dev_info *dev_info;
@@ -32,7 +33,7 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   port_conf->rx_adv_conf.rss_conf.rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP;
 
   /* Setup transmit configuration */
-  port_conf->txmode.mq_mode = RTE_ETH_MQ_RX_RSS;
+  port_conf->txmode.mq_mode = RTE_ETH_MQ_TX_NONE;
   port_conf->txmode.offloads = 0;
 
   /* Setup interrupt configuration */
@@ -75,9 +76,19 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
     port_conf->rx_adv_conf.rss_conf.rss_hf &= dev_info->flow_type_rss_offloads;
   }
 
-  // port_conf->txmode.offloads = RTE_ETH_TX_OFFLOAD_IPV4_CKSUM;
-  // port_conf->txmode.offloads |= RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
-  // port_conf->txmode.offloads |= RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
+  requested_tx_offloads = RTE_ETH_TX_OFFLOAD_IPV4_CKSUM |
+      RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
+  port_conf->txmode.offloads = requested_tx_offloads &
+      dev_info->tx_offload_capa;
+
+  if (port_conf->txmode.offloads != requested_tx_offloads)
+  {
+    LOG_WARN("NIC doesn't support all requested TX checksum offloads "
+        "(requested=0x%llx supported=0x%llx enabled=0x%llx)",
+        (unsigned long long) requested_tx_offloads,
+        (unsigned long long) dev_info->tx_offload_capa,
+        (unsigned long long) port_conf->txmode.offloads);
+  }
 
   /* Initialize port */
   ret = rte_eth_dev_configure(port_id, config->fp_cores_max, 
@@ -90,10 +101,8 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   
   /* Set offloads to dev info*/
   dev_info->default_rxconf.offloads = 0;
-  dev_info->default_txconf.offloads = 0;
-  // dev_info->default_txconf.offloads = RTE_ETH_TX_OFFLOAD_IPV4_CKSUM;
-  // dev_info->default_txconf.offloads |= RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
-  // dev_info->default_txconf.offloads |= RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
+  dev_info->default_txconf.offloads = port_conf->txmode.offloads &
+      dev_info->tx_queue_offload_capa;
 
   return 0;
 }

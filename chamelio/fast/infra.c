@@ -1,11 +1,14 @@
 #include <stdlib.h>
 #include <linux/types.h>
 
+#include <rte_ip.h>
+
 #include "fast.h"
 #include "netvirt.h"
 #include "arp.h"
 #include "eth_hdr.h"
 #include "ip_hdr.h"
+#include "udp_hdr.h"
 #include "gre_hdr.h"
 #include "arp_hdr.h"
 #include "queue_types.h"
@@ -51,6 +54,7 @@ int infra_tx(struct fast_context *ctx,
   int ret;
   __u32 outer_remote_ip;
   struct ip_hdr *ip;
+  struct udp_hdr *udp;
   struct netvirt_entry *e;
   void *pkt;
   struct gre_pkt *gre_pkt;
@@ -84,9 +88,19 @@ int infra_tx(struct fast_context *ctx,
   }
   else
   {
+    ip = (struct ip_hdr *) (pkt + sizeof(struct eth_hdr));
+    udp = (struct udp_hdr *) ((__u8 *) ip + sizeof(struct ip_hdr));
+
     mb->pkt_len = mb->data_len = pkt_len + sizeof(struct eth_hdr);
-    mb->ol_flags |= RTE_MBUF_F_TX_IPV4 | 
+    mb->l2_len = sizeof(struct eth_hdr);
+    mb->l3_len = sizeof(struct ip_hdr);
+    mb->l4_len = sizeof(struct udp_hdr);
+
+    mb->ol_flags = RTE_MBUF_F_TX_IPV4 |
         RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_UDP_CKSUM;
+    ip->chksum = 0;
+    udp->chksum = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *) ip,
+        mb->ol_flags);
   }
 
   return 0;
