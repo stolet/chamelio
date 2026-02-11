@@ -421,17 +421,14 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
 
   /* Prefetch txbuf */
   utils_prefetch0(tx_buf + tail);
-
-  n = len;
-  if (n > tx_len - tx_avail)
-    n = tx_len - tx_avail;
   
-  /* No space available in tx buffer */
-  if (n == 0)
+  /* Not enough space available in buffer */
+  if (len > tx_len - tx_avail)
   {
     errno = EAGAIN;
     return -1;
   }
+  n = len;
 
   /* Send bump message to update TX available */
   q = ctx->app_fast_qs[sock->core];
