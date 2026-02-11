@@ -516,10 +516,7 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
     
   /* There is nothing available */
   if (n == 0)
-  {
-    errno = EAGAIN;
-    return -1;
-  }
+    return 0;
   
   if (addr != NULL)
   {
