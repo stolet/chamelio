@@ -7,6 +7,7 @@
 #include "fast_comb.h"
 #include "fast_ebpf.h"
 #include "ip_hdr.h"
+#include "udp_hdr.h"
 #include "gre_hdr.h"
 #include "udp.h"
 #include "txcache.h"
@@ -102,7 +103,7 @@ static inline int queues_poll_guest(struct fast_context *ctx,
   if (charge_budget)
     tsc_start = clock_rdtsc();
   last_queue_empty = 1;
-  for (j = 0; j < g->proto.ndqueues; j++)
+  for (j = 0; j < g->proto.ndqueues && *ndeq < max; j++)
   {
     qcur = &g->proto.dqueues[g->proto.dqueues_head];
     qe = queue_head(&qcur->dq);
@@ -155,6 +156,7 @@ static inline void queues_poll_guest_dequeue(struct fast_context *ctx,
   g->proto.ebpf_ctx.qe = qe;
   g->proto.ebpf_ctx.qid = qcur->id;
 
+
   /* Execute custom dequeue procedure */
   ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx,
       sizeof(struct cham_ebpf_ctx), &deq_ret);
@@ -194,7 +196,8 @@ static inline int queues_poll_guest_comb(struct fast_context *ctx,
   if (g->proto.dqueues_head == PROTOQ_ID_INVALID)
     return 0;
 
-  ebpf_vm_exec(g->proto.event_deq_vm, &jit_ctx, sizeof(jit_ctx), &deq_ret);
+  ebpf_vm_exec(g->proto.event_deq_vm,
+      &jit_ctx, sizeof(jit_ctx), &deq_ret);
 
   if (deq_ret < 0)
     return -1;

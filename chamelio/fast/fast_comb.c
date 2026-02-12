@@ -55,7 +55,7 @@ uint64_t fast_comb_deq(struct fast_comb_deq_ctx *ctx, size_t mem_len)
   if (charge_budget)
     tsc_start = clock_rdtsc();
   last_queue_empty = 1;
-  for (j = 0; j < g->proto.ndqueues; j++)
+  for (j = 0; j < g->proto.ndqueues && *ctx->ndeq < ctx->max; j++)
   {
     qcur = &g->proto.dqueues[g->proto.dqueues_head];
     qe = queue_head(&qcur->dq);
