@@ -207,7 +207,7 @@ struct udp_context_lib * udp_ctx_new()
   ctx->app_fast_qs = eq_list;
 
   dq_list = malloc(sizeof(struct dqueue *) * res->n_fp_cores);
-  if (dq == NULL)
+  if (dq_list == NULL)
   {
     LOG_ERROR("failed to allcoate list for queues fast->app");
     return NULL;
