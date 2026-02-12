@@ -265,7 +265,7 @@ struct queue_arp_rx_rep {
   __u32 tpa;
   /* Local MAC address */
   __u64 tha;
-};
+} __attribute__((packed));
 
 /* Message sent to fast indicating an ARP request should be transmitted */
 struct queue_arp_tx_req {
