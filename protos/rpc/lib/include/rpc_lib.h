@@ -15,11 +15,11 @@
 /* Invalid server ID */
 #define INVALID_ID -1
 
-enum rpc_entity_type
-{
-  RPC_ENTITY_CLIENT = 1,
-  RPC_ENTITY_WORKER = 2,
-};
+// enum rpc_entity_type
+// {
+//   RPC_ENTITY_CLIENT = 1,
+//   RPC_ENTITY_WORKER = 2,
+// };
 
 struct rpc_context_lib
 {
@@ -40,8 +40,8 @@ struct rpc_context_lib
 /* Worker that handles RPC requests */
 struct rpc_worker_lib
 { 
-  /* Type field (= Worker) */
-  __u8 type;
+  // /* Type field (= Worker) */
+  // __u8 type;
 
   // TBC: why have the ctx for the worker? Is it needed?
   /* Context that created this worker */
@@ -87,8 +87,8 @@ struct rpc_worker_lib
 /* RPC client that makes calls */
 struct rpc_client_lib
 { 
-  /* Type field (= Client) */
-  __u8 type;
+  // /* Type field (= Client) */
+  // __u8 type;
   /* Context that created this client */
   struct rpc_context_lib *ctx;
   /* Fast-path core of this client */

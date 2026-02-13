@@ -283,6 +283,8 @@ struct rpc_queue_bump_cham_tx
   __u32 tx_ip;
   /* Bump for TX available */
   __u32 tx_avail;
+  /* Type: request or response */
+  __u8 type;
 } __attribute__((packed));
 
 /* Message that bumps the Chamelio RX head */
@@ -292,6 +294,8 @@ struct rpc_queue_bump_cham_rx
   __u32 sock_id;
   /* Bump for RX head */
   __u32 rx_head;
+  /* Type: request or response */
+  __u8 type;
 } __attribute__((packed));
 
 /* Message that bumps the app TX head */
@@ -301,6 +305,8 @@ struct rpc_queue_bump_app_tx
   __u64 opaque;
   /* Bump for TX head */
   __u32 tx_head;
+  /* Type: request or response */
+  __u8 type;
 } __attribute__((packed));
 
 /* Message that bumps the app RX available */
@@ -314,6 +320,8 @@ struct rpc_queue_bump_app_rx
   __u32 rx_ip;
   /* Bump for RX available */
   __u32 rx_avail;
+  /* Type: request or response */
+  __u8 type;
 } __attribute__((packed));
 
 struct rpc_queue_entry
