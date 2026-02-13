@@ -211,7 +211,7 @@ struct rpc_context_lib *rpc_ctx_new()
   ctx->app_fast_qs = eq_list;
 
   dq_list = malloc(sizeof(struct dqueue *) * res->n_fp_cores);
-  if (dq == NULL)
+  if (dq_list == NULL)
   {
     LOG_ERROR("failed to allcoate list for queues fast->app");
     return NULL;
@@ -356,7 +356,7 @@ struct rpc_client_lib *rpc_new_client(struct rpc_context_lib *ctx, __u32 ip, __u
   client->ctx = ctx;
   // client->client_id = id;
   client->bind_success = -1;
-  client->type = RPC_ENTITY_CLIENT;
+  // client->type = RPC_ENTITY_CLIENT;
 
   eq = ctx->app_slow_q;
   qe = queue_tail(eq);
@@ -467,7 +467,7 @@ struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s)
   memset(worker, 0, sizeof(struct rpc_worker_lib));
   worker->ctx = s->ctx;
   worker->server = s;
-  worker->type = RPC_ENTITY_WORKER;
+  // worker->type = RPC_ENTITY_WORKER;
 
   eq = s->ctx->app_slow_q;
   qe = queue_tail(eq);
@@ -492,7 +492,7 @@ struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s)
 
   return worker;
 }
-
+//TODO: check if the service registration makes sense
 int rpc_register(struct rpc_server_lib *server, __u8 service)
 { 
   struct equeue *eq;
@@ -512,7 +512,7 @@ int rpc_register(struct rpc_server_lib *server, __u8 service)
 
   for (int i = 0; i < server->nservices; i++) {
     if (server->services[i] == service) {
-      LOG_WARN("service %u already registered", service);
+      LOG_ERROR("service %u already registered", service);
       return -1;
     }
   }
@@ -529,6 +529,7 @@ int rpc_register(struct rpc_server_lib *server, __u8 service)
       LOG_ERROR("failed to reallocate services array");
       return -1;
     }
+    server->services = new_services;
   }
   
   eq = server->ctx->app_slow_q;
@@ -567,7 +568,7 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   struct equeue *eq;
   struct rpc_queue_bump_entry *qe;
   struct rpc_queue_bump_cham_tx *bump;
-  struct rpc_hdr *hdr;
+  struct rpc_hdr hdr;
   __u32 tail, n1, n2;
   
   if (!c) {
@@ -586,18 +587,12 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   n = len + sizeof(struct rpc_hdr);
   if (n > c->tx_len - c->tx_avail) return -1;
     // n = c->tx_len - c->tx_avail;
-    
-  // //no space in the TX buffer
-  // if (n == 0) 
-  // {
-  //   errno = EAGAIN;
-  //   return -1;
-  // }
   
   // rpc header is set 
-  hdr->service.x = htons(service);
-  hdr->len.x = htons(sizeof(struct rpc_hdr) + len);
-  hdr->rid.x = htonl(__sync_fetch_and_add(&rpc->next_rid, 1));
+  hdr.service.x = htons(service);
+  hdr.len.x = htons(n);
+  hdr.rid.x = htonl(__sync_fetch_and_add(&rpc->next_rid, 1));
+  hdr.type = 0; //request
   
   //tail pos. of tx ring
   tail = c->tx_head + c->tx_avail; 
@@ -608,12 +603,12 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   if (tail + sizeof(struct rpc_hdr) > c->tx_len) {
     n1 = c->tx_len - tail;
     n2 = sizeof(struct rpc_hdr) - n1;
-    memcpy(c->tx_buf + tail, hdr, n1);
-    memcpy(c->tx_buf, (__u8 *)hdr + n1, n2);
+    memcpy(c->tx_buf + tail, &hdr, n1);
+    memcpy(c->tx_buf, ((__u8 *)&hdr) + n1, n2);
     tail = n2;
   }
   else {
-    memcpy(c->tx_buf + tail, hdr, sizeof(struct rpc_hdr));
+    memcpy(c->tx_buf + tail, &hdr, sizeof(struct rpc_hdr));
     tail += sizeof(struct rpc_hdr);
   }
 
@@ -627,6 +622,10 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
     memcpy(c->tx_buf + tail, buf, len);
   }
   //update avail
+  
+  /* have to send the rpc_hdr + payload so that we do not have to store 
+  the service id and request/response information anywhere else separately */
+
   c->tx_avail += n;
   c->tx_port = port;
   c->tx_ip = ip;
@@ -643,6 +642,7 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   bump->tx_ip = ip;
   bump->tx_port = port;
   bump->tx_avail = n;
+  bump->type = 0; //request
 
   ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_TX);
   if (ret != 0) {
@@ -653,6 +653,8 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   return 0;
 }
 
+//TODO: set the bump type as response (1) for the client side receiving function later on.
+//TODO: set the bump type as 1 for response
 int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
                __u32 rid, void *buf, size_t len)
 { 
@@ -683,10 +685,11 @@ int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
   return 0;
 }
 
+
 int rpc_handle_call(struct rpc_worker_lib *w,
                     void *buf, size_t len)
 { 
-  struct rpc_hdr *hdr;
+  struct rpc_hdr hdr;
   __u32 n1, n2, new_head;
   int ret, n;
   struct equeue *eq;
@@ -708,20 +711,26 @@ int rpc_handle_call(struct rpc_worker_lib *w,
   if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len) {
     n1 = w->rx_len - w->rx_head;
     n2 = sizeof(struct rpc_hdr) - n1;
-    memcpy(hdr, w->rx_buf + w->rx_head, n1);
-    memcpy((__u8 *)hdr + n1, w->rx_buf, n2);
+    memcpy(&hdr, w->rx_buf + w->rx_head, n1);
+    memcpy(((__u8 *)&hdr) + n1, w->rx_buf, n2);
   }
   else {
-    memcpy(hdr, w->rx_buf + w->rx_head, sizeof(struct rpc_hdr));
+    memcpy(&hdr, w->rx_buf + w->rx_head, sizeof(struct rpc_hdr));
   }
   
   //convert fields from network to host order
-  hdr->service.x = ntohs(hdr->service.x);
-  hdr->len.x = ntohs(hdr->len.x);
-  hdr->rid.x = ntohl(hdr->rid.x);
+  hdr.service.x = ntohs(hdr.service.x);
+  hdr.len.x = ntohs(hdr.len.x);
+  hdr.rid.x = ntohl(hdr.rid.x);
 
   //len of payload
-  n = hdr->len.x - sizeof(struct rpc_hdr);
+  n = hdr.len.x - sizeof(struct rpc_hdr);
+
+  //check if entire payload would fit in the buffer
+  if (len < (size_t)n) {
+    LOG_ERROR("buffer too small for rpc payload");
+    return -1;
+  }
 
   new_head = w->rx_head + sizeof(struct rpc_hdr);
   if (new_head >= w->rx_len)
@@ -739,8 +748,8 @@ int rpc_handle_call(struct rpc_worker_lib *w,
   }
 
   //Update rx buffer head and avail
-  w->rx_avail -= hdr->len.x;
-  new_head = w->rx_head + hdr->len.x;
+  w->rx_avail -= hdr.len.x;
+  new_head = w->rx_head + hdr.len.x;
   if (new_head >= w->rx_len)
     new_head -= w->rx_len;
   w->rx_head = new_head;
@@ -756,7 +765,9 @@ int rpc_handle_call(struct rpc_worker_lib *w,
   }
   bump = &qe->data.bump_cham_rx;
   bump->sock_id = w->worker_id;
-  bump->rx_head = hdr->len.x;
+  bump->rx_head = hdr.len.x;
+  bump->type = 0; //request
+  //TODO: double check that the type is correctly set for the fast path
 
   ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_RX);
   if (ret != 0) {
@@ -839,14 +850,12 @@ static int handle_tx_bump(struct rpc_queue_bump_entry *qe)
 {
   struct rpc_queue_bump_app_tx *bump;
   void *opaque;
-  __u8 type;
   __u32 new_head;
 
   bump = &qe->data.bump_app_tx;
   opaque = (void *)bump->opaque;
-  type = *((__u8 *)opaque);
-  
-  if (type == RPC_ENTITY_CLIENT) {
+
+  if (!bump->type) {
     struct rpc_client_lib *client = (struct rpc_client_lib *)opaque;
     new_head = bump->tx_head + client->tx_head;
     if (new_head >= client->tx_len)
@@ -870,13 +879,11 @@ static int handle_rx_bump(struct rpc_queue_bump_entry *qe)
 {
   struct rpc_queue_bump_app_rx *bump;
   void *opaque;
-  __u8 type;
 
   bump = &qe->data.bump_app_rx;
   opaque = (void *)bump->opaque;
-  type = *((__u8 *)opaque);
 
-  if (type == RPC_ENTITY_CLIENT) {
+  if (!bump->type) {
     struct rpc_client_lib *client = (struct rpc_client_lib *)bump->opaque;
     client->rx_avail += bump->rx_avail;
     client->rx_ip = bump->rx_ip;

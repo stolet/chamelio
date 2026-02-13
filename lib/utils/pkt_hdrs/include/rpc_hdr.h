@@ -13,6 +13,8 @@ struct rpc_hdr {
   beui16_t len;
   /* Unique request identifier */
   beui32_t rid;
+  /* Type field: 0 for request, 1 for reply */
+  __u8 type;
 } __attribute__ ((packed));
 
 struct rpc_pkt {
