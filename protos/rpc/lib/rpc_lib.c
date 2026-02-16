@@ -661,9 +661,10 @@ int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
   struct equeue *eq;
   struct rpc_queue_bump_entry *qe;
   struct rpc_queue_bump_cham_tx *bump;
-  struct rpc_hdr *hdr;
+  struct rpc_hdr hdr;
   __u32 tail, n1, n2;
   int ret, n;
+  struct rpc_worker_lib *w; 
 
   if (!s) {
     LOG_ERROR("null rpc server");
@@ -677,11 +678,73 @@ int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
 
   //TODO: make a mapping of rid -> worker_id in the server to get which 
   // worker will send the response.
+
+  //TODO: change this in the next ms 
+  w = &s->workers[0];
+
+  n = len + sizeof(struct rpc_hdr);
+  if (n > w->tx_len - w->tx_avail) return -1;
+
   // rpc header is set 
-  // hdr->service.x = 0; //TODO: how to get service id here?
-  // hdr->rid.x = rid;
-  // hdr->len.x = sizeof(struct rpc_hdr) + len;
+  hdr.service.x = htons(0); 
+  hdr.rid.x = htonl(rid);
+  hdr.len.x = htons(n);
+  //TODO: change the type of the type field
+  hdr.type = 1;
   
+  //tail pos. of tx ring
+  tail = w->tx_head + w->tx_avail;
+  if (tail >= w->tx_len) tail -= w->tx_len;
+
+  //copy hdr + payload to tx ring
+  if (tail + sizeof(struct rpc_hdr) > w->tx_len) {
+    n1 = w->tx_len - tail;
+    n2 = sizeof(struct rpc_hdr) - n1;
+    memcpy(w->tx_buf + tail, &hdr, n1);
+    memcpy(w->tx_buf, ((__u8 *)&hdr) + n1, n2);
+    tail = n2;
+  }
+  else {
+    memcpy(w->tx_buf + tail, &hdr, sizeof(struct rpc_hdr));
+    tail += sizeof(struct rpc_hdr);
+  }
+
+  if (tail + len > w->tx_len) {
+    n1 = w->tx_len - tail;
+    n2 = len - n1;
+    memcpy(w->tx_buf + tail, buf, n1);
+    memcpy(w->tx_buf, buf + n1, n2);
+  }
+  else {
+    memcpy(w->tx_buf + tail, buf, len);
+  }
+
+  //update avail 
+  //TODO: revise if we actually need the tx_port and tx_ip
+  w->tx_avail += n;
+  w->tx_port = port;
+  w->tx_ip = ip;
+
+  //enqueue bump entry to notify fast-path
+  eq = w->ctx->app_fast_qs[w->server->core];
+  qe = queue_tail(eq);
+  if (!qe) {
+    LOG_ERROR("failed to get queue tail for bump req");
+    return -1;
+  }
+  bump = &qe->data.bump_cham_tx;
+  bump->sock_id = w->worker_id;
+  bump->tx_ip = ip;
+  bump->tx_port = port;
+  bump->tx_avail = n;
+  bump->type = 1; //response 
+
+  ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_TX);
+  if (ret != 0) {
+    LOG_ERROR("failed to enqueue bump req");
+    return -1;
+  }
+
   return 0;
 }
 
