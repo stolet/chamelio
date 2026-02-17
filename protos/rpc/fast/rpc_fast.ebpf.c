@@ -135,7 +135,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     if (!server) return -1;
 
     //select the first worker for now
-    
+    //TODO: change in ms4
     worker = &worker_map[server->workers[0]];
     if (!worker) return -1;
 

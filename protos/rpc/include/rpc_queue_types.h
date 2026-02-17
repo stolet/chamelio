@@ -137,7 +137,6 @@ struct rpc_queue_new_client_req
 /* Response for new client created */
 struct rpc_queue_new_client_res
 { 
-  //TBC: would we need client_id here?
   /* ID of the client in slow-path */
   __u32 client_id;
   /* Opaque pointer to client in app library */
