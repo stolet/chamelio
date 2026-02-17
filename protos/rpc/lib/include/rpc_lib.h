@@ -40,10 +40,6 @@ struct rpc_context_lib
 /* Worker that handles RPC requests */
 struct rpc_worker_lib
 { 
-  // /* Type field (= Worker) */
-  // __u8 type;
-
-  // TBC: why have the ctx for the worker? Is it needed?
   /* Context that created this worker */
   struct rpc_context_lib *ctx;
   /* Server for this worker */
@@ -214,6 +210,8 @@ int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
 /* Parses the top request in worker queue */
 int rpc_handle_call(struct rpc_worker_lib *w,
                     void *buf, size_t len);
+/* Parses the response from a worker */
+int rpc_response(struct rpc_client_lib *c, void *buf, size_t len);
 
 /* Removes a pending job from the given worker */
 int rpc_call_complete(struct rpc_worker_lib *w);
