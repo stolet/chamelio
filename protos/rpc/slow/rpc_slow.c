@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <string.h>
 
 int handle_new_client_req(struct rpc_slow_context *ctx,
                           struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
@@ -111,7 +112,7 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
     LOG_ERROR("failed to create map to hold workers");
     abort();
   }
-  pt_map = cham_new_map(p, MAX_PORT, sizeof(struct rpc_port_entry));
+  pt_map = cham_new_map(p, MAX_PORT + 1, sizeof(struct rpc_port_entry));
   if (pt_map == NULL)
   {
     LOG_ERROR("failed to create port to server map");
@@ -284,6 +285,7 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
   res->client_id = ctx->n_clients;
 
   cl = &client[res->client_id];
+  memset(cl, 0, sizeof(struct rpc_client));
   cl->id = res->client_id;
   cl->core = 0;
   cl->app_bump_qid = actx->app_bump_qs[0]->id;
@@ -305,6 +307,8 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
     }
     return -1;
   }
+  //TODO: check if this is required
+  port->client_id = res->client_id;
   
   // Create queue for RX buffer
   protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
@@ -329,6 +333,7 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
     return -1;
   }
   res->tx_qid = protoq->id;
+  LOG_DEBUG("proto queue elsize=%d nelems=%d", protoq->elsize, protoq->nelems);
   res->tx_len = protoq->nelems * protoq->elsize;
   res->tx_off = protoq->off;
 
@@ -379,6 +384,7 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   res->server_id = ctx->n_servers;
   
   sv = &server_map[res->server_id];
+  memset(sv, 0, sizeof(struct rpc_server));
 
   sv->id = res->server_id;
   sv->local_ip = req->local_ip;
@@ -460,6 +466,7 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
 
   res->worker_id = ctx->n_workers;
   worker = &worker_map[ctx->n_workers];
+  memset(worker, 0, sizeof(struct rpc_worker));
   // LOG_DEBUG("allocated worker structure in shared memory");
   worker->id = ctx->n_workers;
   // LOG_DEBUG("set worker ID to %d", worker->id);
