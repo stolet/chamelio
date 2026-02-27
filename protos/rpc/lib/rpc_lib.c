@@ -1022,6 +1022,7 @@ static int handle_tx_bump(struct rpc_queue_bump_entry *qe)
   }
 
   new_head = bump->tx_head + *tx_head;
+  //TODO: see if the equal has to be removed!
   if (new_head >= tx_len) new_head -= tx_len;
   *tx_head = new_head;
   *tx_avail -= bump->tx_head;
@@ -1037,13 +1038,13 @@ static int handle_rx_bump(struct rpc_queue_bump_entry *qe)
   bump = &qe->data.bump_app_rx;
 
   switch(bump->type) {
-    case 0: //request from client
+    case 1: //response delivered to client
         client = (struct rpc_client_lib *)bump->opaque;
         client->rx_avail += bump->rx_avail;
         client->rx_ip = bump->rx_ip;
         client->rx_port = bump->rx_port;
         break;
-    case 1: //response from server    
+    case 0: //request delivered to worker
         worker = (struct rpc_worker_lib *)bump->opaque;
         worker->rx_avail += bump->rx_avail;
         worker->rx_ip = bump->rx_ip;
