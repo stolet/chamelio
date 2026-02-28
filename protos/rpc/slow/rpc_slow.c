@@ -293,6 +293,12 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
   cl->local_ip = req->local_ip;
   cl->local_port = req->local_port;
 
+  //TODO: understand which offset we want 
+
+  fprintf(stderr, "app_bump_qid=%u equeue_off=%llu fast_app_q_off=%llu\n",
+        cl->app_bump_qid,
+        actx->app_bump_qs[0]->off, actx->fast_bump_qs[0]->off);
+
   // bind the port to the client id in the port to client map
   port = &pt_cl_map[req->local_port];
   if (port->client_id != INVALID_ID || port->server_id != INVALID_ID)
