@@ -6,7 +6,7 @@ deps = [
 ]
 
 rpc_lib_lib = library(
-  'cham_udp',
+  'cham_rpc',
   'rpc_lib.c',
   include_directories : rpc_lib_inc,
   version : '1.0.0',

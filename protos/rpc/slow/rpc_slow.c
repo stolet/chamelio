@@ -286,18 +286,16 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
 
   cl = &client[res->client_id];
   memset(cl, 0, sizeof(struct rpc_client));
+  fprintf(stderr, "SLOW-PATH: client %d tx_avail after memset = %u\n", 
+        cl->id, cl->tx_avail);
   cl->id = res->client_id;
   cl->core = 0;
   cl->app_bump_qid = actx->app_bump_qs[0]->id;
+  fprintf(stderr, "SLOW-PATH: client %d assigned app_bump_qid=%u\n",
+        cl->id, cl->app_bump_qid);
   cl->opaque = req->opaque;
   cl->local_ip = req->local_ip;
   cl->local_port = req->local_port;
-
-  //TODO: understand which offset we want 
-
-  fprintf(stderr, "app_bump_qid=%u equeue_off=%llu fast_app_q_off=%llu\n",
-        cl->app_bump_qid,
-        actx->app_bump_qs[0]->off, actx->fast_bump_qs[0]->off);
 
   // bind the port to the client id in the port to client map
   port = &pt_cl_map[req->local_port];

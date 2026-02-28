@@ -46,8 +46,6 @@ struct rpc_client
   /* Local port of the client */
   __u16 local_port;
 
-  // TODO: check if rx/tx_head/avail are needed
-
   /* Length of RX buffer */
   __u32 rx_len;
   /* Number of available bytes to be read */
