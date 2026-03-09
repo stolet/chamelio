@@ -89,7 +89,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   ip_comp_chksum = ipv4_checksum((void *)ip);
   ip->chksum = ip_saved_chksum;
   if (ip_comp_chksum != ip_saved_chksum)
+  {
+    bpf_print(1001); // checksum mismatch
     return -1;
+  }
 
   /* Parse UDP header */
   udp = (struct udp_hdr *)((__u8 *)ip + ip_hdrs_len);
@@ -109,7 +112,11 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     udp->chksum = udp_saved_chksum;
 
     if (udp_comp_chksum != udp_saved_chksum)
+    {
+      bpf_print(1002); // checksum mismatch}
       return -1;
+    }
+    bpf_print(1003); // checksum match
   }
 
   // Parse rpc header
@@ -401,11 +408,9 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   if (!bump_cham->type)
   {
     client->tx_head = new_head;
-    // bpf_print(111111111);
-    // bpf_print(client->tx_avail);
-    // client->tx_avail -= payload_len;
+    client->tx_avail -= payload_len;
   }
-  //TODO: comment tx_avail if required
+  // TODO: comment tx_avail if required
   else
   {
     worker->tx_head = new_head;
