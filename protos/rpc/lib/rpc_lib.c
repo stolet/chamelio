@@ -219,8 +219,11 @@ struct rpc_context_lib *rpc_ctx_new()
   ctx->fast_app_qs = dq_list;
 
   /* Create each queue between app and fast-path core */
+  LOG_DEBUG("rpc_ctx_new: n_fp_cores=%d\n", res->n_fp_cores);
   for (i = 0; i < res->n_fp_cores; i++)
   {
+    LOG_DEBUG("  fa_offs[%d]=%lu\n", i, res->fa_offs[i]);
+
     eq = equeue_new(res->af_nelems, res->af_elsize,
                     rpc->shm_base + res->af_offs[i], res->af_offs[i]);
     if (eq == NULL)
@@ -237,6 +240,7 @@ struct rpc_context_lib *rpc_ctx_new()
       LOG_ERROR("failed to create fast->app bump queue");
       return NULL;
     }
+    fprintf(stderr, "fast_app_qs[%d] off=%llu\n", i, res->fa_offs[i]);
     dq_list[i] = dq;
   }
 
@@ -295,7 +299,7 @@ int rpc_poll_calls(struct rpc_context_lib *ctx)
   struct rpc_queue_bump_entry *qe;
   struct dqueue **dq_list;
 
-  fprintf(stderr, "rpc_poll_calls called ctx=%p\n", ctx);
+  // fprintf(stderr, "rpc_poll_calls called ctx=%p\n", ctx);
 
   if (!ctx)
   {
@@ -308,15 +312,20 @@ int rpc_poll_calls(struct rpc_context_lib *ctx)
   ncores = ctx->ncores;
   dq_list = ctx->fast_app_qs;
 
-  LOG_DEBUG("rpc_poll_calls: ncores=%d\n", ncores);
+  // LOG_DEBUG("rpc_poll_calls: ncores=%d\n", ncores);
   for (i = 0; i < ncores && n < POLL_BATCH; i++)
   {
-    LOG_DEBUG("  fast_app_qs[%d] = %p dq offset=%llu\n", 
-            i, dq_list[i], dq_list[i]->off);
+    // LOG_DEBUG("  fast_app_qs[%d] = %p dq offset=%llu\n",
+    //         i, dq_list[i], dq_list[i]->off);
 
     q = dq_list[i];
+    // LOG_DEBUG("  polling fast_app_qs[%d]=%p off=%lu\n",
+    //           i, q, q->off);
+    // LOG_DEBUG("  queue_head returned %p\n", qe);
+
     while (n < POLL_BATCH && (qe = queue_head(q)) != NULL)
     {
+      // LOG_DEBUG("  got entry type=%d\n", qe->type);
       n++;
       switch (qe->type)
       {
@@ -333,7 +342,7 @@ int rpc_poll_calls(struct rpc_context_lib *ctx)
       }
       queue_dequeue(q);
     }
-    LOG_DEBUG("rpc_poll_calls: processed %d entries\n", n);
+    // LOG_DEBUG("rpc_poll_calls: processed %d entries\n", n);
   }
   return n;
 }
@@ -1061,8 +1070,8 @@ static int handle_tx_bump(struct rpc_queue_bump_entry *qe)
 
   bump = &qe->data.bump_app_tx;
 
-  fprintf(stderr, "handle_tx_bump: type=%u tx_head=%u opaque=%llu\n",
-          bump->type, bump->tx_head, bump->opaque);
+  // fprintf(stderr, "handle_tx_bump: type=%u tx_head=%u opaque=%llu\n",
+  //         bump->type, bump->tx_head, bump->opaque);
 
   switch (bump->type)
   {
