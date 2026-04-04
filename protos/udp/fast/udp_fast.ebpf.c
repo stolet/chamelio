@@ -31,7 +31,8 @@ static __u16 (*ebpf_ipv4_udptcp_cksum)(void *ip_hdr, void *udp_hdr) = (void *) 1
 
 static struct cham_sched_entry * (*sched_head)(struct cham_scheduler *sched) = (void *) 1007;
 static int (*sched_pop)(struct cham_scheduler *sched) = (void *) 1008;
-static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u32 priority) = (void *) 1009;
+static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u32 priority,
+    __u32 avail) = (void *) 1009;
 
 static void * (*ebpf_map_get)(void *map_base, __u32 len) = (void *) 1010;
 static void * (*ebpf_map_lookup)(void *map_base, __u64 id, __u64 elsize) = (void *) 1011;

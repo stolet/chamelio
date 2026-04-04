@@ -244,7 +244,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
   sock->reuport = 0;
 
   /* Create queue for RX buffer */
-  protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
+  protoq = cham_new_queue(ctx->proto, ctx->config.rxbuf_sz, 1);
   if (protoq == NULL)
   {
     LOG_ERROR("failed to create new queue");
@@ -259,7 +259,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
   sock->rx_off = protoq->off;
 
   /* Create queue for TX buffer */
-  protoq = cham_new_queue(ctx->proto, TXBUF_SZ, 1);
+  protoq = cham_new_queue(ctx->proto, ctx->config.txbuf_sz, 1);
   res->tx_qid = protoq->id;
   res->tx_len = protoq->nelems * protoq->elsize;
   res->tx_off = protoq->off;

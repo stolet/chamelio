@@ -62,10 +62,6 @@ struct tcp_sock {
   __u32 local_ip;
   /* Remote IP */
   __u32 remote_ip;
-  /* Next sequence number to transmit */
-  __u32 tx_seq;
-  /* Next sequence number expected from peer */
-  __u32 rx_seq;
 
   /* Length of RX buffer */
   __u32 rx_len;
@@ -84,6 +80,13 @@ struct tcp_sock {
   __u32 tx_head;
   /* Offset to the start of the TX buffer in shared memory */
   __u64 tx_off;
+  
+  /* Next sequence number to transmit */
+  __u32 tx_seq;
+  /* Sent unacked bytes */
+  __u32 tx_pending;
+  /* Next sequence number expected from peer */
+  __u32 rx_seq;
 
   /* Local port */
   __u16 local_port;
@@ -99,6 +102,7 @@ struct tcp_sock {
   __u8 ctx_id;
   /* Socket flags */
   __u8 flags;
+  
 } __attribute__((packed));
 
 /* Maps a listener port to one or more listening sockets */

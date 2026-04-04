@@ -1,6 +1,6 @@
 config_inc = include_directories('include')
 
-config_srcs = files('config.c')
+config_srcs = files('udp_config.c')
 
 deps = [
   dependency('log_dep'),

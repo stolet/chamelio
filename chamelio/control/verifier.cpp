@@ -139,11 +139,11 @@ extern "C"
 
         case 1007:
             return EbpfHelperPrototype{
-                .name = "sched_head",
+                .name = "ebpf_sched_head",
                 .return_type = EBPF_RETURN_TYPE_INTEGER,
                 .argument_type = {
                     EBPF_ARGUMENT_TYPE_ANYTHING,
-                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_ANYTHING,
                     EBPF_ARGUMENT_TYPE_DONTCARE,
                     EBPF_ARGUMENT_TYPE_DONTCARE,
                     EBPF_ARGUMENT_TYPE_DONTCARE,
@@ -177,7 +177,7 @@ extern "C"
                     EBPF_ARGUMENT_TYPE_ANYTHING,
                     EBPF_ARGUMENT_TYPE_ANYTHING,
                     EBPF_ARGUMENT_TYPE_ANYTHING,
-                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_ANYTHING,
                     EBPF_ARGUMENT_TYPE_DONTCARE,
                 },
                 .reallocate_packet = false,

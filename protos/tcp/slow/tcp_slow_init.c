@@ -134,7 +134,8 @@ int tcp_slow_init(struct tcp_slow_context *ctx)
     abort();
   }
 
-  protoq = cham_new_queue(p, CTRLQ_SZ, sizeof(struct tcp_queue_bump_entry));
+  protoq = cham_new_queue(p, ctx->config.ctrlq_len,
+      sizeof(struct tcp_queue_bump_entry));
   if (protoq == NULL)
   {
     LOG_ERROR("failed to create fast->slow control signal queue");
@@ -149,7 +150,8 @@ int tcp_slow_init(struct tcp_slow_context *ctx)
   }
   fast_slow_sig_qid = protoq->id;
 
-  protoq = cham_new_queue(p, CTRLQ_SZ, sizeof(struct tcp_queue_bump_entry));
+  protoq = cham_new_queue(p, ctx->config.ctrlq_len,
+      sizeof(struct tcp_queue_bump_entry));
   if (protoq == NULL)
   {
     LOG_ERROR("failed to create fast->slow control packet queue");
@@ -164,7 +166,8 @@ int tcp_slow_init(struct tcp_slow_context *ctx)
   }
   fast_slow_pkt_qid = protoq->id;
 
-  protoq = cham_new_queue(p, CTRLQ_SZ, sizeof(struct tcp_queue_bump_entry));
+  protoq = cham_new_queue(p, ctx->config.ctrlq_len,
+      sizeof(struct tcp_queue_bump_entry));
   if (protoq == NULL)
   {
     LOG_ERROR("failed to create slow->fast control signal queue");
@@ -185,7 +188,8 @@ int tcp_slow_init(struct tcp_slow_context *ctx)
     abort();
   }
 
-  protoq = cham_new_queue(p, CTRLQ_SZ, sizeof(struct tcp_queue_bump_entry));
+  protoq = cham_new_queue(p, ctx->config.ctrlq_len,
+      sizeof(struct tcp_queue_bump_entry));
   if (protoq == NULL)
   {
     LOG_ERROR("failed to create slow->fast control packet queue");

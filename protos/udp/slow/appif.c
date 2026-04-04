@@ -309,7 +309,8 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
   actx = &aev->app->ctxs[aev->app->n_ctxs];
 
   /* Create queue for messages app->slow */
-  q = cham_new_queue(ctx->proto, APPQ_SZ, sizeof(struct udp_queue_entry));
+  q = cham_new_queue(ctx->proto, ctx->config.appq_len,
+      sizeof(struct udp_queue_entry));
   if (q == NULL)
   {
     LOG_ERROR("failed to create queue app->slow");
@@ -330,7 +331,8 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
   actx->app_slow_q = dq;
   
   /* Create queue for messages slow->app */
-  q = cham_new_queue(ctx->proto, APPQ_SZ, sizeof(struct udp_queue_entry));
+  q = cham_new_queue(ctx->proto, ctx->config.appq_len,
+      sizeof(struct udp_queue_entry));
   if (q == NULL)
   {
     LOG_ERROR("failed to create queue slow->app");
@@ -353,7 +355,8 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
   for (i = 0; i < ctx->proto->n_fp_cores; i++)
   {
     /* Create queue for bumps fast->app */
-    q = cham_new_queue(ctx->proto, BUMPQ_SZ, sizeof(struct udp_queue_bump_entry));
+    q = cham_new_queue(ctx->proto, ctx->config.bumpq_len,
+        sizeof(struct udp_queue_bump_entry));
     if (q == NULL)
     {
       LOG_ERROR("failed to create queue fast->app core=%d", i);
@@ -365,7 +368,8 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
     actx->app_bump_qs[i] = q;
     
     /* Create queue for bumps app->fast */
-    q = cham_new_queue(ctx->proto, BUMPQ_SZ, sizeof(struct udp_queue_bump_entry));
+    q = cham_new_queue(ctx->proto, ctx->config.bumpq_len,
+        sizeof(struct udp_queue_bump_entry));
     if (q == NULL)
     {
       LOG_ERROR("failed to create queue app->fast core=%d", i);

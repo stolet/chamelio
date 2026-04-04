@@ -39,6 +39,8 @@ static inline __u16 ebpf_ipv4_checksum(void *ip_hdr);
 static inline __u16 ebpf_ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr);
 static inline void *ebpf_map_get(void *map_base, __u32 len);
 static inline void *ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize);
+static inline struct cham_sched_entry *ebpf_sched_head(
+    struct cham_scheduler *sched, __u64 elsize);
 static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize);
 static inline void *ebpf_queue_head(struct dqueue *q, __u64 elsize);
 
@@ -87,7 +89,7 @@ static const struct ebpf_helper_desc ebpf_helpers[] = {
   { EBPF_HELPER_IPV4_UDPTCP_CKSUM, 
     "ebpf_ipv4_udptcp_cksum", ebpf_ipv4_udptcp_cksum },
   { EBPF_HELPER_SCHED_HEAD, 
-      "sched_head", sched_head },
+      "ebpf_sched_head", ebpf_sched_head },
   { EBPF_HELPER_SCHED_POP, 
       "sched_pop", sched_pop },
   { EBPF_HELPER_SCHED_ADD, 
@@ -403,6 +405,13 @@ static inline void *ebpf_map_get(void *map_base, __u32 len)
 static inline void *ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize)
 {
   return (__u8 *)map_base + (id * elsize);
+}
+
+static inline struct cham_sched_entry *ebpf_sched_head(
+    struct cham_scheduler *sched, __u64 elsize)
+{
+  (void)elsize;
+  return sched_head(sched);
 }
 
 static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize)

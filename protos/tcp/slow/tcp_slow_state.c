@@ -39,7 +39,7 @@ int tcp_slow_state_alloc_sock(struct tcp_slow_context *ctx, __u64 opaque,
   sock->app_id = app_id;
   sock->ctx_id = ctx_id;
 
-  protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
+  protoq = cham_new_queue(ctx->proto, ctx->config.rxbuf_sz, 1);
   if (protoq == NULL)
   {
     LOG_ERROR("failed to create RX queue for socket");
@@ -50,7 +50,7 @@ int tcp_slow_state_alloc_sock(struct tcp_slow_context *ctx, __u64 opaque,
   sock->rx_head = 0;
   sock->rx_off = protoq->off;
 
-  protoq = cham_new_queue(ctx->proto, TXBUF_SZ, 1);
+  protoq = cham_new_queue(ctx->proto, ctx->config.txbuf_sz, 1);
   if (protoq == NULL)
   {
     LOG_ERROR("failed to create TX queue for socket");
@@ -59,6 +59,7 @@ int tcp_slow_state_alloc_sock(struct tcp_slow_context *ctx, __u64 opaque,
   sock->tx_len = protoq->elsize * protoq->nelems;
   sock->tx_avail = 0;
   sock->tx_head = 0;
+  sock->tx_pending = 0;
   sock->tx_off = protoq->off;
 
   ctx->sock_meta[sock->id].listener_id = ID_INVALID;
@@ -506,6 +507,7 @@ void tcp_slow_state_sock_close_final(struct tcp_slow_context *ctx,
   sock->remote_ip = 0;
   sock->remote_port = 0;
   sock->tx_seq = 0;
+  sock->tx_pending = 0;
   sock->rx_seq = 0;
   ctx->sock_meta[sock->id].auto_bound = 0;
 }
@@ -529,6 +531,7 @@ void tcp_slow_state_sock_connect_failed(struct tcp_slow_context *ctx,
   sock->remote_port = 0;
   sock->tx_seq = 0;
   sock->rx_seq = 0;
+  sock->tx_pending = 0;
   sock->flags = 0;
   sock->state = TCP_SOCK_STATE_INIT;
 
@@ -539,7 +542,10 @@ void tcp_slow_state_sock_connect_failed(struct tcp_slow_context *ctx,
 static inline __u32 flow_hash(__u32 local_ip, __u16 local_port, __u32 remote_ip,
     __u16 remote_port)
 {
-  return local_ip ^ remote_ip ^ ((__u32) local_port << 16) ^ remote_port;
+  __u32 h;
+
+  h = local_ip ^ remote_ip ^ ((__u32) local_port << 16) ^ remote_port;
+  return h ^ (h >> 16);
 }
 
 static int enqueue_ctrl_pkt(struct tcp_slow_context *ctx, __u32 local_ip,

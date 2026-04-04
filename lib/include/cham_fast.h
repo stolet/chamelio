@@ -63,10 +63,10 @@ struct cham_ebpf_ctx {
   int qid;
   /* Queue entry dequeued by Chamelio */
   struct queue_entry *qe;
-  /* List of protocol queues available for dequeue access */
-  struct cham_dqueue *dqueues;
   /* End of shared memory region */
   void *shm_end;
+  /* List of protocol queues available for dequeue access */
+  struct cham_dqueue *dqueues;
   /* List of protocol queues use by fast-path to enqueue */
   struct cham_equeue equeues[MAX_PROTO_QUEUES];
   /* Number of registered maps */

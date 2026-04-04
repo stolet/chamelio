@@ -105,6 +105,7 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
 
         tcp_slow_timeout_cancel(ctx, sock);
         sock->rx_seq = seq + 1;
+        sock->tx_pending -= 1;
         tcp_slow_state_enqueue_ctrl_tx(ctx, sock, TAS_TCP_ACK);
         sock->state = TCP_SOCK_STATE_ESTABLISHED;
         tcp_slow_app_enqueue_connect_res(tcp_slow_sock_actx(ctx, sock),
@@ -130,6 +131,7 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
           return 0;
 
         tcp_slow_timeout_cancel(ctx, sock);
+        sock->tx_pending -= 1;
         sock->state = TCP_SOCK_STATE_ACCEPT_PENDING;
         if (tcp_slow_state_listener_ready_push(ctx,
                 ctx->sock_meta[sock->id].listener_id, sock->id) != 0)
@@ -235,6 +237,7 @@ static int handle_listen_syn(struct tcp_slow_context *ctx,
   sock->remote_ip = remote_ip;
   sock->remote_port = remote_port;
   sock->tx_seq = 1;
+  sock->tx_pending = 1;
   sock->rx_seq = seq + 1;
   sock->state = TCP_SOCK_STATE_SYN_RECV;
   ctx->sock_meta[sock->id].listener_id = listen_sock->id;

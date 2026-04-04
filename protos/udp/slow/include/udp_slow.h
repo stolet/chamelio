@@ -11,15 +11,6 @@
 /* Size of batch size used to poll queues */
 #define SLOW_BATCH_SIZE 16
 
-/* Size of UDP transmit buffer in bytes */
-#define TXBUF_SZ 32768
-/* Size of UDP receive buffer in bytes */
-#define RXBUF_SZ 32768
-/* Number of elements in bump queue */
-#define BUMPQ_SZ 16384
-/* Number of elements in queue between slow-path and app */
-#define APPQ_SZ 128
-
 struct udp_app_context_slow {
   /* ID for application context */
   __u8 id;

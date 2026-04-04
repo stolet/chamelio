@@ -30,21 +30,74 @@ static void test_sched_add()
   sched_init(&sched);
   
   /* Test adding first entry */
-  TEST_ASSERT(sched_add(&sched, 1, 100) == 0, "Failed to add first entry");
+  TEST_ASSERT(sched_add(&sched, 1, 100, 10) == 0, "Failed to add first entry");
   TEST_ASSERT(sched.head == 1, "Head should be 1 after first addition");
   TEST_ASSERT(sched.tail == 1, "Tail should be 1 after first addition");
+  TEST_ASSERT(sched.entries[1].avail == 10, "Entry 1 should track avail");
 
   /* Test adding higher priority entry */
-  TEST_ASSERT(sched_add(&sched, 2, 200) == 0, "Failed to add second entry");
+  TEST_ASSERT(sched_add(&sched, 2, 200, 20) == 0, "Failed to add second entry");
   TEST_ASSERT(sched.head == 2, "Head should be 2 (higher priority)");
   TEST_ASSERT(sched.entries[2].next_entry == 1, "Entry 2 should point to 1");
+  TEST_ASSERT(sched.entries[2].avail == 20, "Entry 2 should track avail");
 
   /* Test adding lower priority entry */
-  TEST_ASSERT(sched_add(&sched, 3, 50) == 0, "Failed to add third entry");
+  TEST_ASSERT(sched_add(&sched, 3, 50, 5) == 0, "Failed to add third entry");
   TEST_ASSERT(sched.tail == 3, "Tail should be 3 (lowest priority)");
   TEST_ASSERT(sched.entries[1].next_entry == 3, "Entry 1 should point to 3");
   
   printf(ANSI_COLOR_GREEN "PASSED: Scheduler add test" 
+      ANSI_COLOR_RESET "\n");
+}
+
+static void test_sched_add_existing()
+{
+  printf(ANSI_COLOR_BLUE "Testing sched_add existing id..." ANSI_COLOR_RESET "\n");
+  struct cham_scheduler sched;
+  struct cham_sched_entry *entry;
+
+  sched_init(&sched);
+
+  TEST_ASSERT(sched_add(&sched, 1, 100, 10) == 0, "Failed to add first entry");
+  TEST_ASSERT(sched_add(&sched, 2, 200, 20) == 0, "Failed to add second entry");
+  TEST_ASSERT(sched_add(&sched, 1, 300, 5) == 0,
+      "Failed to update existing entry");
+
+  entry = sched_head(&sched);
+  TEST_ASSERT(entry != NULL, "Head should not be NULL after update");
+  TEST_ASSERT(entry->id == 1, "Updated entry should move to head");
+  TEST_ASSERT(entry->priority == 300, "Updated entry should keep new priority");
+  TEST_ASSERT(entry->avail == 15, "Updated entry should accumulate avail");
+  TEST_ASSERT(entry->next_entry == 2, "Updated entry should still link list");
+  TEST_ASSERT(sched.tail == 2, "Tail should remain the lower priority entry");
+
+  printf(ANSI_COLOR_GREEN "PASSED: Scheduler duplicate add test"
+      ANSI_COLOR_RESET "\n");
+}
+
+static void test_sched_add_existing_same_priority()
+{
+  printf(ANSI_COLOR_BLUE "Testing sched_add existing id same priority..."
+      ANSI_COLOR_RESET "\n");
+  struct cham_scheduler sched;
+  struct cham_sched_entry *entry;
+
+  sched_init(&sched);
+
+  TEST_ASSERT(sched_add(&sched, 1, 100, 10) == 0, "Failed to add first entry");
+  TEST_ASSERT(sched_add(&sched, 2, 200, 20) == 0, "Failed to add second entry");
+  TEST_ASSERT(sched_add(&sched, 1, 100, 5) == 0,
+      "Failed to update existing entry");
+
+  entry = &sched.entries[1];
+  TEST_ASSERT(entry->avail == 15, "Existing entry should accumulate avail");
+  TEST_ASSERT(entry->priority == 100, "Existing entry should keep priority");
+  TEST_ASSERT(entry->next_entry == SCHED_ID_INVALID,
+      "Existing entry should keep its position in the list");
+  TEST_ASSERT(sched.head == 2, "Higher priority entry should remain head");
+  TEST_ASSERT(sched.tail == 1, "Updated entry should remain tail");
+
+  printf(ANSI_COLOR_GREEN "PASSED: Scheduler duplicate add same priority test"
       ANSI_COLOR_RESET "\n");
 }
 
@@ -61,17 +114,19 @@ static void test_sched_head()
   TEST_ASSERT(entry == NULL, "Head should be NULL on empty scheduler");
 
   /* Add an entry and test head */
-  sched_add(&sched, 1, 100);
+  sched_add(&sched, 1, 100, 10);
   entry = sched_head(&sched);
   TEST_ASSERT(entry != NULL, "Head should not be NULL after adding entry");
   TEST_ASSERT(entry->id == 1, "Head should have id 1");
   TEST_ASSERT(entry->priority == 100, "Head should have priority 100");
+  TEST_ASSERT(entry->avail == 10, "Head should have avail 10");
 
   /* Add higher priority entry and test head */
-  sched_add(&sched, 2, 200);
+  sched_add(&sched, 2, 200, 20);
   entry = sched_head(&sched);
   TEST_ASSERT(entry->id == 2, "Head should have id 2 (higher priority)");
   TEST_ASSERT(entry->priority == 200, "Head should have priority 200");
+  TEST_ASSERT(entry->avail == 20, "Head should have avail 20");
   
   printf(ANSI_COLOR_GREEN "PASSED: Scheduler head test" ANSI_COLOR_RESET "\n");
 }
@@ -88,9 +143,9 @@ static void test_sched_pop()
   TEST_ASSERT(sched_pop(&sched) == -1, "Pop on empty scheduler should return -1");
 
   /* Add entries with different priorities */
-  sched_add(&sched, 1, 100);
-  sched_add(&sched, 2, 200);
-  sched_add(&sched, 3, 50);
+  sched_add(&sched, 1, 100, 10);
+  sched_add(&sched, 2, 200, 20);
+  sched_add(&sched, 3, 50, 5);
 
   /* Pop highest priority and verify new head */
   TEST_ASSERT(sched_pop(&sched) == 0, "Pop should succeed");
@@ -118,6 +173,8 @@ int main()
   
   test_sched_init();
   test_sched_add();
+  test_sched_add_existing();
+  test_sched_add_existing_same_priority();
   test_sched_head();
   test_sched_pop();
   

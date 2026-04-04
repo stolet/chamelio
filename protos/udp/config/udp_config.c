@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "tcp_config.h"
+#include "udp_config.h"
 
 enum cfg_params {
   CP_VIRT,
@@ -37,11 +37,11 @@ static struct option opts[] = {
     .val = CP_CTRLQ_LEN },
 };
 
-static int config_defaults(struct tcp_configuration *c);
+static int config_defaults(struct udp_configuration *c);
 static int parse_u32(const char *s, __u32 *val);
-static void print_usage(struct tcp_configuration *c, char *progname);
+static void print_usage(struct udp_configuration *c, char *progname);
 
-int tcp_config_parse(struct tcp_configuration *c, int argc, char **argv)
+int udp_config_parse(struct udp_configuration *c, int argc, char **argv)
 {
   int ret, done = 0;
 
@@ -97,7 +97,7 @@ failed:
   return -1;
 }
 
-static int config_defaults(struct tcp_configuration *c)
+static int config_defaults(struct udp_configuration *c)
 {
   c->virt = 0;
   c->virt_gre = 0;
@@ -127,7 +127,7 @@ static int parse_u32(const char *s, __u32 *val)
   return 0;
 }
 
-static void print_usage(struct tcp_configuration *c, char *progname)
+static void print_usage(struct udp_configuration *c, char *progname)
 {
   fprintf(stderr, "Usage: %s [OPTION]...\n"
       "\n"

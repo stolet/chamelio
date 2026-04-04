@@ -412,6 +412,7 @@ static int handle_connect_req(struct tcp_slow_context *ctx,
   sock->remote_ip = req->remote_ip;
   sock->remote_port = req->remote_port;
   sock->tx_seq = 1;
+  sock->tx_pending = 1;
   sock->rx_seq = 0;
   sock->state = TCP_SOCK_STATE_SYN_SENT;
 
