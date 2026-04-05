@@ -47,6 +47,7 @@ enum tcp_sock_state {
 
 #define TCP_SOCK_FLAG_SHUT_RD 0x1
 #define TCP_SOCK_FLAG_SHUT_WR 0x2
+#define TCP_SOCK_FLAG_ACK_PENDING 0x4
 
 /* Entry for the socket map */
 struct tcp_sock {
@@ -74,19 +75,23 @@ struct tcp_sock {
 
   /* Length of the TX buffer */
   __u32 tx_len;
-  /* Number of bytes written to buffer */
+  /* Number of unsent bytes buffered */
   __u32 tx_avail;
-  /* Head of the TX buffer */
+  /* Head of the TX buffer, points to the oldest byte still owned by TCP */
   __u32 tx_head;
   /* Offset to the start of the TX buffer in shared memory */
   __u64 tx_off;
   
-  /* Next sequence number to transmit */
+  /* Oldest unacknowledged sequence number */
   __u32 tx_seq;
   /* Sent unacked bytes */
   __u32 tx_pending;
   /* Next sequence number expected from peer */
   __u32 rx_seq;
+  /* Remote advertised receive window */
+  __u32 tx_remote_avail;
+  /* Number of duplicate ACKs received */
+  __u8 rx_dupack_cnt;
 
   /* Local port */
   __u16 local_port;

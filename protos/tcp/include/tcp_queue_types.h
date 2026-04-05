@@ -57,7 +57,7 @@ enum tcp_queue_type {
   TCP_QUEUE_CTRL_RX,
   /* Packet data for a punted TCP control packet */
   TCP_QUEUE_CTRL_RX_PKT,
-  /* Bump app when Chamelio sends a packet */
+  /* Bump app when peer ACKs sent bytes */
   TCP_QUEUE_BUMP_APP_TX,
   /* Bump app when Chamelio receives a packet */
   TCP_QUEUE_BUMP_APP_RX,
@@ -317,11 +317,11 @@ struct tcp_queue_ctrl_pkt {
   struct tcp_pkt_inner pkt;
 } __attribute__((packed));
 
-/* Message that bumps the app TX head */
+/* Message that bumps the app TX head after bytes are ACKed */
 struct tcp_queue_bump_app_tx {
   /* Opaque pointer to struct in app library */
   __u64 opaque;
-  /* Bump for TX head */
+  /* Number of acknowledged TX bytes */
   __u32 tx_head;
 } __attribute__((packed));
 

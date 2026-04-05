@@ -9,7 +9,7 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
     struct tcp_pkt_inner *pkt);
 static int handle_listen_syn(struct tcp_slow_context *ctx,
     struct tcp_sock *listen_sock, __u32 local_ip, __u16 local_port,
-    __u32 remote_ip, __u16 remote_port, __u32 seq);
+    __u32 remote_ip, __u16 remote_port, __u32 seq, __u16 wnd);
 
 int tcp_slow_fast_poll(struct tcp_slow_context *ctx)
 {
@@ -67,6 +67,7 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
   __u32 ack;
   __u16 local_port;
   __u16 remote_port;
+  __u16 wnd;
   __u16 flags;
   struct tcp_sock *sock;
   struct tcp_sock *listen_sock;
@@ -82,6 +83,7 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
   ack = f_beui32(tcp->ackno);
   local_port = f_beui16(tcp->dest);
   remote_port = f_beui16(tcp->src);
+  wnd = f_beui16(tcp->wnd);
   flags = TCPH_FLAGS(tcp);
 
   sock = tcp_slow_state_flow_lookup(ctx, local_ip, local_port, remote_ip,
@@ -105,6 +107,7 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
 
         tcp_slow_timeout_cancel(ctx, sock);
         sock->rx_seq = seq + 1;
+        sock->tx_remote_avail = wnd;
         sock->tx_pending -= 1;
         tcp_slow_state_enqueue_ctrl_tx(ctx, sock, TAS_TCP_ACK);
         sock->state = TCP_SOCK_STATE_ESTABLISHED;
@@ -131,6 +134,7 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
           return 0;
 
         tcp_slow_timeout_cancel(ctx, sock);
+        sock->tx_remote_avail = wnd;
         sock->tx_pending -= 1;
         sock->state = TCP_SOCK_STATE_ACCEPT_PENDING;
         if (tcp_slow_state_listener_ready_push(ctx,
@@ -203,12 +207,12 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
 
   listen_sock = &tcp_slow_get_sock_map(ctx)[listener_id];
   return handle_listen_syn(ctx, listen_sock, local_ip, local_port, remote_ip,
-      remote_port, seq);
+      remote_port, seq, wnd);
 }
 
 static int handle_listen_syn(struct tcp_slow_context *ctx,
     struct tcp_sock *listen_sock, __u32 local_ip, __u16 local_port,
-    __u32 remote_ip, __u16 remote_port, __u32 seq)
+    __u32 remote_ip, __u16 remote_port, __u32 seq, __u16 wnd)
 {
   int ret;
   struct tcp_sock *sock;
@@ -239,6 +243,7 @@ static int handle_listen_syn(struct tcp_slow_context *ctx,
   sock->tx_seq = 1;
   sock->tx_pending = 1;
   sock->rx_seq = seq + 1;
+  sock->tx_remote_avail = wnd;
   sock->state = TCP_SOCK_STATE_SYN_RECV;
   ctx->sock_meta[sock->id].listener_id = listen_sock->id;
 

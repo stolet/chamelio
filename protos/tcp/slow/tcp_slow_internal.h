@@ -63,6 +63,7 @@ int tcp_slow_state_fill_new_sock_res(struct tcp_sock *sock,
     struct tcp_queue_new_sock_res *res);
 int tcp_slow_state_fill_accept_res(struct tcp_sock *listen_sock,
     struct tcp_sock *sock, struct tcp_queue_accept_res *res);
+__u16 tcp_slow_state_rx_window(const struct tcp_sock *sock);
 int tcp_slow_state_bound_insert(struct tcp_slow_context *ctx, __u16 port,
     __u32 sock_id, int reuseport);
 void tcp_slow_state_bound_remove(struct tcp_slow_context *ctx, __u16 port,

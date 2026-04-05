@@ -11,10 +11,10 @@ static inline __u32 flow_hash(__u32 local_ip, __u16 local_port, __u32 remote_ip,
     __u16 remote_port);
 static int enqueue_ctrl_pkt(struct tcp_slow_context *ctx, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
-    __u32 ack, __u16 flags);
+    __u32 ack, __u16 flags, __u16 wnd);
 static void fill_ctrl_pkt(struct tcp_pkt_inner *pkt, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
-    __u32 ack, __u16 flags);
+    __u32 ack, __u16 flags, __u16 wnd);
 
 int tcp_slow_state_alloc_sock(struct tcp_slow_context *ctx, __u64 opaque,
     __u8 app_id, __u8 ctx_id, __u16 app_bump_qid, struct tcp_sock **sock_out)
@@ -61,6 +61,8 @@ int tcp_slow_state_alloc_sock(struct tcp_slow_context *ctx, __u64 opaque,
   sock->tx_head = 0;
   sock->tx_pending = 0;
   sock->tx_off = protoq->off;
+  sock->tx_remote_avail = 0;
+  sock->rx_dupack_cnt = 0;
 
   ctx->sock_meta[sock->id].listener_id = ID_INVALID;
   ctx->sock_meta[sock->id].auto_bound = 0;
@@ -68,6 +70,17 @@ int tcp_slow_state_alloc_sock(struct tcp_slow_context *ctx, __u64 opaque,
 
   *sock_out = sock;
   return 0;
+}
+
+__u16 tcp_slow_state_rx_window(const struct tcp_sock *sock)
+{
+  __u32 wnd;
+
+  wnd = sock->rx_len - sock->rx_avail;
+  if (wnd > 65535)
+    wnd = 65535;
+
+  return (__u16) wnd;
 }
 
 int tcp_slow_state_fill_new_sock_res(struct tcp_sock *sock,
@@ -475,7 +488,8 @@ int tcp_slow_state_enqueue_ctrl_tx(struct tcp_slow_context *ctx,
   int ret;
 
   ret = enqueue_ctrl_pkt(ctx, sock->local_ip, sock->local_port,
-      sock->remote_ip, sock->remote_port, sock->tx_seq, sock->rx_seq, flags);
+      sock->remote_ip, sock->remote_port, sock->tx_seq, sock->rx_seq, flags,
+      tcp_slow_state_rx_window(sock));
   if (ret != 0)
     return -1;
 
@@ -490,7 +504,7 @@ int tcp_slow_state_enqueue_ctrl_reply(struct tcp_slow_context *ctx,
     __u32 seq, __u32 ack, __u16 flags)
 {
   return enqueue_ctrl_pkt(ctx, local_ip, local_port, remote_ip, remote_port,
-      seq, ack, flags);
+      seq, ack, flags, 0);
 }
 
 void tcp_slow_state_sock_close_final(struct tcp_slow_context *ctx,
@@ -509,6 +523,8 @@ void tcp_slow_state_sock_close_final(struct tcp_slow_context *ctx,
   sock->tx_seq = 0;
   sock->tx_pending = 0;
   sock->rx_seq = 0;
+  sock->tx_remote_avail = 0;
+  sock->rx_dupack_cnt = 0;
   ctx->sock_meta[sock->id].auto_bound = 0;
 }
 
@@ -532,6 +548,8 @@ void tcp_slow_state_sock_connect_failed(struct tcp_slow_context *ctx,
   sock->tx_seq = 0;
   sock->rx_seq = 0;
   sock->tx_pending = 0;
+  sock->tx_remote_avail = 0;
+  sock->rx_dupack_cnt = 0;
   sock->flags = 0;
   sock->state = TCP_SOCK_STATE_INIT;
 
@@ -550,7 +568,7 @@ static inline __u32 flow_hash(__u32 local_ip, __u16 local_port, __u32 remote_ip,
 
 static int enqueue_ctrl_pkt(struct tcp_slow_context *ctx, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
-    __u32 ack, __u16 flags)
+    __u32 ack, __u16 flags, __u16 wnd)
 {
   int ret;
   struct tcp_queue_bump_entry *pkt_qe;
@@ -571,7 +589,7 @@ static int enqueue_ctrl_pkt(struct tcp_slow_context *ctx, __u32 local_ip,
   }
 
   fill_ctrl_pkt(&pkt_qe->data.ctrl_pkt.pkt, local_ip, local_port,
-      remote_ip, remote_port, seq, ack, flags);
+      remote_ip, remote_port, seq, ack, flags, wnd);
   sig_qe->data.ctrl_sig.ready = 1;
 
   ret = queue_enqueue(ctx->slow_fast_pkt_q, TCP_QUEUE_CTRL_TX_PKT);
@@ -593,7 +611,7 @@ static int enqueue_ctrl_pkt(struct tcp_slow_context *ctx, __u32 local_ip,
 
 static void fill_ctrl_pkt(struct tcp_pkt_inner *pkt, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
-    __u32 ack, __u16 flags)
+    __u32 ack, __u16 flags, __u16 wnd)
 {
   IPH_VHL_SET(&pkt->ip, 4, 5);
   pkt->ip._tos = 0;
@@ -611,7 +629,7 @@ static void fill_ctrl_pkt(struct tcp_pkt_inner *pkt, __u32 local_ip,
   pkt->tcp.seqno = t_beui32(seq);
   pkt->tcp.ackno = t_beui32(ack);
   TCPH_HDRLEN_FLAGS_SET(&pkt->tcp, TCP_HLEN / 4, flags);
-  pkt->tcp.wnd = t_beui16(65535);
+  pkt->tcp.wnd = t_beui16(wnd);
   pkt->tcp.chksum = 0;
   pkt->tcp.urgp = t_beui16(0);
 }

@@ -57,9 +57,9 @@ struct tcp_socket_lib {
     __u16 tx_qid;
     /* Length of the TX buffer */
     __u32 tx_len;
-    /* Number of bytes written to buffer */
+    /* Number of bytes still owned by TCP in the TX buffer */
     __u32 tx_avail;
-    /* Head of the TX buffer */
+    /* Head of the TX buffer, points to the oldest buffered byte */
     __u32 tx_head;
     /* Pointer to the start of the TX buffer in shared memory */
     void *tx_buf;
