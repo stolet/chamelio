@@ -415,6 +415,10 @@ static int handle_connect_req(struct tcp_slow_context *ctx,
   sock->tx_pending = 1;
   sock->rx_seq = 0;
   sock->state = TCP_SOCK_STATE_SYN_SENT;
+  if (tcp_slow_cc_ecn_enabled(ctx))
+    sock->flags |= TCP_SOCK_FLAG_ECN;
+  else
+    sock->flags &= ~TCP_SOCK_FLAG_ECN;
 
   ret = tcp_slow_state_flow_insert(ctx, sock);
   if (ret != 0)
@@ -423,7 +427,9 @@ static int handle_connect_req(struct tcp_slow_context *ctx,
     return -1;
   }
 
-  ret = tcp_slow_state_enqueue_ctrl_tx(ctx, sock, TAS_TCP_SYN);
+  ret = tcp_slow_state_enqueue_ctrl_tx(ctx, sock, TAS_TCP_SYN |
+      ((sock->flags & TCP_SOCK_FLAG_ECN) != 0 ?
+      TAS_TCP_ECE | TAS_TCP_CWR : 0));
   if (ret != 0)
   {
     tcp_slow_state_sock_connect_failed(ctx, sock, EAGAIN);
@@ -528,6 +534,7 @@ static int handle_accept_req(struct tcp_slow_context *ctx,
   sock->ctx_id = actx->id;
   ctx->sock_meta[sock->id].listener_id = ID_INVALID;
   sock->state = TCP_SOCK_STATE_ESTABLISHED;
+  tcp_slow_cc_init_sock(ctx, sock);
   if (listener->backlog_used != 0)
     listener->backlog_used--;
 

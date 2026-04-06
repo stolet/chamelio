@@ -66,6 +66,38 @@ struct tcp_sock_meta_slow {
   __u8 retx_kind;
   /* Number of retransmissions left after the initial send */
   __u8 retx_left;
+  /* Last congestion-control update timestamp */
+  __u64 cc_tsc;
+  /* RTT estimate in microseconds */
+  __u32 cc_rtt;
+  /* Last drop counter snapshot */
+  __u32 cc_last_drops;
+  /* Last ACK counter snapshot */
+  __u32 cc_last_acks;
+  /* Last acknowledged byte snapshot */
+  __u32 cc_last_ackb;
+  /* Last ECN-marked acknowledged byte snapshot */
+  __u32 cc_last_ecnb;
+  /* Number of timeout retransmits since the last control update */
+  __u32 cc_rexmits;
+  /* Number of control intervals with outstanding data but no ACK progress */
+  __u32 cnt_tx_pending;
+  /* Timestamp when transmit progress last stopped */
+  __u64 ts_tx_pending;
+  /* Unprocessed ACK packets for DCTCP */
+  __u32 dctcp_unproc_acks;
+  /* Unprocessed acknowledged bytes for DCTCP */
+  __u32 dctcp_unproc_ackb;
+  /* Unprocessed ECN-marked acknowledged bytes for DCTCP */
+  __u32 dctcp_unproc_ecnb;
+  /* Unprocessed drops for DCTCP */
+  __u32 dctcp_unproc_drops;
+  /* DCTCP ECN EWMA scaled by UINT_MAX */
+  __u32 dctcp_ecn_rate;
+  /* Smoothed actual rate in kbps */
+  __u32 dctcp_act_rate;
+  /* 1 while DCTCP is in slow start */
+  __u8 dctcp_slowstart;
 };
 
 struct tcp_slow_context {
@@ -114,6 +146,10 @@ struct tcp_slow_context {
   struct tcp_sock_meta_slow *sock_meta;
   /* Slow-path port reservations for bind/connect */
   struct tcp_port *bound_ports;
+  /* Last time the CC loop scanned sockets */
+  __u64 cc_poll_tsc;
+  /* Next socket index to scan for CC */
+  __u32 cc_next_sock;
 };
 
 #endif

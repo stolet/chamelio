@@ -22,11 +22,26 @@ static __always_inline int punt_ctrl_rx(struct cham_ebpf_ctx *ctx,
 static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx);
 static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx);
 static __always_inline int handle_ctrl_tx(struct cham_ebpf_ctx *ctx);
+static __always_inline int handle_tx_command(struct cham_ebpf_ctx *ctx,
+    int retransmit);
+static __always_inline int tcp_emit_packet(struct cham_ebpf_ctx *ctx,
+    struct tcp_sock *sock, __u16 *payload_len_out);
 static __always_inline void fill_headers(struct tcp_pkt_inner *p,
     __u32 local_ip, __u16 local_port, __u32 remote_ip, __u16 remote_port,
     __u32 seq, __u32 ack, __u16 flags, __u16 wnd, __u16 payload_len);
 static __always_inline __u32 tcp_tx_sched_avail(const struct tcp_sock *sock);
 static __always_inline __u16 tcp_rx_window(const struct tcp_sock *sock);
+static __always_inline struct cham_sched_entry *tcp_sched_entry_lookup(
+    struct cham_ebpf_ctx *ctx, __u32 sock_id);
+static __always_inline int tcp_sched_entry_active(struct cham_ebpf_ctx *ctx,
+    __u32 sock_id, __u64 *priority);
+static __always_inline __u64 tcp_sched_ack_priority(
+    struct cham_ebpf_ctx *ctx, const struct tcp_sock *sock);
+static __always_inline __u64 tcp_sched_data_priority(
+    struct cham_ebpf_ctx *ctx, const struct tcp_sock *sock);
+static __always_inline __u64 tcp_sched_after_send_priority(
+    struct cham_ebpf_ctx *ctx, __u64 cur_priority, __u16 payload_len,
+    __u32 rate);
 static __always_inline int schedule_sock_tx(struct cham_ebpf_ctx *ctx,
     struct tcp_sock *sock, __u32 old_avail);
 static __always_inline __u32 flow_hash(__u32 local_ip, __u16 local_port,
@@ -43,9 +58,11 @@ static void (*ebpf_print)(int a) = (void *) 1004;
 
 static __u16 (*ebpf_ipv4_checksum)(void *ip_hdr) = (void *) 1005;
 static __u16 (*ebpf_ipv4_udptcp_cksum)(void *ip_hdr, void *udp_hdr) = (void *) 1006;
+static __u64 (*ebpf_rdtsc)(void) = (void *) 1014;
+static __u64 (*ebpf_rate_delay_tsc)(__u32 bytes, __u32 rate_kbps) = (void *) 1015;
 static struct cham_sched_entry * (*ebpf_sched_head)(struct cham_scheduler *sched, __u64 elsize) = (void *) 1007;
 static int (*sched_pop)(struct cham_scheduler *sched) = (void *) 1008;
-static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u32 priority,
+static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u64 priority,
     __u32 avail) = (void *) 1009;
 
 static void * (*ebpf_map_get)(void *map_base, __u32 len) = (void *) 1010;
@@ -105,19 +122,22 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   sock = tcp_flow_find(ctx, f_beui32(ip->dst), f_beui16(tcp->dest),
       f_beui32(ip->src), f_beui16(tcp->src));
       
-  if (sock == NULL && (flags != TAS_TCP_SYN || payload_len != 0))
+  if (sock == NULL && (((flags & TAS_TCP_SYN) == 0) || payload_len != 0 ||
+      (flags & ~(TAS_TCP_SYN | TAS_TCP_ECE | TAS_TCP_CWR)) != 0))
     return -1;
   else if (sock == NULL)
     return punt_ctrl_rx(ctx, ip, tcp);
       
   if (sock->state != TCP_SOCK_STATE_ESTABLISHED || sock->opaque == 0 ||
       (flags & (TAS_TCP_SYN | TAS_TCP_FIN | TAS_TCP_RST)) != 0 ||
-      (flags & ~(TAS_TCP_ACK | TAS_TCP_PSH)) != 0)
+      (flags & ~(TAS_TCP_ACK | TAS_TCP_PSH | TAS_TCP_ECE | TAS_TCP_CWR)) != 0)
     return punt_ctrl_rx(ctx, ip, tcp);
 
   old_tx_avail = tcp_tx_sched_avail(sock);
   ackno = f_beui32(tcp->ackno);
   sock->tx_remote_avail = f_beui16(tcp->wnd);
+  if ((flags & TAS_TCP_ACK) != 0)
+    sock->cc_acks++;
   ack_bump = 0;
   if (ackno >= sock->tx_seq && ackno <= sock->tx_seq + sock->tx_pending)
   {
@@ -138,6 +158,9 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       sock->tx_seq += ack_bump;
       sock->tx_pending -= ack_bump;
       sock->rx_dupack_cnt = 0;
+      sock->cc_ackb += ack_bump;
+      if ((flags & TAS_TCP_ECE) != 0)
+        sock->cc_ecnb += ack_bump;
 
       qe->data.bump_app_tx.opaque = sock->opaque;
       qe->data.bump_app_tx.tx_head = ack_bump;
@@ -155,6 +178,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
         sock->tx_remote_avail += old_pending;
         sock->tx_pending = 0;
         sock->rx_dupack_cnt = 0;
+        sock->cc_drops++;
       }
     }
   }
@@ -162,6 +186,9 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   /* Return if this is a pure ACK */
   if (payload_len == 0)
     return schedule_sock_tx(ctx, sock, old_tx_avail);
+
+  if (IPH_ECN(ip) == CHAM_IP_ECN_CE)
+    sock->flags |= TCP_SOCK_FLAG_SEND_ECE;
 
   if (seqno > sock->rx_seq)
   {
@@ -232,26 +259,25 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 SEC("chamelio/event_tx")
 int event_tx(struct cham_ebpf_ctx *ctx)
 {
-  __u32 tx_ip;
-  __u32 max_payload;
-  __u8 tx_flags;
+  __u64 now_tsc;
+  __u64 sched_priority;
+  __u32 sock_id;
   struct tcp_sock *sock;
   struct cham_sched_entry *sched_entry;
   struct cham_map *map;
-  struct tcp_pkt_inner *p = (struct tcp_pkt_inner *) ctx->pkt;
-  __u16 payload_len, pkt_hdrs_len;
-  __u32 tx_pos, sock_id;
-  __u64 part;
+  __u16 payload_len;
   int ret;
-
-  if ((__u8 *) p + sizeof(struct tcp_pkt_inner) > (__u8 *) ctx->pkt_end)
-    return -1;
 
   sched_entry = ebpf_sched_head(&ctx->sched,
       sizeof(struct cham_sched_entry));
   if (sched_entry == NULL)
     return -1;
 
+  now_tsc = ebpf_rdtsc();
+  if (sched_entry->priority > now_tsc)
+    return -1;
+
+  sched_priority = sched_entry->priority;
   sock_id = sched_entry->id;
   ret = sched_pop(&ctx->sched);
   if (ret != 0)
@@ -262,72 +288,33 @@ int event_tx(struct cham_ebpf_ctx *ctx)
   if (sock == NULL || sock->state != TCP_SOCK_STATE_ESTABLISHED)
     return -1;
 
-  if (sock->remote_ip == 0 || sock->remote_port == 0)
+  ret = tcp_emit_packet(ctx, sock, &payload_len);
+  if (ret < 0)
     return -1;
 
-  payload_len = tcp_tx_sched_avail(sock);
-  max_payload = (__u32) ((__u8 *) ctx->pkt_end -
-      ((__u8 *) p + sizeof(struct tcp_pkt_inner)));
-  if (payload_len > TCP_MAX_PAYLOAD)
-    payload_len = TCP_MAX_PAYLOAD;
-  if (payload_len > max_payload)
-    payload_len = max_payload;
-  if (payload_len == 0 && (sock->flags & TCP_SOCK_FLAG_SEND_ACK) == 0)
-    return -1;
-
-  if ((__u8 *) p + sizeof(struct tcp_pkt_inner) + payload_len >
-      (__u8 *) ctx->pkt_end)
-    return -1;
-
-  tx_ip = sock->remote_ip;
-  /* PSH only makes sense when there is payload in the segment. */
-  tx_flags = TAS_TCP_ACK;
-  if (payload_len != 0)
-    tx_flags |= TAS_TCP_PSH;
-  fill_headers(p, sock->local_ip, sock->local_port, tx_ip, sock->remote_port,
-      sock->tx_seq + sock->tx_pending, sock->rx_seq, tx_flags,
-      tcp_rx_window(sock), payload_len);
-  pkt_hdrs_len = sizeof(struct ip_hdr) + TCP_HLEN;
-
-  if (payload_len != 0)
+  if (payload_len != 0 && sock->cc_rate != 0 &&
+      sched_priority > ctx->sched.vtime)
   {
-    tx_pos = sock->tx_head + sock->tx_pending;
-    if (tx_pos >= sock->tx_len)
-      tx_pos -= sock->tx_len;
-
-    if (tx_pos + payload_len <= sock->tx_len)
-    {
-      ebpf_memcpy(ctx->pkt + pkt_hdrs_len, ctx->shm_base + sock->tx_off +
-          tx_pos, payload_len);
-    }
-    else
-    {
-      part = sock->tx_len - tx_pos;
-      ebpf_memcpy(ctx->pkt + pkt_hdrs_len, ctx->shm_base + sock->tx_off +
-          tx_pos, part);
-      ebpf_memcpy(ctx->pkt + pkt_hdrs_len + part, ctx->shm_base + sock->tx_off,
-          payload_len - part);
-    }
-
-    sock->tx_avail -= payload_len;
-    sock->tx_pending += payload_len;
+    ctx->sched.vtime = sched_priority;
   }
-
-  sock->flags &= ~TCP_SOCK_FLAG_SEND_ACK;
 
   if (tcp_tx_sched_avail(sock) != 0)
   {
-    ret = sched_add(&ctx->sched, sock->id, 1, tcp_tx_sched_avail(sock));
+    __u64 next_priority;
+
+    if (sock->cc_rate == 0)
+      next_priority = ebpf_rdtsc();
+    else
+      next_priority = tcp_sched_after_send_priority(ctx, sched_priority,
+          payload_len, sock->cc_rate);
+
+    ret = sched_add(&ctx->sched, sock->id, next_priority,
+        tcp_tx_sched_avail(sock));
     if (ret != 0)
       return -1;
   }
 
-  p->ip.chksum = 0;
-  p->tcp.chksum = 0;
-  p->ip.chksum = ebpf_ipv4_checksum(&p->ip);
-  p->tcp.chksum = ebpf_ipv4_udptcp_cksum(&p->ip, &p->tcp);
-
-  return pkt_hdrs_len + payload_len;
+  return ret;
 }
 
 SEC("chamelio/event_deq")
@@ -345,6 +332,10 @@ int event_deq(struct cham_ebpf_ctx *ctx)
       return handle_bump_rx(ctx);
     case TCP_QUEUE_CTRL_TX:
       return handle_ctrl_tx(ctx);
+    case TCP_QUEUE_TX_SCHED:
+      return handle_tx_command(ctx, 0);
+    case TCP_QUEUE_TX_RETRANSMIT:
+      return handle_tx_command(ctx, 1);
     default:
       return -1;
   }
@@ -413,7 +404,8 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   if (old_wnd == 0 && tcp_rx_window(sock) != 0)
   {
     sock->flags |= TCP_SOCK_FLAG_SEND_ACK;
-    if (sched_add(&ctx->sched, sock->id, 1, 0) != 0)
+    if (sched_add(&ctx->sched, sock->id,
+            tcp_sched_ack_priority(ctx, sock), 0) != 0)
       return -1;
     return 0;
   }
@@ -424,12 +416,14 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
 static __always_inline __u32 tcp_tx_sched_avail(const struct tcp_sock *sock)
 {
   __u32 fc_avail;
+  __u32 avail;
 
   if (sock->tx_pending >= sock->tx_remote_avail)
     return 0;
 
   fc_avail = sock->tx_remote_avail - sock->tx_pending;
-  return sock->tx_avail < fc_avail ? sock->tx_avail : fc_avail;
+  avail = sock->tx_avail < fc_avail ? sock->tx_avail : fc_avail;
+  return avail;
 }
 
 static __always_inline __u16 tcp_rx_window(const struct tcp_sock *sock)
@@ -443,20 +437,89 @@ static __always_inline __u16 tcp_rx_window(const struct tcp_sock *sock)
   return (__u16) wnd;
 }
 
+static __always_inline struct cham_sched_entry *tcp_sched_entry_lookup(
+    struct cham_ebpf_ctx *ctx, __u32 sock_id)
+{
+  return ebpf_map_lookup(ctx->sched.entries, sock_id,
+      sizeof(struct cham_sched_entry));
+}
+
+static __always_inline int tcp_sched_entry_active(struct cham_ebpf_ctx *ctx,
+    __u32 sock_id, __u64 *priority)
+{
+  struct cham_sched_entry *entry;
+
+  entry = tcp_sched_entry_lookup(ctx, sock_id);
+  if (entry == NULL || entry->id == SCHED_ID_INVALID)
+    return 0;
+
+  if (priority != NULL)
+    *priority = entry->priority;
+  return 1;
+}
+
+static __always_inline __u64 tcp_sched_ack_priority(
+    struct cham_ebpf_ctx *ctx, const struct tcp_sock *sock)
+{
+  __u64 priority;
+
+  if (tcp_sched_entry_active(ctx, sock->id, &priority))
+    return priority;
+
+  return ebpf_rdtsc();
+}
+
+static __always_inline __u64 tcp_sched_data_priority(
+    struct cham_ebpf_ctx *ctx, const struct tcp_sock *sock)
+{
+  __u64 now_tsc;
+  __u64 priority;
+
+  if (tcp_sched_entry_active(ctx, sock->id, &priority))
+    return priority;
+
+  now_tsc = ebpf_rdtsc();
+  if (sock->cc_rate == 0)
+    return now_tsc;
+
+  return ctx->sched.vtime > now_tsc ? ctx->sched.vtime : now_tsc;
+}
+
+static __always_inline __u64 tcp_sched_after_send_priority(
+    struct cham_ebpf_ctx *ctx, __u64 cur_priority, __u16 payload_len,
+    __u32 rate)
+{
+  __u64 base;
+
+  if (rate == 0 || payload_len == 0)
+    return ebpf_rdtsc();
+
+  base = ctx->sched.vtime > cur_priority ? ctx->sched.vtime : cur_priority;
+  ctx->sched.vtime = base;
+  return base + ebpf_rate_delay_tsc(payload_len, rate);
+}
+
 static __always_inline int schedule_sock_tx(struct cham_ebpf_ctx *ctx,
     struct tcp_sock *sock, __u32 old_avail)
 {
   __u32 new_avail, sched_avail;
+  __u64 sched_priority;
 
   new_avail = tcp_tx_sched_avail(sock);
   if (new_avail > old_avail)
+  {
     sched_avail = new_avail - old_avail;
+    sched_priority = tcp_sched_data_priority(ctx, sock);
+  }
   else if ((sock->flags & TCP_SOCK_FLAG_SEND_ACK) != 0)
+  {
     sched_avail = 0;
+    sched_priority = tcp_sched_ack_priority(ctx, sock);
+  }
   else
     return 0;
 
-  if (sched_add(&ctx->sched, sock->id, 1, sched_avail) != 0)
+  if (sched_add(&ctx->sched, sock->id, sched_priority, sched_avail) != 0)
     return -1;
   return 0;
 }
@@ -516,6 +579,158 @@ static __always_inline int handle_ctrl_tx(struct cham_ebpf_ctx *ctx)
     return -1;
 
   return pkt_len;
+}
+
+static __always_inline int handle_tx_command(struct cham_ebpf_ctx *ctx,
+    int retransmit)
+{
+  int ret;
+  int had_sched_entry;
+  struct cham_map *map;
+  struct tcp_sock *sock;
+  struct tcp_queue_bump_entry *qe;
+  struct tcp_queue_fast_sock *cmd;
+  __u32 avail;
+  __u64 sched_priority;
+  __u16 payload_len;
+
+  qe = (struct tcp_queue_bump_entry *) ctx->qe;
+  cmd = &qe->data.fast_sock;
+
+  map = &ctx->maps[SOCK_MAP];
+  sock = ebpf_map_lookup(map->addr, cmd->sock_id, sizeof(struct tcp_sock));
+  if (sock == NULL || sock->state != TCP_SOCK_STATE_ESTABLISHED)
+    return -1;
+
+  had_sched_entry = tcp_sched_entry_active(ctx, sock->id, &sched_priority);
+  if (retransmit && sock->tx_pending != 0)
+  {
+    sock->tx_avail += sock->tx_pending;
+    sock->tx_remote_avail += sock->tx_pending;
+    sock->tx_pending = 0;
+    sock->rx_dupack_cnt = 0;
+  }
+
+  if (retransmit)
+  {
+    ret = tcp_emit_packet(ctx, sock, &payload_len);
+    if (ret < 0)
+      return ret;
+
+    if (!had_sched_entry && tcp_tx_sched_avail(sock) != 0)
+    {
+      if (sock->cc_rate == 0)
+      {
+        sched_priority = ebpf_rdtsc();
+      }
+      else
+      {
+        __u64 base = tcp_sched_data_priority(ctx, sock);
+        sched_priority = base + ebpf_rate_delay_tsc(payload_len, sock->cc_rate);
+      }
+
+      if (sched_add(&ctx->sched, sock->id, sched_priority,
+              tcp_tx_sched_avail(sock)) != 0)
+      {
+        return -1;
+      }
+    }
+
+    return ret;
+  }
+
+  avail = tcp_tx_sched_avail(sock);
+  if (avail == 0 && (sock->flags & TCP_SOCK_FLAG_SEND_ACK) == 0)
+    return 0;
+
+  if (avail == 0)
+    sched_priority = tcp_sched_ack_priority(ctx, sock);
+  else
+    sched_priority = tcp_sched_data_priority(ctx, sock);
+
+  if (sched_add(&ctx->sched, sock->id, sched_priority, avail) != 0)
+    return -1;
+  return 0;
+}
+
+static __always_inline int tcp_emit_packet(struct cham_ebpf_ctx *ctx,
+    struct tcp_sock *sock, __u16 *payload_len_out)
+{
+  __u32 tx_ip;
+  __u32 max_payload;
+  __u32 tx_pos;
+  __u64 part;
+  __u8 tx_flags;
+  struct tcp_pkt_inner *p = (struct tcp_pkt_inner *) ctx->pkt;
+  __u16 payload_len, pkt_hdrs_len;
+
+  if ((__u8 *) p + sizeof(struct tcp_pkt_inner) > (__u8 *) ctx->pkt_end)
+    return -1;
+
+  if (sock->remote_ip == 0 || sock->remote_port == 0)
+    return -1;
+
+  payload_len = tcp_tx_sched_avail(sock);
+  max_payload = (__u32) ((__u8 *) ctx->pkt_end -
+      ((__u8 *) p + sizeof(struct tcp_pkt_inner)));
+  if (payload_len > TCP_MAX_PAYLOAD)
+    payload_len = TCP_MAX_PAYLOAD;
+  if (payload_len > max_payload)
+    payload_len = max_payload;
+  if (payload_len == 0 && (sock->flags & TCP_SOCK_FLAG_SEND_ACK) == 0)
+    return -1;
+
+  if ((__u8 *) p + sizeof(struct tcp_pkt_inner) + payload_len >
+      (__u8 *) ctx->pkt_end)
+    return -1;
+
+  tx_ip = sock->remote_ip;
+  tx_flags = TAS_TCP_ACK;
+  if (payload_len != 0)
+    tx_flags |= TAS_TCP_PSH;
+  if ((sock->flags & TCP_SOCK_FLAG_SEND_ECE) != 0)
+    tx_flags |= TAS_TCP_ECE;
+  fill_headers(p, sock->local_ip, sock->local_port, tx_ip, sock->remote_port,
+      sock->tx_seq + sock->tx_pending, sock->rx_seq, tx_flags,
+      tcp_rx_window(sock), payload_len);
+  if ((sock->flags & TCP_SOCK_FLAG_ECN) != 0 && payload_len != 0)
+    IPH_ECN_SET(&p->ip, CHAM_IP_ECN_ECT0);
+  pkt_hdrs_len = sizeof(struct ip_hdr) + TCP_HLEN;
+
+  if (payload_len != 0)
+  {
+    tx_pos = sock->tx_head + sock->tx_pending;
+    if (tx_pos >= sock->tx_len)
+      tx_pos -= sock->tx_len;
+
+    if (tx_pos + payload_len <= sock->tx_len)
+    {
+      ebpf_memcpy(ctx->pkt + pkt_hdrs_len, ctx->shm_base + sock->tx_off +
+          tx_pos, payload_len);
+    }
+    else
+    {
+      part = sock->tx_len - tx_pos;
+      ebpf_memcpy(ctx->pkt + pkt_hdrs_len, ctx->shm_base + sock->tx_off +
+          tx_pos, part);
+      ebpf_memcpy(ctx->pkt + pkt_hdrs_len + part, ctx->shm_base + sock->tx_off,
+          payload_len - part);
+    }
+
+    sock->tx_avail -= payload_len;
+    sock->tx_pending += payload_len;
+  }
+
+  sock->flags &= ~TCP_SOCK_FLAG_SEND_ACK;
+  sock->flags &= ~TCP_SOCK_FLAG_SEND_ECE;
+
+  p->ip.chksum = 0;
+  p->tcp.chksum = 0;
+  p->ip.chksum = ebpf_ipv4_checksum(&p->ip);
+  p->tcp.chksum = ebpf_ipv4_udptcp_cksum(&p->ip, &p->tcp);
+
+  *payload_len_out = payload_len;
+  return pkt_hdrs_len + payload_len;
 }
 
 static __always_inline struct tcp_sock *tcp_flow_find(struct cham_ebpf_ctx *ctx,

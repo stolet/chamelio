@@ -6,6 +6,7 @@ tcp_slow_srcs = files(
   'tcp_slow_state.c',
   'tcp_slow_app.c',
   'tcp_slow_fast.c',
+  'tcp_slow_cc.c',
   'tcp_slow_timeout.c',
   'appif.c',
 )

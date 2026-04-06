@@ -521,6 +521,54 @@ int tcp_slow_state_enqueue_ctrl_reply(struct tcp_slow_context *ctx,
       seq, ack, flags, 0);
 }
 
+int tcp_slow_state_enqueue_tx_sched(struct tcp_slow_context *ctx,
+    struct tcp_sock *sock)
+{
+  int ret;
+  struct tcp_queue_bump_entry *sig_qe;
+
+  sig_qe = queue_tail(ctx->slow_fast_sig_q);
+  if (sig_qe == NULL)
+  {
+    LOG_WARN("slow->fast control signal queue is full");
+    return -1;
+  }
+
+  sig_qe->data.fast_sock.sock_id = sock->id;
+  ret = queue_enqueue(ctx->slow_fast_sig_q, TCP_QUEUE_TX_SCHED);
+  if (ret != 0)
+  {
+    LOG_WARN("failed to enqueue TCP TX schedule command");
+    return -1;
+  }
+
+  return 0;
+}
+
+int tcp_slow_state_enqueue_tx_retransmit(struct tcp_slow_context *ctx,
+    struct tcp_sock *sock)
+{
+  int ret;
+  struct tcp_queue_bump_entry *sig_qe;
+
+  sig_qe = queue_tail(ctx->slow_fast_sig_q);
+  if (sig_qe == NULL)
+  {
+    LOG_WARN("slow->fast control signal queue is full");
+    return -1;
+  }
+
+  sig_qe->data.fast_sock.sock_id = sock->id;
+  ret = queue_enqueue(ctx->slow_fast_sig_q, TCP_QUEUE_TX_RETRANSMIT);
+  if (ret != 0)
+  {
+    LOG_WARN("failed to enqueue TCP retransmit command");
+    return -1;
+  }
+
+  return 0;
+}
+
 void tcp_slow_state_sock_close_final(struct tcp_slow_context *ctx,
     struct tcp_sock *sock)
 {
@@ -540,6 +588,7 @@ void tcp_slow_state_sock_close_final(struct tcp_slow_context *ctx,
   sock->tx_remote_avail = 0;
   sock->rx_dupack_cnt = 0;
   ctx->sock_meta[sock->id].auto_bound = 0;
+  tcp_slow_cc_reset_sock(ctx, sock);
 }
 
 void tcp_slow_state_sock_connect_failed(struct tcp_slow_context *ctx,
@@ -564,7 +613,7 @@ void tcp_slow_state_sock_connect_failed(struct tcp_slow_context *ctx,
   sock->tx_pending = 0;
   sock->tx_remote_avail = 0;
   sock->rx_dupack_cnt = 0;
-  sock->flags = 0;
+  tcp_slow_cc_reset_sock(ctx, sock);
   sock->state = TCP_SOCK_STATE_INIT;
 
   actx = tcp_slow_sock_actx(ctx, sock);

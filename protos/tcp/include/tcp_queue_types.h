@@ -53,6 +53,10 @@ enum tcp_queue_type {
   TCP_QUEUE_CTRL_TX,
   /* Packet data for a TCP control packet to transmit */
   TCP_QUEUE_CTRL_TX_PKT,
+  /* Schedule socket transmission in the fast-path */
+  TCP_QUEUE_TX_SCHED,
+  /* Retransmit outstanding data for a socket in the fast-path */
+  TCP_QUEUE_TX_RETRANSMIT,
   /* Signal that a punted TCP control packet is ready */
   TCP_QUEUE_CTRL_RX,
   /* Packet data for a punted TCP control packet */
@@ -317,6 +321,12 @@ struct tcp_queue_ctrl_pkt {
   struct tcp_pkt_inner pkt;
 } __attribute__((packed));
 
+/* Fast-path command that targets a socket */
+struct tcp_queue_fast_sock {
+  /* Socket ID used by slow-path */
+  __u32 sock_id;
+} __attribute__((packed));
+
 /* Message that bumps the app TX head after bytes are ACKed */
 struct tcp_queue_bump_app_tx {
   /* Opaque pointer to struct in app library */
@@ -374,6 +384,7 @@ struct tcp_queue_bump_entry {
     struct tcp_queue_bump_cham_rx bump_cham_rx;
     struct tcp_queue_ctrl_sig ctrl_sig;
     struct tcp_queue_ctrl_pkt ctrl_pkt;
+    struct tcp_queue_fast_sock fast_sock;
     /* Keeps queue entry the size of a cache line */
     __u8 raw[63];
   } __attribute__((packed)) data;

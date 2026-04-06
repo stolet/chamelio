@@ -46,6 +46,11 @@ enum tcp_sock_state {
 #define TCP_SOCK_FLAG_SHUT_RD 0x1
 #define TCP_SOCK_FLAG_SHUT_WR 0x2
 #define TCP_SOCK_FLAG_SEND_ACK 0x4
+#define TCP_SOCK_FLAG_SEND_ECE 0x8
+#define TCP_SOCK_FLAG_ECN 0x10
+
+/* Payload size for plain IPv4/TCP packets without TCP options. */
+#define TCP_PAYLOAD_MSS 1460
 
 /* Entry for the socket map */
 struct tcp_sock {
@@ -90,6 +95,16 @@ struct tcp_sock {
   __u32 tx_remote_avail;
   /* Number of duplicate ACKs received */
   __u8 rx_dupack_cnt;
+  /* Number of ACK packets received */
+  __u32 cc_acks;
+  /* Number of acknowledged TX bytes */
+  __u32 cc_ackb;
+  /* Number of ECN-marked acknowledged TX bytes */
+  __u32 cc_ecnb;
+  /* Number of retransmit/drop events */
+  __u32 cc_drops;
+  /* Congestion-control rate in kbps, 0 means unlimited */
+  __u32 cc_rate;
 
   /* Local port */
   __u16 local_port;

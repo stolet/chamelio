@@ -14,8 +14,8 @@ struct cham_sched_entry {
   __u32 id;
   /* Next entry in the priority list */
   __u32 next_entry;
-  /* Priority for the entry */
-  __u32 priority;
+  /* Priority for the entry, lower values are dequeued first */
+  __u64 priority;
   /* Units available for transmission */
   __u32 avail;
   /* Opaque pointer to a struct that wants to transmit (e.g. socket, flow) */
@@ -26,6 +26,8 @@ struct cham_sched_entry {
 struct cham_scheduler {
   /* Pre-allocated array of all entries in the priority list */
   struct cham_sched_entry entries[MAX_SCHED_ENTRIES];
+  /* Virtual time for this protocol scheduler instance */
+  __u64 vtime;
   /* First element of the priority list */
   __u32 head;
   /* Last element of the priority list */

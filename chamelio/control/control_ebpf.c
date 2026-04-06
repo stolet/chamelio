@@ -12,6 +12,7 @@
 
 #include "control_ebpf.h"
 #include "clang.h"
+#include "clock.h"
 #include "ebpf.h"
 #include "log.h"
 #include "queue_fns.h"
@@ -39,6 +40,8 @@ static inline __u16 ebpf_ipv4_checksum(void *ip_hdr);
 static inline __u16 ebpf_ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr);
 static inline void *ebpf_map_get(void *map_base, __u32 len);
 static inline void *ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize);
+static inline __u64 ebpf_rdtsc(void);
+static inline __u64 ebpf_rate_delay_tsc(__u32 bytes, __u32 rate_kbps);
 static inline struct cham_sched_entry *ebpf_sched_head(
     struct cham_scheduler *sched, __u64 elsize);
 static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize);
@@ -59,6 +62,8 @@ enum ebpf_helper_id
   EBPF_HELPER_MAP_LOOKUP = 1011,
   EBPF_HELPER_QUEUE_HEAD = 1012,
   EBPF_HELPER_QUEUE_DEQUEUE = 1013,
+  EBPF_HELPER_RDTSC = 1014,
+  EBPF_HELPER_RATE_DELAY_TSC = 1015,
 };
 
 struct ebpf_helper_desc
@@ -102,6 +107,10 @@ static const struct ebpf_helper_desc ebpf_helpers[] = {
       "ebpf_queue_head", ebpf_queue_head },
   { EBPF_HELPER_QUEUE_DEQUEUE,
       "queue_dequeue", queue_dequeue },
+  { EBPF_HELPER_RDTSC,
+      "ebpf_rdtsc", ebpf_rdtsc },
+  { EBPF_HELPER_RATE_DELAY_TSC,
+      "ebpf_rate_delay_tsc", ebpf_rate_delay_tsc },
 };
 
 int control_ebpf_init(struct control_context *ctx)
@@ -405,6 +414,27 @@ static inline void *ebpf_map_get(void *map_base, __u32 len)
 static inline void *ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize)
 {
   return (__u8 *)map_base + (id * elsize);
+}
+
+static inline __u64 ebpf_rdtsc(void)
+{
+  return clock_rdtsc();
+}
+
+static inline __u64 ebpf_rate_delay_tsc(__u32 bytes, __u32 rate_kbps)
+{
+  __u64 cycles_per_us;
+  __u64 num;
+
+  if (bytes == 0 || rate_kbps == 0)
+    return 0;
+
+  cycles_per_us = clock_us_to_tsc(1);
+  if (cycles_per_us == 0)
+    return 0;
+
+  num = (__u64) bytes * 8 * 1000 * cycles_per_us;
+  return (num + rate_kbps - 1) / rate_kbps;
 }
 
 static inline struct cham_sched_entry *ebpf_sched_head(

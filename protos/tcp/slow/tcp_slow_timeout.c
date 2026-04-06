@@ -127,11 +127,14 @@ static int retransmit_ctrl(struct tcp_slow_context *ctx, struct tcp_sock *sock)
   {
     case TCP_SLOW_RETX_SYN:
       seq = sock->tx_seq - 1;
-      flags = TAS_TCP_SYN;
+      flags = TAS_TCP_SYN |
+          ((sock->flags & TCP_SOCK_FLAG_ECN) != 0 ?
+          TAS_TCP_ECE | TAS_TCP_CWR : 0);
       break;
     case TCP_SLOW_RETX_SYNACK:
       seq = sock->tx_seq - 1;
-      flags = TAS_TCP_SYN | TAS_TCP_ACK;
+      flags = TAS_TCP_SYN | TAS_TCP_ACK |
+          ((sock->flags & TCP_SOCK_FLAG_ECN) != 0 ? TAS_TCP_ECE : 0);
       break;
     case TCP_SLOW_RETX_FIN:
       seq = sock->tx_seq - 1;

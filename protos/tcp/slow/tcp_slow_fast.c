@@ -2,6 +2,7 @@
 
 #include "tcp_slow_internal.h"
 #include "queue_fns.h"
+#include "ip_hdr.h"
 #include "tcp_hdr.h"
 #include "log.h"
 
@@ -9,7 +10,7 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
     struct tcp_pkt_inner *pkt);
 static int handle_listen_syn(struct tcp_slow_context *ctx,
     struct tcp_sock *listen_sock, __u32 local_ip, __u16 local_port,
-    __u32 remote_ip, __u16 remote_port, __u32 seq, __u16 wnd);
+    __u32 remote_ip, __u16 remote_port, __u32 seq, __u16 wnd, __u16 flags);
 
 int tcp_slow_fast_poll(struct tcp_slow_context *ctx)
 {
@@ -106,11 +107,14 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
           return 0;
 
         tcp_slow_timeout_cancel(ctx, sock);
+        if ((flags & TAS_TCP_ECE) == 0)
+          sock->flags &= ~TCP_SOCK_FLAG_ECN;
         sock->rx_seq = seq + 1;
         sock->tx_remote_avail = wnd;
         sock->tx_pending -= 1;
         tcp_slow_state_enqueue_ctrl_tx(ctx, sock, TAS_TCP_ACK);
         sock->state = TCP_SOCK_STATE_ESTABLISHED;
+        tcp_slow_cc_init_sock(ctx, sock);
         tcp_slow_app_enqueue_connect_res(tcp_slow_sock_actx(ctx, sock),
             sock->opaque, 0, sock);
         return 0;
@@ -125,7 +129,8 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
         if ((flags & TAS_TCP_SYN) != 0 && (flags & TAS_TCP_ACK) == 0)
         {
           tcp_slow_state_enqueue_ctrl_resend(ctx, sock,
-              TAS_TCP_SYN | TAS_TCP_ACK);
+              TAS_TCP_SYN | TAS_TCP_ACK |
+              ((sock->flags & TCP_SOCK_FLAG_ECN) != 0 ? TAS_TCP_ECE : 0));
           return 0;
         }
 
@@ -206,12 +211,12 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
 
   listen_sock = &tcp_slow_get_sock_map(ctx)[listener_id];
   return handle_listen_syn(ctx, listen_sock, local_ip, local_port, remote_ip,
-      remote_port, seq, wnd);
+      remote_port, seq, wnd, flags);
 }
 
 static int handle_listen_syn(struct tcp_slow_context *ctx,
     struct tcp_sock *listen_sock, __u32 local_ip, __u16 local_port,
-    __u32 remote_ip, __u16 remote_port, __u32 seq, __u16 wnd)
+    __u32 remote_ip, __u16 remote_port, __u32 seq, __u16 wnd, __u16 flags)
 {
   int ret;
   struct tcp_sock *sock;
@@ -245,6 +250,11 @@ static int handle_listen_syn(struct tcp_slow_context *ctx,
   sock->tx_remote_avail = wnd;
   sock->state = TCP_SOCK_STATE_SYN_RECV;
   ctx->sock_meta[sock->id].listener_id = listen_sock->id;
+  if (tcp_slow_cc_ecn_enabled(ctx) &&
+      (flags & (TAS_TCP_ECE | TAS_TCP_CWR)) == (TAS_TCP_ECE | TAS_TCP_CWR))
+  {
+    sock->flags |= TCP_SOCK_FLAG_ECN;
+  }
 
   ret = tcp_slow_state_flow_insert(ctx, sock);
   if (ret != 0)
@@ -257,7 +267,8 @@ static int handle_listen_syn(struct tcp_slow_context *ctx,
   }
 
   listener->backlog_used++;
-  ret = tcp_slow_state_enqueue_ctrl_tx(ctx, sock, TAS_TCP_SYN | TAS_TCP_ACK);
+  ret = tcp_slow_state_enqueue_ctrl_tx(ctx, sock, TAS_TCP_SYN | TAS_TCP_ACK |
+      ((sock->flags & TCP_SOCK_FLAG_ECN) != 0 ? TAS_TCP_ECE : 0));
   if (ret != 0)
   {
     tcp_slow_state_sock_close_final(ctx, sock);

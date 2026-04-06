@@ -51,11 +51,15 @@ static inline struct tcp_app_context_slow *tcp_slow_sock_actx(
 int tcp_slow_init(struct tcp_slow_context *ctx);
 int tcp_slow_app_poll(struct tcp_slow_context *ctx);
 int tcp_slow_fast_poll(struct tcp_slow_context *ctx);
+int tcp_slow_cc_poll(struct tcp_slow_context *ctx);
 int tcp_slow_timeout_poll(struct tcp_slow_context *ctx);
 int tcp_slow_timeout_arm(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     __u8 kind);
 void tcp_slow_timeout_cancel(struct tcp_slow_context *ctx,
     struct tcp_sock *sock);
+int tcp_slow_cc_ecn_enabled(const struct tcp_slow_context *ctx);
+void tcp_slow_cc_init_sock(struct tcp_slow_context *ctx, struct tcp_sock *sock);
+void tcp_slow_cc_reset_sock(struct tcp_slow_context *ctx, struct tcp_sock *sock);
 
 int tcp_slow_state_alloc_sock(struct tcp_slow_context *ctx, __u64 opaque,
     __u8 app_id, __u8 ctx_id, __u16 app_bump_qid, struct tcp_sock **sock_out);
@@ -95,6 +99,10 @@ int tcp_slow_state_enqueue_ctrl_tx(struct tcp_slow_context *ctx,
     struct tcp_sock *sock, __u16 flags);
 int tcp_slow_state_enqueue_ctrl_resend(struct tcp_slow_context *ctx,
     struct tcp_sock *sock, __u16 flags);
+int tcp_slow_state_enqueue_tx_sched(struct tcp_slow_context *ctx,
+    struct tcp_sock *sock);
+int tcp_slow_state_enqueue_tx_retransmit(struct tcp_slow_context *ctx,
+    struct tcp_sock *sock);
 int tcp_slow_state_enqueue_ctrl_reply(struct tcp_slow_context *ctx,
     __u32 local_ip, __u16 local_port, __u32 remote_ip, __u16 remote_port,
     __u32 seq, __u32 ack, __u16 flags);

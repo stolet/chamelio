@@ -9,6 +9,7 @@ void sched_init(struct cham_scheduler *sched)
 {
   __u32 i;
 
+  sched->vtime = 0;
   sched->head = SCHED_ID_INVALID;
   sched->tail = SCHED_ID_INVALID;
   for (i = 0; i < MAX_SCHED_ENTRIES; i++)
@@ -21,7 +22,7 @@ void sched_init(struct cham_scheduler *sched)
   }
 }
 
-int sched_add(struct cham_scheduler *sched, __u32 id, __u32 priority,
+int sched_add(struct cham_scheduler *sched, __u32 id, __u64 priority,
     __u32 avail)
 {
   struct cham_sched_entry *entry;
@@ -99,7 +100,7 @@ static void sched_insert(struct cham_scheduler *sched, __u32 id)
   prev = SCHED_ID_INVALID;
   cur = sched->head;
   while (cur != SCHED_ID_INVALID &&
-      sched->entries[cur].priority >= entry->priority)
+      sched->entries[cur].priority < entry->priority)
   {
     prev = cur;
     cur = sched->entries[cur].next_entry;

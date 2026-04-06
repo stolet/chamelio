@@ -36,6 +36,7 @@ int main(int argc, char **argv)
     appif_poll(&ctx);
     tcp_slow_app_poll(&ctx);
     tcp_slow_fast_poll(&ctx);
+    tcp_slow_cc_poll(&ctx);
     tcp_slow_timeout_poll(&ctx);
   }
 }

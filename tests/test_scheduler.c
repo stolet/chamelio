@@ -13,6 +13,7 @@ static void test_sched_init()
   
   sched_init(&sched);
   
+  TEST_ASSERT(sched.vtime == 0, "Virtual time should start at 0");
   TEST_ASSERT(sched.head == SCHED_ID_INVALID, 
     "Head should be invalid after initialization");
   TEST_ASSERT(sched.tail == SCHED_ID_INVALID, 
@@ -35,16 +36,17 @@ static void test_sched_add()
   TEST_ASSERT(sched.tail == 1, "Tail should be 1 after first addition");
   TEST_ASSERT(sched.entries[1].avail == 10, "Entry 1 should track avail");
 
-  /* Test adding higher priority entry */
+  /* Test adding lower timestamp entry */
   TEST_ASSERT(sched_add(&sched, 2, 200, 20) == 0, "Failed to add second entry");
-  TEST_ASSERT(sched.head == 2, "Head should be 2 (higher priority)");
-  TEST_ASSERT(sched.entries[2].next_entry == 1, "Entry 2 should point to 1");
+  TEST_ASSERT(sched.head == 1, "Head should remain 1 (lower priority)");
+  TEST_ASSERT(sched.entries[1].next_entry == 2, "Entry 1 should point to 2");
   TEST_ASSERT(sched.entries[2].avail == 20, "Entry 2 should track avail");
 
-  /* Test adding lower priority entry */
+  /* Test adding even lower timestamp entry */
   TEST_ASSERT(sched_add(&sched, 3, 50, 5) == 0, "Failed to add third entry");
-  TEST_ASSERT(sched.tail == 3, "Tail should be 3 (lowest priority)");
-  TEST_ASSERT(sched.entries[1].next_entry == 3, "Entry 1 should point to 3");
+  TEST_ASSERT(sched.head == 3, "Head should be 3 (lowest priority)");
+  TEST_ASSERT(sched.tail == 2, "Tail should be 2 (highest priority)");
+  TEST_ASSERT(sched.entries[3].next_entry == 1, "Entry 3 should point to 1");
   
   printf(ANSI_COLOR_GREEN "PASSED: Scheduler add test" 
       ANSI_COLOR_RESET "\n");
@@ -65,11 +67,12 @@ static void test_sched_add_existing()
 
   entry = sched_head(&sched);
   TEST_ASSERT(entry != NULL, "Head should not be NULL after update");
-  TEST_ASSERT(entry->id == 1, "Updated entry should move to head");
+  TEST_ASSERT(entry->id == 2, "Lower priority entry should remain head");
   TEST_ASSERT(entry->priority == 300, "Updated entry should keep new priority");
   TEST_ASSERT(entry->avail == 15, "Updated entry should accumulate avail");
-  TEST_ASSERT(entry->next_entry == 2, "Updated entry should still link list");
-  TEST_ASSERT(sched.tail == 2, "Tail should remain the lower priority entry");
+  TEST_ASSERT(sched.entries[2].next_entry == 1,
+      "Updated entry should move behind the current head");
+  TEST_ASSERT(sched.tail == 1, "Tail should become the updated entry");
 
   printf(ANSI_COLOR_GREEN "PASSED: Scheduler duplicate add test"
       ANSI_COLOR_RESET "\n");
@@ -94,8 +97,8 @@ static void test_sched_add_existing_same_priority()
   TEST_ASSERT(entry->priority == 100, "Existing entry should keep priority");
   TEST_ASSERT(entry->next_entry == SCHED_ID_INVALID,
       "Existing entry should keep its position in the list");
-  TEST_ASSERT(sched.head == 2, "Higher priority entry should remain head");
-  TEST_ASSERT(sched.tail == 1, "Updated entry should remain tail");
+  TEST_ASSERT(sched.head == 1, "Lower priority entry should remain head");
+  TEST_ASSERT(sched.tail == 2, "Higher priority entry should remain tail");
 
   printf(ANSI_COLOR_GREEN "PASSED: Scheduler duplicate add same priority test"
       ANSI_COLOR_RESET "\n");
@@ -121,12 +124,12 @@ static void test_sched_head()
   TEST_ASSERT(entry->priority == 100, "Head should have priority 100");
   TEST_ASSERT(entry->avail == 10, "Head should have avail 10");
 
-  /* Add higher priority entry and test head */
+  /* Add higher timestamp entry and test head */
   sched_add(&sched, 2, 200, 20);
   entry = sched_head(&sched);
-  TEST_ASSERT(entry->id == 2, "Head should have id 2 (higher priority)");
-  TEST_ASSERT(entry->priority == 200, "Head should have priority 200");
-  TEST_ASSERT(entry->avail == 20, "Head should have avail 20");
+  TEST_ASSERT(entry->id == 1, "Head should remain id 1 (lower priority)");
+  TEST_ASSERT(entry->priority == 100, "Head should keep the lower priority");
+  TEST_ASSERT(entry->avail == 10, "Head should still have avail 10");
   
   printf(ANSI_COLOR_GREEN "PASSED: Scheduler head test" ANSI_COLOR_RESET "\n");
 }
@@ -147,7 +150,7 @@ static void test_sched_pop()
   sched_add(&sched, 2, 200, 20);
   sched_add(&sched, 3, 50, 5);
 
-  /* Pop highest priority and verify new head */
+  /* Pop lowest priority and verify new head */
   TEST_ASSERT(sched_pop(&sched) == 0, "Pop should succeed");
   entry = sched_head(&sched);
   TEST_ASSERT(entry->id == 1, "New head should be id 1");

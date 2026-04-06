@@ -268,6 +268,8 @@ int tcp_slow_init(struct tcp_slow_context *ctx)
   ctx->listeners = listeners;
   ctx->sock_meta = sock_meta;
   ctx->bound_ports = bound_ports;
+  ctx->cc_poll_tsc = clock_rdtsc();
+  ctx->cc_next_sock = 0;
 
   LOG_INFO("TCP initialized");
   return 0;
