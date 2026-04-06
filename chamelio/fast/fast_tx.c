@@ -24,7 +24,7 @@ static inline int tx_poll_guest_comb(struct fast_context *ctx,
 
 int fast_tx_poll(struct fast_context *ctx)
 {
-  int max;
+  int max, ret;
   int i, ntx, has_tx_work;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
@@ -82,9 +82,11 @@ int fast_tx_poll(struct fast_context *ctx)
 
     g = &ctx->guests[i];
     if (use_comb)
-      tx_poll_guest_comb(ctx, g, mbs, max, &ntx, charge_budget);
+      ret = tx_poll_guest_comb(ctx, g, mbs, max, &ntx, charge_budget);
     else
-      tx_poll_guest(ctx, g, mbs, max, &ntx, charge_budget);
+      ret = tx_poll_guest(ctx, g, mbs, max, &ntx, charge_budget);
+
+    (void) ret;
   }
 
   /* Flush TX and roll back unused mbufs in the cache */
@@ -119,6 +121,9 @@ static inline int tx_poll_guest(struct fast_context *ctx,
   tx_ret = 0;
   while (*ntx < max)
   {
+    if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
+      break;
+
     struct rte_mbuf *mb = mbs[*ntx];
 
     /* Prepare packet */

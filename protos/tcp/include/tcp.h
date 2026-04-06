@@ -5,8 +5,6 @@
 
 #include "utils.h"
 
-/* Maximum segment size for TCP */
-#define TCP_MSS 1400
 /* TODO: Pass MAX_APPS and MAX_CTXS as a parameter to TCP slow-path */
 /* Max number of applications that can register with slow-path */
 #define MAX_APPS 8
@@ -47,7 +45,7 @@ enum tcp_sock_state {
 
 #define TCP_SOCK_FLAG_SHUT_RD 0x1
 #define TCP_SOCK_FLAG_SHUT_WR 0x2
-#define TCP_SOCK_FLAG_ACK_PENDING 0x4
+#define TCP_SOCK_FLAG_SEND_ACK 0x4
 
 /* Entry for the socket map */
 struct tcp_sock {

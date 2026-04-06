@@ -12,6 +12,7 @@
 #define PORT_MAP 0
 #define SOCK_MAP 1
 #define REUPORT_MAP 2
+#define UDP_MAX_PAYLOAD (FAST_L3_PKT_ROOM - sizeof(struct udp_pkt_inner))
 
 static __always_inline struct udp_sock * udp_sock_find(struct cham_ebpf_ctx *ctx,
     __u16 local_port);
@@ -185,6 +186,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   struct cham_map *map;
   __u16 opt_len, payload_len, local_port;
   __u16 udp_hdrs_len, ip_hdrs_len, pkt_hdrs_len;
+  __u32 max_payload;
   __u32 new_head;
   __u64 part;
 
@@ -220,8 +222,12 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   /* Calculate number of bytes to transmit */
   payload_len = bump_cham->tx_avail;
-  if (payload_len > UDP_MSS)
-    payload_len = UDP_MSS;
+  max_payload = (__u32) ((__u8 *) ctx->pkt_end -
+      ((__u8 *) p + sizeof(struct udp_pkt_inner)));
+  if (payload_len > UDP_MAX_PAYLOAD)
+    payload_len = UDP_MAX_PAYLOAD;
+  if (payload_len > max_payload)
+    payload_len = max_payload;
 
   /* Drop if payload_len out of bounds */
   if ((__u64) p + sizeof(struct udp_pkt_inner) + payload_len > ctx->pkt_end)

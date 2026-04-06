@@ -93,6 +93,8 @@ struct tcp_sock *tcp_slow_state_flow_lookup(struct tcp_slow_context *ctx,
     __u32 local_ip, __u16 local_port, __u32 remote_ip, __u16 remote_port);
 int tcp_slow_state_enqueue_ctrl_tx(struct tcp_slow_context *ctx,
     struct tcp_sock *sock, __u16 flags);
+int tcp_slow_state_enqueue_ctrl_resend(struct tcp_slow_context *ctx,
+    struct tcp_sock *sock, __u16 flags);
 int tcp_slow_state_enqueue_ctrl_reply(struct tcp_slow_context *ctx,
     __u32 local_ip, __u16 local_port, __u32 remote_ip, __u16 remote_port,
     __u32 seq, __u32 ack, __u16 flags);

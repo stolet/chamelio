@@ -28,7 +28,8 @@ uint64_t fast_comb_rx(struct fast_comb_rx_ctx *ctx, size_t mem_len)
 {
   struct guest_fast *g = ctx->g;
 
-  fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, ctx->mb, ctx->pkt_off);
+  fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, ctx->mb, ctx->pkt_off,
+      ctx->virt_gre);
   (void) __cham_comb(&g->proto.ebpf_ctx, sizeof(struct cham_ebpf_ctx));
 
   return 1;
@@ -79,6 +80,9 @@ uint64_t fast_comb_deq(struct fast_comb_deq_ctx *ctx, size_t mem_len)
     deq_ret = (int) __cham_comb(&g->proto.ebpf_ctx,
         sizeof(struct cham_ebpf_ctx));
     (*ctx->ndeq)++;
+
+    if (deq_ret < 0)
+      return (uint64_t) -1;
 
     if (deq_ret > 0)
     {
@@ -144,6 +148,9 @@ uint64_t fast_comb_tx(struct fast_comb_tx_ctx *ctx, size_t mem_len)
   tx_ret = 0;
   while (ntx < max)
   {
+    if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
+      break;
+
     mb = mbs[ntx];
     mb->data_off = 0;
     fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, f_ctx->virt_gre);

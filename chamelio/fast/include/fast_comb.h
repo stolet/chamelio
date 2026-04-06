@@ -16,6 +16,8 @@ struct fast_comb_rx_ctx {
   struct rte_mbuf *mb;
   /* Offset to start of mbuf data after infra processing */
   __u64 pkt_off;
+  /* 1 if the tenant path uses outer IP + GRE encapsulation */
+  __u8 virt_gre;
 };
 
 /* Context for combined JIT of dequeue event. */

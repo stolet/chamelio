@@ -9,6 +9,11 @@
 
 /* Max number of fast-path cores */
 #define MAX_FP_CORES 16
+/* Ethernet MTU assumed by the fast path. This is the maximum L3 packet size
+ * available from the IPv4 header onwards on an unencapsulated path. */
+#define FAST_MTU 1500U
+/* Bytes available to protocol code starting at ctx->pkt on a plain IPv4 path. */
+#define FAST_L3_PKT_ROOM FAST_MTU
 
 /* Invalid ID used to represent end of queue list */
 #define PROTOQ_ID_INVALID UINT16_MAX

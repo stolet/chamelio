@@ -53,7 +53,6 @@ int tcp_slow_timeout_arm(struct tcp_slow_context *ctx, struct tcp_sock *sock,
   tcp_slow_timeout_cancel(ctx, sock);
   meta->retx_kind = kind;
   meta->retx_left = TCP_SLOW_RETX_RETRIES;
-
   return schedule_timeout(ctx, sock);
 }
 

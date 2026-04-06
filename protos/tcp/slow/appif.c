@@ -241,8 +241,6 @@ close_cfd:
 
 static void uxsocket_error(struct tcp_slow_context *ctx, struct app_event *aev)
 {
-  LOG_WARN("removing cfd=%d from app epfd", ctx->app_epfd);
-  
   /* TODO: Disable queues enabled for this app */
   epoll_ctl(ctx->app_epfd, EPOLL_CTL_DEL, aev->fd, NULL);
   close(aev->fd);

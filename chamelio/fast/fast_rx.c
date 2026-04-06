@@ -13,9 +13,11 @@
 #include "txcache.h"
 
 static inline void rx_poll_guest(struct guest_fast *g,
-    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget);
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget,
+    int virt_gre);
 static inline void rx_poll_guest_comb(struct guest_fast *g,
-    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget);
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget,
+    int virt_gre);
 
 int fast_rx_poll(struct fast_context *ctx)
 {
@@ -63,9 +65,11 @@ int fast_rx_poll(struct fast_context *ctx)
       continue;
 
     if (use_comb)
-      rx_poll_guest_comb(g, mbs[i], pkt_off, tsc_start, charge_budget);
+      rx_poll_guest_comb(g, mbs[i], pkt_off, tsc_start, charge_budget,
+          ctx->virt_gre);
     else
-      rx_poll_guest(g, mbs[i], pkt_off, tsc_start, charge_budget);
+      rx_poll_guest(g, mbs[i], pkt_off, tsc_start, charge_budget,
+          ctx->virt_gre);
   }
 
   /* Reuse mbufs in txcache */
@@ -76,12 +80,13 @@ int fast_rx_poll(struct fast_context *ctx)
 }
 
 static inline void rx_poll_guest(struct guest_fast *g,
-    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget)
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget,
+    int virt_gre)
 {
   int ret;
   __u64 tsc_spent;
 
-  fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off);
+  fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off, virt_gre);
   ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx,
       sizeof(struct cham_ebpf_ctx), &ret);
 
@@ -93,7 +98,8 @@ static inline void rx_poll_guest(struct guest_fast *g,
 }
 
 static inline void rx_poll_guest_comb(struct guest_fast *g,
-    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget)
+    struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget,
+    int virt_gre)
 {
   int ret;
   __u64 tsc_spent;
@@ -101,6 +107,7 @@ static inline void rx_poll_guest_comb(struct guest_fast *g,
     .g = g,
     .mb = mb,
     .pkt_off = pkt_off,
+    .virt_gre = virt_gre,
   };
 
   ebpf_vm_exec(g->proto.event_rx_vm, &jit_ctx, sizeof(jit_ctx), &ret);

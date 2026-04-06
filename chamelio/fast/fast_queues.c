@@ -24,7 +24,7 @@ static inline int queues_poll_guest(struct fast_context *ctx,
 static inline int queues_poll_guest_comb(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf **mbs, int max,
     int *ntx, int *ndeq);
-static inline void queues_poll_guest_dequeue(struct fast_context *ctx,
+static inline int queues_poll_guest_dequeue(struct fast_context *ctx,
     struct guest_fast *g, struct cham_dqueue *qcur, struct queue_entry *qe,
     struct rte_mbuf *mb, int *ntx, int *ndeq);
 static inline void dqueue_rotate_head(struct guest_fast *g,
@@ -117,7 +117,9 @@ static inline int queues_poll_guest(struct fast_context *ctx,
     }
 
     last_queue_empty = 0;
-    queues_poll_guest_dequeue(ctx, g, qcur, qe, mbs[*ntx], ntx, ndeq);
+    ret = queues_poll_guest_dequeue(ctx, g, qcur, qe, mbs[*ntx], ntx, ndeq);
+    if (ret != 0)
+      return -1;
 
     ret = queue_dequeue(&qcur->dq);
     if (ret != 0)
@@ -141,7 +143,7 @@ static inline int queues_poll_guest(struct fast_context *ctx,
   return 0;
 }
 
-static inline void queues_poll_guest_dequeue(struct fast_context *ctx,
+static inline int queues_poll_guest_dequeue(struct fast_context *ctx,
     struct guest_fast *g, struct cham_dqueue *qcur, struct queue_entry *qe,
     struct rte_mbuf *mb, int *ntx, int *ndeq)
 {
@@ -162,6 +164,9 @@ static inline void queues_poll_guest_dequeue(struct fast_context *ctx,
       sizeof(struct cham_ebpf_ctx), &deq_ret);
   (*ndeq)++;
 
+  if (deq_ret < 0)
+    return -1;
+
   /* Add to transmission buffer if packet processed for TX */
   if (deq_ret > 0)
   {
@@ -176,6 +181,8 @@ static inline void queues_poll_guest_dequeue(struct fast_context *ctx,
       (*ntx)++;
     }
   }
+
+  return 0;
 }
 
 static inline int queues_poll_guest_comb(struct fast_context *ctx,

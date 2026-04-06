@@ -124,9 +124,8 @@ static int handle_ctrl_rx(struct tcp_slow_context *ctx,
 
         if ((flags & TAS_TCP_SYN) != 0 && (flags & TAS_TCP_ACK) == 0)
         {
-          tcp_slow_state_enqueue_ctrl_reply(ctx, sock->local_ip,
-              sock->local_port, sock->remote_ip, sock->remote_port,
-              sock->tx_seq - 1, sock->rx_seq, TAS_TCP_SYN | TAS_TCP_ACK);
+          tcp_slow_state_enqueue_ctrl_resend(ctx, sock,
+              TAS_TCP_SYN | TAS_TCP_ACK);
           return 0;
         }
 
