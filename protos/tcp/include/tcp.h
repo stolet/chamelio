@@ -93,6 +93,8 @@ struct tcp_sock {
   __u32 rx_seq;
   /* Remote advertised receive window */
   __u32 tx_remote_avail;
+  /* Bytes of the oldest unacknowledged region queued for retransmission */
+  __u32 tx_rexmit;
   /* Number of duplicate ACKs received */
   __u8 rx_dupack_cnt;
   /* Number of ACK packets received */
@@ -105,6 +107,15 @@ struct tcp_sock {
   __u32 cc_drops;
   /* Congestion-control rate in kbps, 0 means unlimited */
   __u32 cc_rate;
+  /* TSC of the last RX packet processed by the fast path */
+  __u64 rx_last_tsc;
+  /* TSC of the last packet that advanced tx_seq */
+  __u64 ack_advance_last_tsc;
+  /* 1 while recovery limits new sends to the original flight */
+  __u8 recovery_active;
+  __u8 recovery_pad[3];
+  /* Sequence number that ended the original outstanding region */
+  __u32 recovery_end_seq;
 
   /* Local port */
   __u16 local_port;

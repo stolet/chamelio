@@ -212,7 +212,7 @@ static int config_defaults(struct tcp_configuration *c)
   c->rxbuf_sz = 32768;
   c->txbuf_sz = 32768;
   c->appq_len = 128;
-  c->bumpq_len = 16384;
+  c->bumpq_len = 65536;
   c->ctrlq_len = 1024;
   c->cc_rtt_init = 50;
   c->cc_algorithm = TCP_CC_ALGO_CONST_RATE;

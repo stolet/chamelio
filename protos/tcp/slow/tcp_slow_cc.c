@@ -2,7 +2,6 @@
 
 #include "clock.h"
 #include "tcp_slow_internal.h"
-#include "log.h"
 
 #define TCP_SLOW_CC_BATCH 128
 
@@ -26,7 +25,7 @@ static void update_const_rate(struct tcp_slow_context *ctx,
 static void update_dctcp_rate(struct tcp_slow_context *ctx,
     struct tcp_sock *sock, struct tcp_sock_meta_slow *meta,
     const struct tcp_cc_stats *stats, __u64 elapsed_us);
-static int maybe_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock,
+static void maybe_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     struct tcp_sock_meta_slow *meta, const struct tcp_cc_stats *stats,
     __u64 now_tsc);
 
@@ -48,6 +47,12 @@ void tcp_slow_cc_init_sock(struct tcp_slow_context *ctx, struct tcp_sock *sock)
   sock->cc_ackb = 0;
   sock->cc_ecnb = 0;
   sock->cc_drops = 0;
+  sock->rx_last_tsc = 0;
+  sock->ack_advance_last_tsc = 0;
+  sock->recovery_active = 0;
+  sock->recovery_end_seq = 0;
+  sock->tx_rexmit = 0;
+  sock->rx_dupack_cnt = 0;
 
   meta->cc_tsc = now_tsc;
   meta->cc_rtt = ctx->config.cc_rtt_init;
@@ -93,6 +98,12 @@ void tcp_slow_cc_reset_sock(struct tcp_slow_context *ctx, struct tcp_sock *sock)
   sock->cc_ecnb = 0;
   sock->cc_drops = 0;
   sock->cc_rate = 0;
+  sock->rx_last_tsc = 0;
+  sock->ack_advance_last_tsc = 0;
+  sock->recovery_active = 0;
+  sock->recovery_end_seq = 0;
+  sock->tx_rexmit = 0;
+  sock->rx_dupack_cnt = 0;
   sock->flags &= ~(TCP_SOCK_FLAG_SHUT_RD | TCP_SOCK_FLAG_SHUT_WR |
       TCP_SOCK_FLAG_SEND_ACK | TCP_SOCK_FLAG_SEND_ECE | TCP_SOCK_FLAG_ECN);
 
@@ -119,7 +130,6 @@ int tcp_slow_cc_poll(struct tcp_slow_context *ctx)
   int i;
   int n;
   int scanned;
-  int did_retransmit;
   __u64 now_tsc;
   __u64 elapsed_us;
   __u32 sid;
@@ -165,8 +175,7 @@ int tcp_slow_cc_poll(struct tcp_slow_context *ctx)
 
     read_stats(ctx, sock, &stats);
     update_sock(ctx, sock, meta, &stats, elapsed_us);
-    did_retransmit = maybe_retransmit(ctx, sock, meta, &stats, now_tsc);
-    (void) did_retransmit;
+    maybe_retransmit(ctx, sock, meta, &stats, now_tsc);
 
     meta->cc_tsc = now_tsc;
     n++;
@@ -340,14 +349,28 @@ static void update_dctcp_rate(struct tcp_slow_context *ctx,
   meta->cc_rexmits = 0;
 }
 
-static int maybe_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock,
+static void maybe_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     struct tcp_sock_meta_slow *meta, const struct tcp_cc_stats *stats,
     __u64 now_tsc)
 {
   __u32 rtt;
+  __u64 ack_adv_silence_us;
+  __u64 rexmit_wait_us;
+  __u64 rx_silence_us;
 
   rtt = stats->rtt != 0 ? stats->rtt : ctx->config.cc_rtt_init;
-  if (stats->tx_pending && stats->ackb == 0)
+  rexmit_wait_us = (__u64) rtt * ctx->config.cc_control_interval *
+      ctx->config.cc_rexmit_ints;
+  if (rexmit_wait_us < 20000)
+    rexmit_wait_us = 20000;
+
+  rx_silence_us = sock->rx_last_tsc == 0 ? ~(__u64) 0 :
+      clock_us_since_tsc(sock->rx_last_tsc);
+  ack_adv_silence_us = sock->ack_advance_last_tsc == 0 ? ~(__u64) 0 :
+      clock_us_since_tsc(sock->ack_advance_last_tsc);
+
+  if (stats->tx_pending && ack_adv_silence_us >= rexmit_wait_us &&
+      rx_silence_us >= rexmit_wait_us)
   {
     if (meta->cnt_tx_pending++ == 0)
     {
@@ -360,7 +383,7 @@ static int maybe_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock,
       {
         meta->cnt_tx_pending = 0;
         meta->cc_rexmits++;
-        return 1;
+        return;
       }
     }
   }
@@ -368,6 +391,4 @@ static int maybe_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock,
   {
     meta->cnt_tx_pending = 0;
   }
-
-  return 0;
 }

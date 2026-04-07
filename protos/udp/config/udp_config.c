@@ -104,7 +104,7 @@ static int config_defaults(struct udp_configuration *c)
   c->rxbuf_sz = 32768;
   c->txbuf_sz = 32768;
   c->appq_len = 128;
-  c->bumpq_len = 16384;
+  c->bumpq_len = 65536;
   c->ctrlq_len = 1024;
   return 0;
 }

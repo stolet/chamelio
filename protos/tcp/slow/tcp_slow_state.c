@@ -16,6 +16,11 @@ static void fill_ctrl_pkt(struct tcp_pkt_inner *pkt, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags, __u16 wnd);
 
+static __u64 ctrl_sched_logs;
+static __u64 ctrl_rexmit_logs;
+static __u64 ctrl_pkt_logs;
+static __u64 close_logs;
+
 int tcp_slow_state_alloc_sock(struct tcp_slow_context *ctx, __u64 opaque,
     __u8 app_id, __u8 ctx_id, __u16 app_bump_qid, struct tcp_sock **sock_out)
 {
@@ -62,6 +67,7 @@ int tcp_slow_state_alloc_sock(struct tcp_slow_context *ctx, __u64 opaque,
   sock->tx_pending = 0;
   sock->tx_off = protoq->off;
   sock->tx_remote_avail = 0;
+  sock->tx_rexmit = 0;
   sock->rx_dupack_cnt = 0;
 
   ctx->sock_meta[sock->id].listener_id = ID_INVALID;
@@ -530,7 +536,13 @@ int tcp_slow_state_enqueue_tx_sched(struct tcp_slow_context *ctx,
   sig_qe = queue_tail(ctx->slow_fast_sig_q);
   if (sig_qe == NULL)
   {
-    LOG_WARN("slow->fast control signal queue is full");
+    if (tcp_slow_should_log(&ctrl_sched_logs))
+    {
+      LOG_WARN("slow->fast TX schedule queue full sock=%u state=%s "
+          "tx_pending=%u tx_remote_avail=%u rx_seq=%u tx_seq=%u",
+          sock->id, tcp_slow_state_name(sock->state), sock->tx_pending,
+          sock->tx_remote_avail, sock->rx_seq, sock->tx_seq);
+    }
     return -1;
   }
 
@@ -538,7 +550,13 @@ int tcp_slow_state_enqueue_tx_sched(struct tcp_slow_context *ctx,
   ret = queue_enqueue(ctx->slow_fast_sig_q, TCP_QUEUE_TX_SCHED);
   if (ret != 0)
   {
-    LOG_WARN("failed to enqueue TCP TX schedule command");
+    if (tcp_slow_should_log(&ctrl_sched_logs))
+    {
+      LOG_WARN("failed to enqueue TX schedule sock=%u state=%s "
+          "tx_pending=%u tx_remote_avail=%u rx_seq=%u tx_seq=%u",
+          sock->id, tcp_slow_state_name(sock->state), sock->tx_pending,
+          sock->tx_remote_avail, sock->rx_seq, sock->tx_seq);
+    }
     return -1;
   }
 
@@ -554,7 +572,13 @@ int tcp_slow_state_enqueue_tx_retransmit(struct tcp_slow_context *ctx,
   sig_qe = queue_tail(ctx->slow_fast_sig_q);
   if (sig_qe == NULL)
   {
-    LOG_WARN("slow->fast control signal queue is full");
+    if (tcp_slow_should_log(&ctrl_rexmit_logs))
+    {
+      LOG_WARN("slow->fast retransmit queue full sock=%u state=%s "
+          "tx_pending=%u tx_remote_avail=%u rx_seq=%u tx_seq=%u",
+          sock->id, tcp_slow_state_name(sock->state), sock->tx_pending,
+          sock->tx_remote_avail, sock->rx_seq, sock->tx_seq);
+    }
     return -1;
   }
 
@@ -562,7 +586,13 @@ int tcp_slow_state_enqueue_tx_retransmit(struct tcp_slow_context *ctx,
   ret = queue_enqueue(ctx->slow_fast_sig_q, TCP_QUEUE_TX_RETRANSMIT);
   if (ret != 0)
   {
-    LOG_WARN("failed to enqueue TCP retransmit command");
+    if (tcp_slow_should_log(&ctrl_rexmit_logs))
+    {
+      LOG_WARN("failed to enqueue retransmit sock=%u state=%s "
+          "tx_pending=%u tx_remote_avail=%u rx_seq=%u tx_seq=%u",
+          sock->id, tcp_slow_state_name(sock->state), sock->tx_pending,
+          sock->tx_remote_avail, sock->rx_seq, sock->tx_seq);
+    }
     return -1;
   }
 
@@ -572,6 +602,16 @@ int tcp_slow_state_enqueue_tx_retransmit(struct tcp_slow_context *ctx,
 void tcp_slow_state_sock_close_final(struct tcp_slow_context *ctx,
     struct tcp_sock *sock)
 {
+  if (sock->state != TCP_SOCK_STATE_CLOSED &&
+      tcp_slow_should_log(&close_logs))
+  {
+    LOG_WARN("closing tcp socket sock=%u state=%s local=%u:%u remote=%u:%u "
+        "tx_seq=%u tx_pending=%u rx_seq=%u tx_remote_avail=%u flags=0x%x",
+        sock->id, tcp_slow_state_name(sock->state), sock->local_ip,
+        sock->local_port, sock->remote_ip, sock->remote_port, sock->tx_seq,
+        sock->tx_pending, sock->rx_seq, sock->tx_remote_avail, sock->flags);
+  }
+
   tcp_slow_timeout_cancel(ctx, sock);
   tcp_slow_state_listener_detach_child(ctx, sock);
   tcp_slow_state_flow_remove(ctx, sock);
@@ -586,6 +626,7 @@ void tcp_slow_state_sock_close_final(struct tcp_slow_context *ctx,
   sock->tx_pending = 0;
   sock->rx_seq = 0;
   sock->tx_remote_avail = 0;
+  sock->tx_rexmit = 0;
   sock->rx_dupack_cnt = 0;
   ctx->sock_meta[sock->id].auto_bound = 0;
   tcp_slow_cc_reset_sock(ctx, sock);
@@ -612,6 +653,7 @@ void tcp_slow_state_sock_connect_failed(struct tcp_slow_context *ctx,
   sock->rx_seq = 0;
   sock->tx_pending = 0;
   sock->tx_remote_avail = 0;
+  sock->tx_rexmit = 0;
   sock->rx_dupack_cnt = 0;
   tcp_slow_cc_reset_sock(ctx, sock);
   sock->state = TCP_SOCK_STATE_INIT;
@@ -640,14 +682,24 @@ static int enqueue_ctrl_pkt(struct tcp_slow_context *ctx, __u32 local_ip,
   pkt_qe = queue_tail(ctx->slow_fast_pkt_q);
   if (pkt_qe == NULL)
   {
-    LOG_WARN("slow->fast control packet queue is full");
+    if (tcp_slow_should_log(&ctrl_pkt_logs))
+    {
+      LOG_WARN("slow->fast control packet queue full local=%u:%u remote=%u:%u "
+          "seq=%u ack=%u flags=0x%x wnd=%u",
+          local_ip, local_port, remote_ip, remote_port, seq, ack, flags, wnd);
+    }
     return -1;
   }
 
   sig_qe = queue_tail(ctx->slow_fast_sig_q);
   if (sig_qe == NULL)
   {
-    LOG_WARN("slow->fast control signal queue is full");
+    if (tcp_slow_should_log(&ctrl_pkt_logs))
+    {
+      LOG_WARN("slow->fast control signal queue full local=%u:%u remote=%u:%u "
+          "seq=%u ack=%u flags=0x%x wnd=%u",
+          local_ip, local_port, remote_ip, remote_port, seq, ack, flags, wnd);
+    }
     return -1;
   }
 
@@ -658,14 +710,24 @@ static int enqueue_ctrl_pkt(struct tcp_slow_context *ctx, __u32 local_ip,
   ret = queue_enqueue(ctx->slow_fast_pkt_q, TCP_QUEUE_CTRL_TX_PKT);
   if (ret != 0)
   {
-    LOG_WARN("failed to enqueue TCP control packet data");
+    if (tcp_slow_should_log(&ctrl_pkt_logs))
+    {
+      LOG_WARN("failed to enqueue control packet data local=%u:%u "
+          "remote=%u:%u seq=%u ack=%u flags=0x%x wnd=%u",
+          local_ip, local_port, remote_ip, remote_port, seq, ack, flags, wnd);
+    }
     return -1;
   }
 
   ret = queue_enqueue(ctx->slow_fast_sig_q, TCP_QUEUE_CTRL_TX);
   if (ret != 0)
   {
-    LOG_WARN("failed to enqueue TCP control packet signal");
+    if (tcp_slow_should_log(&ctrl_pkt_logs))
+    {
+      LOG_WARN("failed to enqueue control packet signal local=%u:%u "
+          "remote=%u:%u seq=%u ack=%u flags=0x%x wnd=%u",
+          local_ip, local_port, remote_ip, remote_port, seq, ack, flags, wnd);
+    }
     return -1;
   }
 

@@ -746,10 +746,10 @@ int udp_poll_fast(struct udp_context_lib *ctx)
   n = 0;
   ncores = ctx->ncores;
   fast_app_qs = ctx->fast_app_qs;
-  for (i = 0; i < ncores && n < LIB_BATCH_SIZE; i++)
+  for (i = 0; i < ncores; i++)
   {
     q = fast_app_qs[i];
-    while (n < LIB_BATCH_SIZE && (qe = queue_head(q)) != NULL)
+    while ((qe = queue_head(q)) != NULL)
     {       
       __u32 next_head = q->head + q->elsize;
       if (next_head >= (q->elsize * q->nelems))

@@ -20,8 +20,6 @@
 #include "uxsocket.h"
 
 #define LIB_BATCH_SIZE 16
-/* TCP needs a larger fast-path poll budget because TX reclaim is ACK-driven. */
-#define LIB_FAST_BATCH_SIZE 4096
 
 static struct tcp_lib *tcp = NULL;
 
@@ -59,6 +57,37 @@ enum tcp_wait_poll_mode {
   TCP_WAIT_POLL_FAST,
   TCP_WAIT_POLL_SLOW,
 };
+
+static int tcp_lib_should_log(__u64 *counter)
+{
+  __u64 n;
+
+  n = ++(*counter);
+  return n <= 8 || (n & (n - 1)) == 0;
+}
+
+static const char *tcp_lib_state_name(__u8 state)
+{
+  switch (state)
+  {
+    case TCP_LIB_STATE_INIT:
+      return "INIT";
+    case TCP_LIB_STATE_BOUND:
+      return "BOUND";
+    case TCP_LIB_STATE_LISTEN:
+      return "LISTEN";
+    case TCP_LIB_STATE_CONNECTING:
+      return "CONNECTING";
+    case TCP_LIB_STATE_ESTABLISHED:
+      return "ESTABLISHED";
+    case TCP_LIB_STATE_CLOSING:
+      return "CLOSING";
+    case TCP_LIB_STATE_CLOSED:
+      return "CLOSED";
+    default:
+      return "UNKNOWN";
+  }
+}
 
 int tcp_connect_slow()
 {
@@ -802,6 +831,8 @@ int tcp_sendto(struct tcp_context_lib *ctx, int sockfd,
     const struct sockaddr *addr, socklen_t addrlen)
 {
   int ret;
+  static __u64 qfull_logs;
+  static __u64 enqueue_logs;
   __u32 tail, n, n1, n2;
   __u32 tx_len, tx_avail, tx_head;
   __u32 tx_ip;
@@ -871,6 +902,15 @@ int tcp_sendto(struct tcp_context_lib *ctx, int sockfd,
   qe = queue_tail(q);
   if (qe == NULL)
   {
+    if (tcp_lib_should_log(&qfull_logs))
+    {
+      LOG_WARN("tcp_sendto app->fast queue full sockfd=%d state=%s core=%u "
+          "len=%zu tx_avail=%u tx_len=%u tx_head=%u tail=%u q_tail=%u "
+          "q_nelems=%u remote=%u:%u",
+          sockfd, tcp_lib_state_name(sock->state), sock->core, len,
+          sock->tx_avail, sock->tx_len, sock->tx_head, tail, q->tail,
+          q->nelems, sock->remote_ip, sock->remote_port);
+    }
     errno = EAGAIN;
     return -1;
   }
@@ -905,7 +945,14 @@ int tcp_sendto(struct tcp_context_lib *ctx, int sockfd,
   ret = queue_enqueue(q, TCP_QUEUE_BUMP_CHAM_TX);
   if (ret != 0)
   {
-    LOG_ERROR("failed to enqueue bump");
+    if (tcp_lib_should_log(&enqueue_logs))
+    {
+      LOG_WARN("tcp_sendto failed to enqueue TX bump sockfd=%d state=%s "
+          "core=%u req=%u tx_avail=%u tx_len=%u tx_head=%u q_tail=%u "
+          "q_nelems=%u",
+          sockfd, tcp_lib_state_name(sock->state), sock->core, n,
+          tx_avail, tx_len, tx_head, q->tail, q->nelems);
+    }
     sock->tx_avail = tx_avail;
     errno = EAGAIN;
     return -1;
@@ -919,6 +966,8 @@ int tcp_recvfrom(struct tcp_context_lib *ctx, int sockfd,
     struct sockaddr *addr, socklen_t addr_len)
 {
   int n, ret;
+  static __u64 qfull_logs;
+  static __u64 enqueue_logs;
   __u32 n1, n2, new_head;
   __u32 rx_len, rx_avail, rx_head;
   __u8 *rx_buf;
@@ -971,6 +1020,13 @@ int tcp_recvfrom(struct tcp_context_lib *ctx, int sockfd,
   qe = queue_tail(q);
   if (qe == NULL)
   {
+    if (tcp_lib_should_log(&qfull_logs))
+    {
+      LOG_WARN("tcp_recvfrom app->fast queue full sockfd=%d state=%s core=%u "
+          "len=%zu rx_avail=%u rx_len=%u rx_head=%u q_tail=%u q_nelems=%u",
+          sockfd, tcp_lib_state_name(sock->state), sock->core, len,
+          sock->rx_avail, sock->rx_len, sock->rx_head, q->tail, q->nelems);
+    }
     errno = EAGAIN;
     return -1;
   }
@@ -1001,7 +1057,14 @@ int tcp_recvfrom(struct tcp_context_lib *ctx, int sockfd,
   ret = queue_enqueue(q, TCP_QUEUE_BUMP_CHAM_RX);
   if (ret != 0)
   {
-    LOG_ERROR("failed to enqueue bump");
+    if (tcp_lib_should_log(&enqueue_logs))
+    {
+      LOG_WARN("tcp_recvfrom failed to enqueue RX bump sockfd=%d state=%s "
+          "core=%u consumed=%d rx_avail=%u rx_len=%u rx_head=%u q_tail=%u "
+          "q_nelems=%u",
+          sockfd, tcp_lib_state_name(sock->state), sock->core, n,
+          rx_avail, rx_len, rx_head, q->tail, q->nelems);
+    }
     errno = EAGAIN;
     return -1;
   }
@@ -1092,6 +1155,7 @@ int tcp_close(struct tcp_context_lib *ctx, int sockfd)
 
 int tcp_poll_fast(struct tcp_context_lib *ctx)
 {
+  static __u64 backlog_logs;
   int i, n, ncores;
   struct dqueue *q;
   struct tcp_queue_bump_entry *qe;
@@ -1100,10 +1164,10 @@ int tcp_poll_fast(struct tcp_context_lib *ctx)
   n = 0;
   ncores = ctx->ncores;
   fast_app_qs = ctx->fast_app_qs;
-  for (i = 0; i < ncores && n < LIB_FAST_BATCH_SIZE; i++)
+  for (i = 0; i < ncores; i++)
   {
     q = fast_app_qs[i];
-    while (n < LIB_FAST_BATCH_SIZE && (qe = queue_head(q)) != NULL)
+    while ((qe = queue_head(q)) != NULL)
     {
       __u32 next_head = q->head + q->elsize;
       if (next_head >= (q->elsize * q->nelems))
@@ -1127,6 +1191,11 @@ int tcp_poll_fast(struct tcp_context_lib *ctx)
 
       queue_dequeue(q);
     }
+  }
+
+  if (n >= 1024 && tcp_lib_should_log(&backlog_logs))
+  {
+    LOG_WARN("tcp_poll_fast drained backlog n=%d ncores=%d", n, ncores);
   }
 
   return n;
@@ -1326,6 +1395,8 @@ static int handle_accept_res(struct tcp_queue_entry *qe)
 
 static int handle_tx_bump(struct tcp_queue_bump_entry *qe)
 {
+  static __u64 invalid_logs;
+  __u32 tx_bump;
   __u32 new_head;
   struct tcp_queue_bump_app_tx *bump;
   struct tcp_socket_lib *sock;
@@ -1333,24 +1404,79 @@ static int handle_tx_bump(struct tcp_queue_bump_entry *qe)
   bump = &qe->data.bump_app_tx;
   sock = (struct tcp_socket_lib *) bump->opaque;
 
-  new_head = sock->tx_head + bump->tx_head;
+  if (sock == NULL || sock->fd == SOCK_INACTIVE || sock->tx_len == 0)
+  {
+    if (tcp_lib_should_log(&invalid_logs))
+    {
+      LOG_WARN("ignoring invalid TX reclaim opaque=%p bump=%u",
+          (void *) sock, bump->tx_head);
+    }
+    return 0;
+  }
+
+  tx_bump = bump->tx_head;
+  if (tx_bump > sock->tx_avail)
+  {
+    if (tcp_lib_should_log(&invalid_logs))
+    {
+      LOG_WARN("TX reclaim exceeds outstanding bytes sockfd=%d state=%s "
+          "bump=%u tx_avail=%u tx_len=%u tx_head=%u",
+          sock->fd, tcp_lib_state_name(sock->state), tx_bump, sock->tx_avail,
+          sock->tx_len, sock->tx_head);
+    }
+    tx_bump = sock->tx_avail;
+  }
+
+  if (tx_bump == 0)
+    return 0;
+
+  new_head = sock->tx_head + tx_bump;
   if (new_head >= sock->tx_len)
     new_head -= sock->tx_len;
   sock->tx_head = new_head;
-  sock->tx_avail -= bump->tx_head;
+  sock->tx_avail -= tx_bump;
 
   return 0;
 }
 
 static int handle_rx_bump(struct tcp_queue_bump_entry *qe)
 {
+  static __u64 invalid_logs;
+  __u32 free_bytes, rx_bump;
   struct tcp_queue_bump_app_rx *bump;
   struct tcp_socket_lib *sock;
 
   bump = &qe->data.bump_app_rx;
   sock = (struct tcp_socket_lib *) bump->opaque;
+  if (sock == NULL || sock->fd == SOCK_INACTIVE || sock->rx_len == 0)
+  {
+    if (tcp_lib_should_log(&invalid_logs))
+    {
+      LOG_WARN("ignoring invalid RX bump opaque=%p bump=%u",
+          (void *) sock, bump->rx_avail);
+    }
+    return 0;
+  }
+
+  rx_bump = bump->rx_avail;
+  free_bytes = sock->rx_len - sock->rx_avail;
+  if (rx_bump > free_bytes)
+  {
+    if (tcp_lib_should_log(&invalid_logs))
+    {
+      LOG_WARN("RX bump exceeds free space sockfd=%d state=%s bump=%u "
+          "rx_avail=%u rx_len=%u rx_head=%u",
+          sock->fd, tcp_lib_state_name(sock->state), rx_bump, sock->rx_avail,
+          sock->rx_len, sock->rx_head);
+    }
+    rx_bump = free_bytes;
+  }
+
+  if (rx_bump == 0)
+    return 0;
+
   utils_prefetch0(sock->rx_buf + sock->rx_head);
-  sock->rx_avail += bump->rx_avail;
+  sock->rx_avail += rx_bump;
   sock->remote_port = bump->rx_port;
   sock->remote_ip = bump->rx_ip;
 

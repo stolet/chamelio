@@ -48,6 +48,39 @@ static inline struct tcp_app_context_slow *tcp_slow_sock_actx(
   return &ctx->apps[sock->app_id].ctxs[sock->ctx_id];
 }
 
+static inline const char *tcp_slow_state_name(__u8 state)
+{
+  switch (state)
+  {
+    case TCP_SOCK_STATE_CLOSED:
+      return "CLOSED";
+    case TCP_SOCK_STATE_INIT:
+      return "INIT";
+    case TCP_SOCK_STATE_LISTEN:
+      return "LISTEN";
+    case TCP_SOCK_STATE_SYN_SENT:
+      return "SYN_SENT";
+    case TCP_SOCK_STATE_SYN_RECV:
+      return "SYN_RECV";
+    case TCP_SOCK_STATE_ACCEPT_PENDING:
+      return "ACCEPT_PENDING";
+    case TCP_SOCK_STATE_ESTABLISHED:
+      return "ESTABLISHED";
+    case TCP_SOCK_STATE_FIN_WAIT1:
+      return "FIN_WAIT1";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+static inline int tcp_slow_should_log(__u64 *counter)
+{
+  __u64 n;
+
+  n = ++(*counter);
+  return n <= 8 || (n & (n - 1)) == 0;
+}
+
 int tcp_slow_init(struct tcp_slow_context *ctx);
 int tcp_slow_app_poll(struct tcp_slow_context *ctx);
 int tcp_slow_fast_poll(struct tcp_slow_context *ctx);
