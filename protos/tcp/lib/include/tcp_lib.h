@@ -10,7 +10,41 @@
 #define MAX_SOCKETS 8192
 #define SOCK_INACTIVE (-1U)
 
-enum tcp_lib_sock_state {
+#define TCP_WAIT_NONBLOCK (1U << 0)
+
+#define TCP_WAIT_IN (1U << 0)
+#define TCP_WAIT_OUT (1U << 1)
+#define TCP_WAIT_ACCEPT (1U << 2)
+#define TCP_WAIT_CONNECTED (1U << 3)
+#define TCP_WAIT_SOCKET (1U << 4)
+#define TCP_WAIT_BIND (1U << 5)
+#define TCP_WAIT_SETOPT (1U << 6)
+#define TCP_WAIT_OP (1U << 7)
+#define TCP_WAIT_CLOSED (1U << 8)
+
+struct tcp_wait_event {
+    int sockfd;
+    __u32 events;
+    __u64 data;
+};
+
+struct tcp_socket_lib;
+
+struct tcp_wait_entry {
+    __u32 events;
+    __u64 data;
+    int index;
+    struct tcp_socket_lib *sock;
+};
+
+struct tcp_wait {
+    struct tcp_context_lib *ctx;
+    int nfds;
+    int sockfds[MAX_SOCKETS];
+    struct tcp_wait_entry entries[MAX_SOCKETS];
+};
+
+enum tcp_sock_state {
   TCP_LIB_STATE_INIT = 0,
   TCP_LIB_STATE_BOUND,
   TCP_LIB_STATE_LISTEN,
@@ -114,54 +148,60 @@ struct tcp_lib {
 };
 
 /* Connects to the slow-path */
-int tcp_lib_connect_slow();
+int tcp_connect_slow();
 /* Creates a new context for a thread */
-struct tcp_context_lib * tcp_lib_ctx_new();
+struct tcp_context_lib * tcp_ctx_new();
+/* Creates a new wait object for a context */
+struct tcp_wait *tcp_wait_new(struct tcp_context_lib *ctx);
+/* Destroys a wait object */
+void tcp_wait_free(struct tcp_wait *wait);
+/* Adds a socket to a wait object */
+int tcp_wait_add(struct tcp_wait *wait, int sockfd, __u32 events,
+    __u64 data);
+/* Modifies a registered socket in a wait object */
+int tcp_wait_mod(struct tcp_wait *wait, int sockfd, __u32 events,
+    __u64 data);
+/* Removes a socket from a wait object */
+int tcp_wait_del(struct tcp_wait *wait, int sockfd);
+/* Waits for fast-path and slow-path events */
+int tcp_wait(struct tcp_wait *wait, struct tcp_wait_event *events,
+    int maxevents, int flags);
+/* Waits for fast-path events only */
+int tcp_wait_fast(struct tcp_wait *wait, struct tcp_wait_event *events,
+    int maxevents, int flags);
+/* Waits for slow-path events only */
+int tcp_wait_slow(struct tcp_wait *wait, struct tcp_wait_event *events,
+    int maxevents, int flags);
 /* Polls message queue for slow-path messages */
-int tcp_lib_poll_slow(struct tcp_context_lib *ctx);
+int tcp_poll_slow(struct tcp_context_lib *ctx);
 /* Polls message queue for fast-path messages */
-int tcp_lib_poll_fast(struct tcp_context_lib *ctx);
+int tcp_poll_fast(struct tcp_context_lib *ctx);
 /* Creates a new TCP socket */
-int tcp_lib_socket(struct tcp_context_lib *ctx);
+int tcp_socket(struct tcp_context_lib *ctx);
 /* Binds src address to TCP socket */
-int tcp_lib_bind(struct tcp_context_lib *ctx, int sockfd,
+int tcp_bind(struct tcp_context_lib *ctx, int sockfd,
     const struct sockaddr *addr, socklen_t addrlen);
 /* Initiates a TCP connection */
-int tcp_lib_connect(struct tcp_context_lib *ctx, int sockfd,
+int tcp_connect(struct tcp_context_lib *ctx, int sockfd,
     const struct sockaddr *addr, socklen_t addrlen, int flags);
 /* Marks a socket as listening */
-int tcp_lib_listen(struct tcp_context_lib *ctx, int sockfd, int backlog);
+int tcp_listen(struct tcp_context_lib *ctx, int sockfd, int backlog);
 /* Accepts a new TCP connection */
-int tcp_lib_accept(struct tcp_context_lib *ctx, int sockfd,
+int tcp_accept(struct tcp_context_lib *ctx, int sockfd,
     struct sockaddr *addr, socklen_t *addrlen, int flags);
 /* Sets socket options */
-int tcp_lib_setsockopt(struct tcp_context_lib *ctx, int sockfd, __u8 opt);
+int tcp_setsockopt(struct tcp_context_lib *ctx, int sockfd, __u8 opt);
 /* Shuts down a TCP socket */
-int tcp_lib_shutdown(struct tcp_context_lib *ctx, int sockfd, int how);
+int tcp_shutdown(struct tcp_context_lib *ctx, int sockfd, int how);
 /* Sends data in buffer to the specified address */
-int tcp_lib_sendto(struct tcp_context_lib *ctx, int sockfd,
+int tcp_sendto(struct tcp_context_lib *ctx, int sockfd,
     const void *buf, size_t len,
     const struct sockaddr *addr, socklen_t addr_len);
 /* Reads data from socket buffer */
-int tcp_lib_recvfrom(struct tcp_context_lib *ctx, int sockfd,
+int tcp_recvfrom(struct tcp_context_lib *ctx, int sockfd,
     void *buf, size_t len,
     struct sockaddr *addr, socklen_t addr_len);
 /* Closes a TCP socket */
-int tcp_lib_close(struct tcp_context_lib *ctx, int sockfd);
-
-#define tcp_connect_slow tcp_lib_connect_slow
-#define tcp_ctx_new tcp_lib_ctx_new
-#define tcp_poll_slow tcp_lib_poll_slow
-#define tcp_poll_fast tcp_lib_poll_fast
-#define tcp_socket tcp_lib_socket
-#define tcp_bind tcp_lib_bind
-#define tcp_connect tcp_lib_connect
-#define tcp_listen tcp_lib_listen
-#define tcp_accept tcp_lib_accept
-#define tcp_setsockopt tcp_lib_setsockopt
-#define tcp_shutdown tcp_lib_shutdown
-#define tcp_sendto tcp_lib_sendto
-#define tcp_recvfrom tcp_lib_recvfrom
-#define tcp_close tcp_lib_close
+int tcp_close(struct tcp_context_lib *ctx, int sockfd);
 
 #endif

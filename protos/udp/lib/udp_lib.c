@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <string.h>
 
 #include <cham_lib.h>
 
@@ -27,6 +28,23 @@ static int handle_tx_bump(struct udp_queue_bump_entry *qe);
 static int handle_rx_bump(struct udp_queue_bump_entry *qe);
 static int handle_bind_res(struct udp_queue_entry *qe);
 static int handle_setopt_res(struct udp_queue_entry *qe);
+
+static struct udp_socket_lib *lookup_sock(struct udp_context_lib *ctx,
+    int sockfd);
+static __u32 udp_sock_wait_events(struct udp_socket_lib *sock);
+static int udp_wait_poll_ctx(struct udp_context_lib *ctx, int mode);
+static int udp_wait_collect(struct udp_wait *wait, struct udp_wait_event *events,
+    int maxevents);
+static int udp_wait_impl(struct udp_wait *wait, struct udp_wait_event *events,
+    int maxevents, int flags, int mode);
+static void udp_wait_until(struct udp_context_lib *ctx,
+    struct udp_socket_lib *sock, __u32 events, int mode);
+
+enum udp_wait_poll_mode {
+  UDP_WAIT_POLL_BOTH = 0,
+  UDP_WAIT_POLL_FAST,
+  UDP_WAIT_POLL_SLOW,
+};
 
 int udp_connect_slow()
 {
@@ -81,8 +99,9 @@ int udp_connect_slow()
     goto close_sockfd;
   }
 
-  /* Set table to 0 so default fd is SOCK_INACTIVE */
-  memset(u->socks, 0, sizeof(struct udp_socket_lib) * MAX_SOCKETS);
+  memset(u, 0, sizeof(*u));
+  for (ret = 0; ret < MAX_SOCKETS; ret++)
+    u->socks[ret].fd = SOCK_INACTIVE;
 
   u->uxsocket_fd = sock_fd;
   u->shm_fd = shm_fd;
@@ -239,6 +258,155 @@ struct udp_context_lib * udp_ctx_new()
   return ctx;
 }
 
+struct udp_wait *udp_wait_new(struct udp_context_lib *ctx)
+{
+  int i;
+  struct udp_wait *wait;
+
+  if (udp == NULL)
+  {
+    errno = ENOTCONN;
+    return NULL;
+  }
+
+  if (ctx == NULL)
+  {
+    errno = EINVAL;
+    return NULL;
+  }
+
+  wait = malloc(sizeof(*wait));
+  if (wait == NULL)
+  {
+    errno = ENOMEM;
+    return NULL;
+  }
+
+  wait->ctx = ctx;
+  wait->nfds = 0;
+  for (i = 0; i < MAX_SOCKETS; i++)
+  {
+    wait->entries[i].events = 0;
+    wait->entries[i].data = 0;
+    wait->entries[i].index = -1;
+    wait->entries[i].sock = NULL;
+  }
+
+  return wait;
+}
+
+void udp_wait_free(struct udp_wait *wait)
+{
+  free(wait);
+}
+
+int udp_wait_add(struct udp_wait *wait, int sockfd, __u32 events, __u64 data)
+{
+  struct udp_socket_lib *sock;
+
+  if (wait == NULL)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  sock = lookup_sock(wait->ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  if (wait->entries[sockfd].index != -1)
+  {
+    errno = EEXIST;
+    return -1;
+  }
+
+  wait->entries[sockfd].events = events;
+  wait->entries[sockfd].data = data;
+  wait->entries[sockfd].index = wait->nfds;
+  wait->entries[sockfd].sock = sock;
+  wait->sockfds[wait->nfds] = sockfd;
+  wait->nfds++;
+  return 0;
+}
+
+int udp_wait_mod(struct udp_wait *wait, int sockfd, __u32 events, __u64 data)
+{
+  struct udp_socket_lib *sock;
+
+  if (wait == NULL)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  sock = lookup_sock(wait->ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  if (wait->entries[sockfd].index == -1)
+  {
+    errno = ENOENT;
+    return -1;
+  }
+
+  wait->entries[sockfd].events = events;
+  wait->entries[sockfd].data = data;
+  wait->entries[sockfd].sock = sock;
+  return 0;
+}
+
+int udp_wait_del(struct udp_wait *wait, int sockfd)
+{
+  int idx, last_fd;
+
+  if (wait == NULL)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  if (sockfd < 0 || sockfd >= MAX_SOCKETS)
+  {
+    errno = EBADF;
+    return -1;
+  }
+
+  idx = wait->entries[sockfd].index;
+  if (idx == -1)
+  {
+    errno = ENOENT;
+    return -1;
+  }
+
+  wait->nfds--;
+  last_fd = wait->sockfds[wait->nfds];
+  wait->sockfds[idx] = last_fd;
+  wait->entries[last_fd].index = idx;
+  wait->entries[sockfd].index = -1;
+  wait->entries[sockfd].events = 0;
+  wait->entries[sockfd].data = 0;
+  wait->entries[sockfd].sock = NULL;
+  return 0;
+}
+
+int udp_wait(struct udp_wait *wait, struct udp_wait_event *events,
+    int maxevents, int flags)
+{
+  return udp_wait_impl(wait, events, maxevents, flags, UDP_WAIT_POLL_BOTH);
+}
+
+int udp_wait_fast(struct udp_wait *wait, struct udp_wait_event *events,
+    int maxevents, int flags)
+{
+  return udp_wait_impl(wait, events, maxevents, flags, UDP_WAIT_POLL_FAST);
+}
+
+int udp_wait_slow(struct udp_wait *wait, struct udp_wait_event *events,
+    int maxevents, int flags)
+{
+  return udp_wait_impl(wait, events, maxevents, flags, UDP_WAIT_POLL_SLOW);
+}
+
 int udp_socket(struct udp_context_lib *ctx)
 {
   int fd, ret;
@@ -261,7 +429,9 @@ int udp_socket(struct udp_context_lib *ctx)
     return -1;
   }
   sock = &udp->socks[fd];
+  memset(sock, 0, sizeof(*sock));
   sock->fd = fd;
+  sock->ctx = ctx;
   sock->rx_avail = 0;
   sock->rx_head = 0;
   sock->tx_avail = 0;
@@ -295,8 +465,7 @@ int udp_socket(struct udp_context_lib *ctx)
   }
 
   /* Wait poll for response */
-  while (sock->rx_len == 0)
-    udp_poll_slow(ctx);
+  udp_wait_until(ctx, sock, UDP_WAIT_SOCKET, UDP_WAIT_POLL_SLOW);
 
   return sock->fd;
 }
@@ -310,6 +479,10 @@ int udp_bind(struct udp_context_lib *ctx, int sockfd,
   struct udp_queue_bind_req *req;
   struct sockaddr_in *sin = (struct sockaddr_in *) addr;
   struct udp_socket_lib *sock;
+
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
+    return -1;
   
   /* Send src ip and port to slow-path */
   q = ctx->app_slow_q;
@@ -322,7 +495,6 @@ int udp_bind(struct udp_context_lib *ctx, int sockfd,
   
   req = &qe->data.bind_req;
   
-  sock = &udp->socks[sockfd];
   req->sock_id = sock->sock_id;
   req->local_ip = ntohl(sin->sin_addr.s_addr);
   req->local_port = ntohs(sin->sin_port);
@@ -334,8 +506,7 @@ int udp_bind(struct udp_context_lib *ctx, int sockfd,
     return -1;
   }
 
-  while (sock->bind_success == -1)
-    udp_poll_slow(ctx);
+  udp_wait_until(ctx, sock, UDP_WAIT_BIND, UDP_WAIT_POLL_SLOW);
 
   if (!sock->bind_success)
     return -1;
@@ -353,6 +524,10 @@ int udp_setsockopt(struct udp_context_lib *ctx, int sockfd, __u8 opt)
   struct udp_queue_entry *qe;
   struct udp_queue_setopt_req *req;
   struct udp_socket_lib *sock;
+
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
+    return -1;
   
   q = ctx->app_slow_q;
   qe = queue_tail(q);
@@ -362,7 +537,6 @@ int udp_setsockopt(struct udp_context_lib *ctx, int sockfd, __u8 opt)
     return -1;
   }
   
-  sock = &udp->socks[sockfd];
   req = &qe->data.setopt_req;
   req->opt = opt;
   req->sock_id = sockfd;
@@ -375,8 +549,7 @@ int udp_setsockopt(struct udp_context_lib *ctx, int sockfd, __u8 opt)
     return -1;
   }
   
-  while (sock->setopt_success == -1)
-    udp_poll_slow(ctx);
+  udp_wait_until(ctx, sock, UDP_WAIT_SETOPT, UDP_WAIT_POLL_SLOW);
     
   if (!sock->setopt_success)
     return -1;
@@ -402,12 +575,9 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
   struct udp_queue_bump_cham_tx *bump;
   struct sockaddr_in *sin = (struct sockaddr_in *) addr;
 
-  sock = &udp->socks[sockfd];
-  if (sock->fd == SOCK_INACTIVE)
-  {
-    LOG_ERROR("bad socket file descriptor");
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
     return -1;
-  }
 
   if (len == 0)
     return 0;
@@ -494,12 +664,9 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
   struct udp_socket_lib *sock;
   struct sockaddr_in *sin = (struct sockaddr_in *) addr;
 
-  sock = &udp->socks[sockfd];
-  if (sock->fd == SOCK_INACTIVE)
-  {
-    LOG_ERROR("bad socket file descriptor");
+  sock = lookup_sock(ctx, sockfd);
+  if (sock == NULL)
     return -1;
-  }
 
   /* Copy to buffer */
   rx_len = sock->rx_len;
@@ -728,4 +895,137 @@ static int handle_rx_bump(struct udp_queue_bump_entry *qe)
   sock->rx_ip = bump->rx_ip;
 
   return 0;  
+}
+
+static struct udp_socket_lib *lookup_sock(struct udp_context_lib *ctx,
+    int sockfd)
+{
+  struct udp_socket_lib *sock;
+
+  if (udp == NULL)
+  {
+    errno = ENOTCONN;
+    return NULL;
+  }
+
+  if (ctx == NULL)
+  {
+    errno = EINVAL;
+    return NULL;
+  }
+
+  if (sockfd < 0 || sockfd >= MAX_SOCKETS)
+  {
+    errno = EBADF;
+    return NULL;
+  }
+
+  sock = &udp->socks[sockfd];
+  if (sock->fd != sockfd || sock->ctx != ctx)
+  {
+    errno = EBADF;
+    return NULL;
+  }
+
+  return sock;
+}
+
+static __u32 udp_sock_wait_events(struct udp_socket_lib *sock)
+{
+  __u32 events = 0;
+
+  if (sock == NULL || sock->fd == SOCK_INACTIVE)
+    return 0;
+
+  if (sock->rx_len != 0)
+    events |= UDP_WAIT_SOCKET;
+  if (sock->rx_avail > 0)
+    events |= UDP_WAIT_IN;
+  if (sock->tx_len != 0 && sock->tx_avail < sock->tx_len)
+    events |= UDP_WAIT_OUT;
+  if (sock->bind_success != -1)
+    events |= UDP_WAIT_BIND;
+  if (sock->setopt_success != -1)
+    events |= UDP_WAIT_SETOPT;
+
+  return events;
+}
+
+static int udp_wait_poll_ctx(struct udp_context_lib *ctx, int mode)
+{
+  int n = 0;
+
+  if (mode != UDP_WAIT_POLL_FAST)
+  {
+    if (udp_poll_slow(ctx) > 0)
+      n++;
+  }
+
+  if (mode != UDP_WAIT_POLL_SLOW)
+    n += udp_poll_fast(ctx);
+
+  return n;
+}
+
+static int udp_wait_collect(struct udp_wait *wait, struct udp_wait_event *events,
+    int maxevents)
+{
+  int i, n, sockfd;
+  __u32 ready;
+  struct udp_socket_lib *sock;
+  struct udp_wait_entry *entry;
+
+  n = 0;
+  for (i = 0; i < wait->nfds && n < maxevents; i++)
+  {
+    sockfd = wait->sockfds[i];
+    entry = &wait->entries[sockfd];
+    sock = entry->sock;
+    if (sock == NULL || sock->fd == SOCK_INACTIVE)
+      continue;
+
+    ready = udp_sock_wait_events(sock) & entry->events;
+    if (ready == 0)
+      continue;
+
+    events[n].sockfd = sockfd;
+    events[n].events = ready;
+    events[n].data = entry->data;
+    n++;
+  }
+
+  return n;
+}
+
+static int udp_wait_impl(struct udp_wait *wait, struct udp_wait_event *events,
+    int maxevents, int flags, int mode)
+{
+  int n;
+
+  if (wait == NULL || events == NULL || maxevents <= 0)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  for (;;)
+  {
+    n = udp_wait_collect(wait, events, maxevents);
+    if (n > 0)
+      return n;
+
+    if ((flags & UDP_WAIT_NONBLOCK) != 0)
+      return 0;
+
+    udp_wait_poll_ctx(wait->ctx, mode);
+  }
+}
+
+static void udp_wait_until(struct udp_context_lib *ctx,
+    struct udp_socket_lib *sock, __u32 events, int mode)
+{
+  while ((udp_sock_wait_events(sock) & events) == 0)
+  {
+    udp_wait_poll_ctx(ctx, mode);
+  }
 }

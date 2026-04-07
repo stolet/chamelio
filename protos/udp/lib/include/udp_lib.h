@@ -10,6 +10,36 @@
 #define MAX_SOCKETS 8192
 #define SOCK_INACTIVE (-1U)
 
+#define UDP_WAIT_NONBLOCK (1U << 0)
+
+#define UDP_WAIT_IN (1U << 0)
+#define UDP_WAIT_OUT (1U << 1)
+#define UDP_WAIT_SOCKET (1U << 2)
+#define UDP_WAIT_BIND (1U << 3)
+#define UDP_WAIT_SETOPT (1U << 4)
+
+struct udp_wait_event {
+    int sockfd;
+    __u32 events;
+    __u64 data;
+};
+
+struct udp_socket_lib;
+
+struct udp_wait_entry {
+    __u32 events;
+    __u64 data;
+    int index;
+    struct udp_socket_lib *sock;
+};
+
+struct udp_wait {
+    struct udp_context_lib *ctx;
+    int nfds;
+    int sockfds[MAX_SOCKETS];
+    struct udp_wait_entry entries[MAX_SOCKETS];
+};
+
 struct udp_socket_lib {
     /* File descriptor identifier for this socket */
     int fd;
@@ -96,6 +126,25 @@ struct udp_lib {
 int udp_connect_slow();
 /* Creates a new context for a thread */
 struct udp_context_lib * udp_ctx_new();
+/* Creates a new wait object for a context */
+struct udp_wait *udp_wait_new(struct udp_context_lib *ctx);
+/* Destroys a wait object */
+void udp_wait_free(struct udp_wait *wait);
+/* Adds a socket to a wait object */
+int udp_wait_add(struct udp_wait *wait, int sockfd, __u32 events, __u64 data);
+/* Modifies a registered socket in a wait object */
+int udp_wait_mod(struct udp_wait *wait, int sockfd, __u32 events, __u64 data);
+/* Removes a socket from a wait object */
+int udp_wait_del(struct udp_wait *wait, int sockfd);
+/* Waits for fast-path and slow-path events */
+int udp_wait(struct udp_wait *wait, struct udp_wait_event *events,
+    int maxevents, int flags);
+/* Waits for fast-path events only */
+int udp_wait_fast(struct udp_wait *wait, struct udp_wait_event *events,
+    int maxevents, int flags);
+/* Waits for slow-path events only */
+int udp_wait_slow(struct udp_wait *wait, struct udp_wait_event *events,
+    int maxevents, int flags);
 /* Polls message queue for slow-path messages */
 int udp_poll_slow(struct udp_context_lib *ctx);
 /* Polls message queue for fast-path messages*/

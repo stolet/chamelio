@@ -38,13 +38,29 @@ static int handle_rx_bump(struct tcp_queue_bump_entry *qe);
 static struct tcp_socket_lib *alloc_lib_sock(struct tcp_context_lib *ctx);
 static struct tcp_socket_lib *lookup_sock(struct tcp_context_lib *ctx,
     int sockfd);
+static __u32 sock_wait_events(struct tcp_socket_lib *sock);
+static int wait_poll_ctx(struct tcp_context_lib *ctx, int mode);
+static int wait_collect(struct tcp_wait *wait,
+    struct tcp_wait_event *events,
+    int maxevents);
+static int wait(struct tcp_wait *wait,
+    struct tcp_wait_event *events,
+    int maxevents, int flags, int mode);
+static void wait_until(struct tcp_context_lib *ctx,
+    struct tcp_socket_lib *sock, __u32 events, int mode);
 static int validate_sockaddr_in(const struct sockaddr *addr,
     socklen_t addrlen);
 static int validate_nonblock_flags(int flags);
 static void fill_sockaddr(struct tcp_socket_lib *sock, struct sockaddr *addr,
     socklen_t *addrlen);
 
-int tcp_lib_connect_slow()
+enum tcp_wait_poll_mode {
+  TCP_WAIT_POLL_BOTH = 0,
+  TCP_WAIT_POLL_FAST,
+  TCP_WAIT_POLL_SLOW,
+};
+
+int tcp_connect_slow()
 {
   int i;
   struct tcp_lib *u;
@@ -115,7 +131,7 @@ close_sockfd:
   return -1;
 }
 
-struct tcp_context_lib * tcp_lib_ctx_new()
+struct tcp_context_lib * tcp_ctx_new()
 {
   int i;
   ssize_t sz, off;
@@ -246,7 +262,160 @@ struct tcp_context_lib * tcp_lib_ctx_new()
   return ctx;
 }
 
-int tcp_lib_socket(struct tcp_context_lib *ctx)
+struct tcp_wait *tcp_wait_new(struct tcp_context_lib *ctx)
+{
+  int i;
+  struct tcp_wait *wait;
+
+  if (tcp == NULL)
+  {
+    errno = ENOTCONN;
+    return NULL;
+  }
+
+  if (ctx == NULL)
+  {
+    errno = EINVAL;
+    return NULL;
+  }
+
+  wait = malloc(sizeof(*wait));
+  if (wait == NULL)
+  {
+    errno = ENOMEM;
+    return NULL;
+  }
+
+  wait->ctx = ctx;
+  wait->nfds = 0;
+  for (i = 0; i < MAX_SOCKETS; i++)
+  {
+    wait->entries[i].events = 0;
+    wait->entries[i].data = 0;
+    wait->entries[i].index = -1;
+    wait->entries[i].sock = NULL;
+  }
+
+  return wait;
+}
+
+void tcp_wait_free(struct tcp_wait *wait)
+{
+  free(wait);
+}
+
+int tcp_wait_add(struct tcp_wait *wait, int sockfd, __u32 events,
+    __u64 data)
+{
+  struct tcp_socket_lib *sock;
+
+  if (wait == NULL)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  sock = lookup_sock(wait->ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  if (wait->entries[sockfd].index != -1)
+  {
+    errno = EEXIST;
+    return -1;
+  }
+
+  wait->entries[sockfd].events = events;
+  wait->entries[sockfd].data = data;
+  wait->entries[sockfd].index = wait->nfds;
+  wait->entries[sockfd].sock = sock;
+  wait->sockfds[wait->nfds] = sockfd;
+  wait->nfds++;
+  return 0;
+}
+
+int tcp_wait_mod(struct tcp_wait *wait, int sockfd, __u32 events,
+    __u64 data)
+{
+  struct tcp_socket_lib *sock;
+
+  if (wait == NULL)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  sock = lookup_sock(wait->ctx, sockfd);
+  if (sock == NULL)
+    return -1;
+
+  if (wait->entries[sockfd].index == -1)
+  {
+    errno = ENOENT;
+    return -1;
+  }
+
+  wait->entries[sockfd].events = events;
+  wait->entries[sockfd].data = data;
+  wait->entries[sockfd].sock = sock;
+  return 0;
+}
+
+int tcp_wait_del(struct tcp_wait *wait, int sockfd)
+{
+  int idx, last_fd;
+
+  if (wait == NULL)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  if (sockfd < 0 || sockfd >= MAX_SOCKETS)
+  {
+    errno = EBADF;
+    return -1;
+  }
+
+  idx = wait->entries[sockfd].index;
+  if (idx == -1)
+  {
+    errno = ENOENT;
+    return -1;
+  }
+
+  wait->nfds--;
+  last_fd = wait->sockfds[wait->nfds];
+  wait->sockfds[idx] = last_fd;
+  wait->entries[last_fd].index = idx;
+  wait->entries[sockfd].index = -1;
+  wait->entries[sockfd].events = 0;
+  wait->entries[sockfd].data = 0;
+  wait->entries[sockfd].sock = NULL;
+  return 0;
+}
+
+int tcp_wait(struct tcp_wait *waito, struct tcp_wait_event *events,
+    int maxevents, int flags)
+{
+  return wait(waito, events, maxevents, flags, TCP_WAIT_POLL_BOTH);
+}
+
+int tcp_wait_fast(struct tcp_wait *waito,
+    struct tcp_wait_event *events,
+    int maxevents, int flags)
+{
+  return wait(waito, events, maxevents, flags, TCP_WAIT_POLL_FAST);
+}
+
+int tcp_wait_slow(struct tcp_wait *waito,
+    struct tcp_wait_event *events,
+    int maxevents, int flags)
+{
+  return wait(waito, events, maxevents, flags, TCP_WAIT_POLL_SLOW);
+}
+
+int tcp_socket(struct tcp_context_lib *ctx)
 {
   int ret;
   struct tcp_socket_lib *sock;
@@ -286,13 +455,12 @@ int tcp_lib_socket(struct tcp_context_lib *ctx)
     return -1;
   }
 
-  while (sock->rx_len == 0)
-    tcp_poll_slow(ctx);
+  wait_until(ctx, sock, TCP_WAIT_SOCKET, TCP_WAIT_POLL_SLOW);
 
   return sock->fd;
 }
 
-int tcp_lib_bind(struct tcp_context_lib *ctx, int sockfd,
+int tcp_bind(struct tcp_context_lib *ctx, int sockfd,
     const struct sockaddr *addr, socklen_t addrlen)
 {
   int ret;
@@ -332,8 +500,7 @@ int tcp_lib_bind(struct tcp_context_lib *ctx, int sockfd,
     return -1;
   }
 
-  while (sock->bind_success == -1)
-    tcp_poll_slow(ctx);
+  wait_until(ctx, sock, TCP_WAIT_BIND, TCP_WAIT_POLL_SLOW);
 
   if (!sock->bind_success)
   {
@@ -349,7 +516,7 @@ int tcp_lib_bind(struct tcp_context_lib *ctx, int sockfd,
   return 0;
 }
 
-int tcp_lib_connect(struct tcp_context_lib *ctx, int sockfd,
+int tcp_connect(struct tcp_context_lib *ctx, int sockfd,
     const struct sockaddr *addr, socklen_t addrlen, int flags)
 {
   int ret;
@@ -387,8 +554,7 @@ int tcp_lib_connect(struct tcp_context_lib *ctx, int sockfd,
         return -1;
       }
 
-      while (sock->op_status == TCP_LIB_STATUS_PENDING)
-        tcp_poll_slow(ctx);
+      wait_until(ctx, sock, TCP_WAIT_OP, TCP_WAIT_POLL_SLOW);
     }
 
     if (sock->op_status == 0 && sock->state == TCP_LIB_STATE_ESTABLISHED)
@@ -435,8 +601,7 @@ int tcp_lib_connect(struct tcp_context_lib *ctx, int sockfd,
     return -1;
   }
 
-  while (sock->op_status == TCP_LIB_STATUS_PENDING)
-    tcp_poll_slow(ctx);
+  wait_until(ctx, sock, TCP_WAIT_OP, TCP_WAIT_POLL_SLOW);
 
   if (sock->op_status != 0)
   {
@@ -448,7 +613,7 @@ int tcp_lib_connect(struct tcp_context_lib *ctx, int sockfd,
   return 0;
 }
 
-int tcp_lib_listen(struct tcp_context_lib *ctx, int sockfd, int backlog)
+int tcp_listen(struct tcp_context_lib *ctx, int sockfd, int backlog)
 {
   int ret;
   struct equeue *q;
@@ -513,7 +678,7 @@ int tcp_lib_listen(struct tcp_context_lib *ctx, int sockfd, int backlog)
   return 0;
 }
 
-int tcp_lib_accept(struct tcp_context_lib *ctx, int sockfd,
+int tcp_accept(struct tcp_context_lib *ctx, int sockfd,
     struct sockaddr *addr, socklen_t *addrlen, int flags)
 {
   int ret;
@@ -542,8 +707,7 @@ int tcp_lib_accept(struct tcp_context_lib *ctx, int sockfd,
     return -1;
   }
 
-  while (listen_sock->pending_conn == 0)
-    tcp_poll_slow(ctx);
+  wait_until(ctx, listen_sock, TCP_WAIT_ACCEPT, TCP_WAIT_POLL_SLOW);
 
   sock = alloc_lib_sock(ctx);
   if (sock == NULL)
@@ -570,8 +734,7 @@ int tcp_lib_accept(struct tcp_context_lib *ctx, int sockfd,
   }
 
   sock->op_status = TCP_LIB_STATUS_PENDING;
-  while (sock->op_status == TCP_LIB_STATUS_PENDING)
-    tcp_poll_slow(ctx);
+  wait_until(ctx, sock, TCP_WAIT_OP, TCP_WAIT_POLL_SLOW);
 
   if (sock->op_status != 0)
   {
@@ -585,7 +748,7 @@ int tcp_lib_accept(struct tcp_context_lib *ctx, int sockfd,
   return sock->fd;
 }
 
-int tcp_lib_setsockopt(struct tcp_context_lib *ctx, int sockfd, __u8 opt)
+int tcp_setsockopt(struct tcp_context_lib *ctx, int sockfd, __u8 opt)
 {
   int ret;
   struct equeue *q;
@@ -619,8 +782,7 @@ int tcp_lib_setsockopt(struct tcp_context_lib *ctx, int sockfd, __u8 opt)
     return -1;
   }
 
-  while (sock->setopt_success == -1)
-    tcp_poll_slow(ctx);
+  wait_until(ctx, sock, TCP_WAIT_SETOPT, TCP_WAIT_POLL_SLOW);
 
   if (!sock->setopt_success)
   {
@@ -635,7 +797,7 @@ int tcp_lib_setsockopt(struct tcp_context_lib *ctx, int sockfd, __u8 opt)
   return 0;
 }
 
-int tcp_lib_sendto(struct tcp_context_lib *ctx, int sockfd,
+int tcp_sendto(struct tcp_context_lib *ctx, int sockfd,
     const void *buf, size_t len,
     const struct sockaddr *addr, socklen_t addrlen)
 {
@@ -752,7 +914,7 @@ int tcp_lib_sendto(struct tcp_context_lib *ctx, int sockfd,
   return n;
 }
 
-int tcp_lib_recvfrom(struct tcp_context_lib *ctx, int sockfd,
+int tcp_recvfrom(struct tcp_context_lib *ctx, int sockfd,
     void *buf, size_t len,
     struct sockaddr *addr, socklen_t addr_len)
 {
@@ -847,7 +1009,7 @@ int tcp_lib_recvfrom(struct tcp_context_lib *ctx, int sockfd,
   return n;
 }
 
-int tcp_lib_shutdown(struct tcp_context_lib *ctx, int sockfd, int how)
+int tcp_shutdown(struct tcp_context_lib *ctx, int sockfd, int how)
 {
   int ret;
   struct equeue *q;
@@ -896,7 +1058,7 @@ int tcp_lib_shutdown(struct tcp_context_lib *ctx, int sockfd, int how)
   return 0;
 }
 
-int tcp_lib_close(struct tcp_context_lib *ctx, int sockfd)
+int tcp_close(struct tcp_context_lib *ctx, int sockfd)
 {
   int ret;
   struct equeue *q;
@@ -928,7 +1090,7 @@ int tcp_lib_close(struct tcp_context_lib *ctx, int sockfd)
   return 0;
 }
 
-int tcp_lib_poll_fast(struct tcp_context_lib *ctx)
+int tcp_poll_fast(struct tcp_context_lib *ctx)
 {
   int i, n, ncores;
   struct dqueue *q;
@@ -970,7 +1132,7 @@ int tcp_lib_poll_fast(struct tcp_context_lib *ctx)
   return n;
 }
 
-int tcp_lib_poll_slow(struct tcp_context_lib *ctx)
+int tcp_poll_slow(struct tcp_context_lib *ctx)
 {
   int n;
   struct dqueue *q;
@@ -1228,6 +1390,133 @@ static struct tcp_socket_lib *lookup_sock(struct tcp_context_lib *ctx,
   }
 
   return sock;
+}
+
+static __u32 sock_wait_events(struct tcp_socket_lib *sock)
+{
+  __u32 events = 0;
+
+  if (sock == NULL || sock->fd == SOCK_INACTIVE)
+    return 0;
+
+  if (sock->rx_len != 0)
+    events |= TCP_WAIT_SOCKET;
+  if (sock->bind_success != -1)
+    events |= TCP_WAIT_BIND;
+  if (sock->setopt_success != -1)
+    events |= TCP_WAIT_SETOPT;
+  if (sock->op_status != TCP_LIB_STATUS_IDLE &&
+      sock->op_status != TCP_LIB_STATUS_PENDING)
+  {
+    events |= TCP_WAIT_OP;
+  }
+
+  if (sock->state == TCP_LIB_STATE_LISTEN && sock->pending_conn > 0)
+    events |= TCP_WAIT_IN | TCP_WAIT_ACCEPT;
+
+  if (sock->state == TCP_LIB_STATE_ESTABLISHED ||
+      sock->state == TCP_LIB_STATE_CLOSING)
+  {
+    if (sock->rx_avail > 0)
+      events |= TCP_WAIT_IN;
+    if (sock->state == TCP_LIB_STATE_ESTABLISHED &&
+        sock->tx_len != 0 && sock->tx_avail < sock->tx_len)
+    {
+      events |= TCP_WAIT_OUT;
+    }
+  }
+
+  if (sock->state == TCP_LIB_STATE_ESTABLISHED && sock->op_status == 0)
+    events |= TCP_WAIT_CONNECTED;
+
+  if (sock->state == TCP_LIB_STATE_CLOSING ||
+      sock->state == TCP_LIB_STATE_CLOSED)
+  {
+    events |= TCP_WAIT_CLOSED;
+  }
+
+  return events;
+}
+
+static int wait_poll_ctx(struct tcp_context_lib *ctx, int mode)
+{
+  int n = 0;
+
+  if (mode != TCP_WAIT_POLL_FAST)
+  {
+    if (tcp_poll_slow(ctx) > 0)
+      n++;
+  }
+
+  if (mode != TCP_WAIT_POLL_SLOW)
+    n += tcp_poll_fast(ctx);
+
+  return n;
+}
+
+static int wait_collect(struct tcp_wait *wait,
+    struct tcp_wait_event *events,
+    int maxevents)
+{
+  int i, n, sockfd;
+  __u32 ready;
+  struct tcp_socket_lib *sock;
+  struct tcp_wait_entry *entry;
+
+  n = 0;
+  for (i = 0; i < wait->nfds && n < maxevents; i++)
+  {
+    sockfd = wait->sockfds[i];
+    entry = &wait->entries[sockfd];
+    sock = entry->sock;
+    if (sock == NULL || sock->fd == SOCK_INACTIVE)
+      continue;
+
+    ready = sock_wait_events(sock) & entry->events;
+    if (ready == 0)
+      continue;
+
+    events[n].sockfd = sockfd;
+    events[n].events = ready;
+    events[n].data = entry->data;
+    n++;
+  }
+
+  return n;
+}
+
+static int wait(struct tcp_wait *wait,
+    struct tcp_wait_event *events,
+    int maxevents, int flags, int mode)
+{
+  int n;
+
+  if (wait == NULL || events == NULL || maxevents <= 0)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  for (;;)
+  {
+    n = wait_collect(wait, events, maxevents);
+    if (n > 0)
+      return n;
+
+    if ((flags & TCP_WAIT_NONBLOCK) != 0)
+      return 0;
+
+    wait_poll_ctx(wait->ctx, mode);
+  }
+}
+
+static void wait_until(struct tcp_context_lib *ctx,
+    struct tcp_socket_lib *sock, __u32 events, int mode)
+{
+  while ((sock_wait_events(sock) & events) == 0)
+  {
+    wait_poll_ctx(ctx, mode);
+  }
 }
 
 static int validate_sockaddr_in(const struct sockaddr *addr,
