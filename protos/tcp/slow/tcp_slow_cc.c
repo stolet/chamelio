@@ -201,6 +201,9 @@ static void read_stats(struct tcp_slow_context *ctx, struct tcp_sock *sock,
   meta->cc_last_acks = sock->cc_acks;
   meta->cc_last_ackb = sock->cc_ackb;
   meta->cc_last_ecnb = sock->cc_ecnb;
+
+  ctx->stats_drops += stats->drops;
+  ctx->stats_acks_rx += stats->acks;
 }
 
 static void update_sock(struct tcp_slow_context *ctx, struct tcp_sock *sock,
@@ -383,6 +386,7 @@ static void maybe_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock
       {
         meta->cnt_tx_pending = 0;
         meta->cc_rexmits++;
+        ctx->stats_retx++;
         return;
       }
     }

@@ -10,6 +10,7 @@
 #include "nic_fast.h" 
 #include "config.h"
 #include "arp.h"
+#include "fast_stats.h"
 #include "queue_types.h"
 #include "shmalloc.h"
 
@@ -96,6 +97,8 @@ struct fast_context {
   struct dqueue *ctl_fast_q;
   /* Transmit queue for packets from control-path */
   struct dqueue *ctl_txq;
+  /* Cumulative batch counters sampled by the control-path */
+  struct fast_batch_counters batch_stats;
 
   /* File descriptor for internal shared memory */
   int shm_fd_internal;

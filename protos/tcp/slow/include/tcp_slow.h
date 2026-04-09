@@ -150,6 +150,14 @@ struct tcp_slow_context {
   __u64 cc_poll_tsc;
   /* Next socket index to scan for CC */
   __u32 cc_next_sock;
+  /* Aggregated ACK count since the last stats log */
+  __u64 stats_acks_rx;
+  /* Aggregated drop count since the last stats log */
+  __u64 stats_drops;
+  /* Aggregated retransmission count since the last stats log */
+  __u64 stats_retx;
+  /* Last time slow-path stats were logged */
+  __u64 stats_log_tsc;
 };
 
 #endif

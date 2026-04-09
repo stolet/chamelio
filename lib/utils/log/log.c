@@ -37,7 +37,7 @@ void log_warn(const char *file, int line, const char *func, const char *fmt, ...
   vsnprintf(msg, LOG_MAX_LEN, fmt, args);
   va_end(args);
  
-  fprintf(stderr, "INFO: [%s:%d] %s(): %s\n", file, line, func, msg);
+  fprintf(stderr, "WARN: [%s:%d] %s(): %s\n", file, line, func, msg);
 }
 
 void log_error(const char *file, int line, const char *func, const char *fmt, ...)

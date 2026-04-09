@@ -21,6 +21,7 @@
 static inline int poll_fast(struct control_context *ctx);
 static inline int poll_guests(struct control_context *ctx);
 static inline int poll_timeouts(struct control_context *ctx);
+static inline void log_fast_batch_stats(struct control_context *ctx);
 
 int control_context_init(struct control_context *ctrl_ctx, 
     struct nic_context *nic_ctx, struct configuration *config, 
@@ -38,6 +39,9 @@ int control_context_init(struct control_context *ctrl_ctx,
   ctrl_ctx->nic_ctx = nic_ctx;
   ctrl_ctx->comb_bc.data = NULL;
   ctrl_ctx->comb_bc.len = 0;
+  ctrl_ctx->f_ctxs = NULL;
+  ctrl_ctx->fast_batch_last = NULL;
+  ctrl_ctx->fast_stats_tsc = 0;
 
   if (control_ebpf_init(ctrl_ctx) != 0)
   {
@@ -97,6 +101,13 @@ int control_context_init(struct control_context *ctrl_ctx,
     goto free_control_fast_list;
   }
   ctrl_ctx->txqs = txqs;
+  ctrl_ctx->fast_batch_last = calloc(config->fp_cores_max,
+      sizeof(*ctrl_ctx->fast_batch_last));
+  if (ctrl_ctx->fast_batch_last == NULL)
+  {
+    LOG_ERROR("failed to allocate fast-path batch stat snapshots");
+    goto free_control_txqs;
+  }
   
   /* Create a queue with each shared memory handle */
   for (i = 0; i < config->fp_cores_max; i++)
@@ -137,10 +148,12 @@ int control_context_init(struct control_context *ctrl_ctx,
     ctrl_ctx->budget_cap = clock_us_to_tsc(config->perf_iso_cap) *
         config->perf_iso_boost;
   }
+  ctrl_ctx->fast_stats_tsc = clock_rdtsc();
 
   return 0;
 
 free_control_txqs:
+  free(ctrl_ctx->fast_batch_last);
   free(txqs);
 free_control_fast_list:
   free(ctl_fast_qs);
@@ -177,6 +190,54 @@ int control_loop(struct control_context *ctx)
     poll_guests(ctx);
     poll_timeouts(ctx);
     control_budget_refresh(ctx);
+    log_fast_batch_stats(ctx);
+  }
+}
+
+static inline void log_fast_batch_stats(struct control_context *ctx)
+{
+  __u16 i;
+  __u64 now_tsc;
+  __u64 rx_calls;
+  __u64 queue_calls;
+  __u64 tx_calls;
+  struct fast_context *f_ctx;
+  struct fast_batch_counters cur;
+  struct fast_batch_counters *prev;
+
+  if (ctx->f_ctxs == NULL || ctx->fast_batch_last == NULL)
+    return;
+
+  now_tsc = clock_rdtsc();
+  if (ctx->fast_stats_tsc != 0 &&
+      clock_us_since_tsc(ctx->fast_stats_tsc) < 1000000)
+  {
+    return;
+  }
+  ctx->fast_stats_tsc = now_tsc;
+
+  for (i = 0; i < ctx->config->fp_cores_max; i++)
+  {
+    f_ctx = ctx->f_ctxs[i];
+    if (f_ctx == NULL)
+      continue;
+
+    if (fast_batch_stats_snapshot(f_ctx, &cur) != 0)
+      continue;
+    prev = &ctx->fast_batch_last[i];
+    rx_calls = cur.rx_calls - prev->rx_calls;
+    queue_calls = cur.queue_calls - prev->queue_calls;
+    tx_calls = cur.tx_calls - prev->tx_calls;
+
+    LOG_INFO("fast_batch core=%u fast_rx_poll_avg=%.2f fast_queues_poll_avg=%.2f "
+        "fast_tx_poll_avg=%.2f",
+        i,
+        rx_calls == 0 ? 0.0 : (double) (cur.rx_items - prev->rx_items) / rx_calls,
+        queue_calls == 0 ? 0.0 :
+            (double) (cur.queue_items - prev->queue_items) / queue_calls,
+        tx_calls == 0 ? 0.0 : (double) (cur.tx_items - prev->tx_items) / tx_calls);
+
+    *prev = cur;
   }
 }
 

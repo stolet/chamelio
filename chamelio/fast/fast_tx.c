@@ -93,7 +93,7 @@ int fast_tx_poll(struct fast_context *ctx)
   fast_txflush(ctx);
   txcache_unalloc(ctx, max - ntx);
 
-  return 0;
+  return ntx;
 }
 
 static inline int tx_poll_guest(struct fast_context *ctx,

@@ -94,6 +94,16 @@ int fast_context_init(struct fast_context *f_ctx,
   return 0;
 }
 
+int fast_batch_stats_snapshot(const struct fast_context *ctx,
+    struct fast_batch_counters *stats)
+{
+  if (ctx == NULL || stats == NULL)
+    return -1;
+
+  *stats = ctx->batch_stats;
+  return 0;
+}
+
 int fast_loop(struct fast_context *ctx)
 {
   int ret;
@@ -106,17 +116,29 @@ int fast_loop(struct fast_context *ctx)
       LOG_ERROR("poll_rx failed");
       return -1;
     }
+    ctx->batch_stats.rx_calls++;
+    ctx->batch_stats.rx_items += ret;
 
     ret = fast_queues_poll(ctx);
     if (ret < 0)
     {
       LOG_ERROR("poll_queues failed");
     }
+    else
+    {
+      ctx->batch_stats.queue_calls++;
+      ctx->batch_stats.queue_items += ret;
+    }
 
     ret = fast_tx_poll(ctx);
     if (ret < 0)
     {
       LOG_ERROR("poll_tx failed");
+    }
+    else
+    {
+      ctx->batch_stats.tx_calls++;
+      ctx->batch_stats.tx_items += ret;
     }
 
     ret = controlif_poll(ctx);

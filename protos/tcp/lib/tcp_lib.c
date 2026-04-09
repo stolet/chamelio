@@ -333,8 +333,7 @@ void tcp_wait_free(struct tcp_wait *wait)
   free(wait);
 }
 
-int tcp_wait_add(struct tcp_wait *wait, int sockfd, __u32 events,
-    __u64 data)
+int tcp_wait_add(struct tcp_wait *wait, int sockfd, __u32 events, __u64 data)
 {
   struct tcp_socket_lib *sock;
 
@@ -363,8 +362,7 @@ int tcp_wait_add(struct tcp_wait *wait, int sockfd, __u32 events,
   return 0;
 }
 
-int tcp_wait_mod(struct tcp_wait *wait, int sockfd, __u32 events,
-    __u64 data)
+int tcp_wait_mod(struct tcp_wait *wait, int sockfd, __u32 events, __u64 data)
 {
   struct tcp_socket_lib *sock;
 

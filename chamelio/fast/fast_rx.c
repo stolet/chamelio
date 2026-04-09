@@ -21,32 +21,32 @@ static inline void rx_poll_guest_comb(struct guest_fast *g,
 
 int fast_rx_poll(struct fast_context *ctx)
 {
-  int i, n;
+  int i, nrx;
   struct rte_mbuf *mbs[FAST_BATCH_SIZE];
   struct guest_fast *g;
   __u64 tsc_start = 0, pkt_off;
   const int use_comb = ctx->fp_jit_combined;
   const int charge_budget = ctx->perf_iso;
 
-  n = FAST_BATCH_SIZE;
-  if (TXBUF_SIZE - ctx->tx_n < n)
-    n = TXBUF_SIZE - ctx->tx_n;
+  nrx = FAST_BATCH_SIZE;
+  if (TXBUF_SIZE - ctx->tx_n < nrx)
+    nrx = TXBUF_SIZE - ctx->tx_n;
 
   /* Receive packets from the NIC */
-  n = nic_fast_rx(&ctx->nic_ctx, n, mbs);
+  nrx = nic_fast_rx(&ctx->nic_ctx, nrx, mbs);
 
   /* Return if we received no packets */
-  if (n <= 0)
+  if (nrx <= 0)
     return 0;
 
   /* Prefetch first two mbuf cachelines */
   rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
   rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *) + 64);
 
-  for (i = 0; i < n; i++)
+  for (i = 0; i < nrx; i++)
   {
     /* Prefetch next mbuf two cachelines */
-    if (i + 1 < n)
+    if (i + 1 < nrx)
     {
       rte_prefetch0(rte_pktmbuf_mtod(mbs[i + 1], __u8 *));
       rte_prefetch0(rte_pktmbuf_mtod(mbs[i + 1], __u8 *) + 64);
@@ -73,10 +73,10 @@ int fast_rx_poll(struct fast_context *ctx)
   }
 
   /* Reuse mbufs in txcache */
-  for (i = 0; i < n; i++)
+  for (i = 0; i < nrx; i++)
     txcache_free(ctx, mbs[i]);
 
-  return n;
+  return nrx;
 }
 
 static inline void rx_poll_guest(struct guest_fast *g,

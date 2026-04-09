@@ -183,6 +183,7 @@ int main (int argc, char **argv)
   /* Initialize control-path */
   control_context_init(c_ctx, &cham_ctx.nic_ctx, 
       config, fc_handles, cf_handles, txq_handles);
+  c_ctx->f_ctxs = cham_ctx.f_ctxs;
   
   /* Start fast-path threads */
   threads_launched = fast_start(&cham_ctx.config);

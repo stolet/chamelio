@@ -78,7 +78,7 @@ int fast_queues_poll(struct fast_context *ctx)
   fast_txflush(ctx);
   txcache_unalloc(ctx, max - ntx);
 
-  return 0;
+  return ndeq;
 }
 
 static inline int queues_poll_guest(struct fast_context *ctx,

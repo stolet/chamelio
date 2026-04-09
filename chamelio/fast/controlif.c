@@ -163,8 +163,6 @@ static inline void handle_new_queue(struct fast_context *ctx,
   dq->dq.entries = g->shm_base + req->off;
   dq->next = PROTOQ_ID_INVALID;
   dq->prev = PROTOQ_ID_INVALID;
-
-  LOG_DEBUG("created queue qid=%d in fast-path", req->qid);
 }
 
 static inline void handle_new_map(struct fast_context *ctx, 
@@ -187,7 +185,6 @@ static inline void handle_new_map(struct fast_context *ctx,
   m->size = req->elsize * req->nelems;
   m->off = req->off;
   m->addr = g->shm_base + req->off;
-  LOG_DEBUG("created map mid=%d in fast-path", req->mid);
 }
 
 static inline void handle_enableq(struct fast_context *ctx, 
@@ -223,8 +220,6 @@ static inline void handle_enableq(struct fast_context *ctx,
   q->next = PROTOQ_ID_INVALID;
   p->dqueues_tail = req->qid;
   p->ndqueues++;
-  
-  LOG_DEBUG("enabled queue qid=%d in core=%d", req->qid, req->core);
 }
 
 static inline void handle_disableq(struct fast_context *ctx, 

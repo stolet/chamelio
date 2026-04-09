@@ -7,6 +7,7 @@
 #include "config.h"
 #include "queue.h"
 #include "arp.h"
+#include "fast_stats.h"
 #include "shmalloc.h"
 #include "tomgr.h"
 
@@ -96,6 +97,12 @@ struct control_context {
   struct equeue **ctl_fast_qs;
   /* Queue that pushes packets from control to fast. One per core. */
   struct equeue **txqs;
+  /* Fast-path contexts owned by the top-level process */
+  struct fast_context **f_ctxs;
+  /* Last sampled fast-path batch counters. One per core */
+  struct fast_batch_counters *fast_batch_last;
+  /* Last time fast-path batch stats were logged */
+  __u64 fast_stats_tsc;
   
   /* File descriptor for internal shared memory */
   int shm_fd_internal;
