@@ -74,7 +74,7 @@ int fast_queues_poll(struct fast_context *ctx)
       return -1;
     }
   }
-
+  
   fast_txflush(ctx);
   txcache_unalloc(ctx, max - ntx);
 
@@ -87,7 +87,6 @@ static inline int queues_poll_guest(struct fast_context *ctx,
 {
   int j;
   int ret;
-  int last_queue_empty;
   struct cham_dqueue *qcur;
   struct queue_entry *qe;
   __u64 tsc_start = 0, tsc_spent;
@@ -95,41 +94,36 @@ static inline int queues_poll_guest(struct fast_context *ctx,
   /* Continue if there are no activated queues for this protocol */
   if (g->proto.dqueues_head == PROTOQ_ID_INVALID)
     return 0;
-
+    
   /* Continue if this guest is out of budget */
   if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
     return 0;
 
   if (charge_budget)
     tsc_start = clock_rdtsc();
-  last_queue_empty = 1;
+    
   for (j = 0; j < g->proto.ndqueues && *ndeq < max; j++)
   {
     qcur = &g->proto.dqueues[g->proto.dqueues_head];
-    qe = queue_head(&qcur->dq);
-
-    /* If there are no messages in queue, continue to next */
-    if (qe == NULL)
+    
+    /* Drain this queue before going to the next */
+    while (*ndeq < max)
     {
-      dqueue_rotate_head(g, qcur);
-      last_queue_empty = 1;
-      continue;
+      qe = queue_head(&qcur->dq);
+
+      /* Stop draining this queue once it is empty */
+      if (qe == NULL)
+        break;
+
+      ret = queues_poll_guest_dequeue(ctx, g, qcur, qe, mbs[*ntx], ntx, ndeq);
+      if (ret != 0)
+        return -1;
+
+      ret = queue_dequeue(&qcur->dq);
+      if (ret != 0)
+        return -1;
     }
 
-    last_queue_empty = 0;
-    ret = queues_poll_guest_dequeue(ctx, g, qcur, qe, mbs[*ntx], ntx, ndeq);
-    if (ret != 0)
-      return -1;
-
-    ret = queue_dequeue(&qcur->dq);
-    if (ret != 0)
-      return -1;
-  }
-
-  /* Rotate head if last polled queue didn't increment head */
-  if (!last_queue_empty)
-  {
-    qcur = &g->proto.dqueues[g->proto.dqueues_head];
     dqueue_rotate_head(g, qcur);
   }
 
@@ -157,7 +151,6 @@ static inline int queues_poll_guest_dequeue(struct fast_context *ctx,
   /* Add queue entry to eBPF context */
   g->proto.ebpf_ctx.qe = qe;
   g->proto.ebpf_ctx.qid = qcur->id;
-
 
   /* Execute custom dequeue procedure */
   ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx,
@@ -217,6 +210,13 @@ static inline void dqueue_rotate_head(struct guest_fast *g,
 {
   g->proto.dqueues[g->proto.dqueues_tail].next = qcur->id;
   g->proto.dqueues_tail = qcur->id;
-  g->proto.dqueues_head = qcur->next;
+
+  /* When there's only one queue, keep head pointing to it (circular list).
+     Otherwise, advance head to the next queue. */
+  if (g->proto.ndqueues == 1)
+    g->proto.dqueues_head = qcur->id;
+  else
+    g->proto.dqueues_head = qcur->next;
+
   qcur->next = PROTOQ_ID_INVALID;
 }

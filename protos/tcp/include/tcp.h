@@ -66,6 +66,8 @@ struct tcp_sock {
   __u32 local_ip;
   /* Remote IP */
   __u32 remote_ip;
+  /* Spin lock */
+  volatile __u32 lock;
 
   /* Length of RX buffer */
   __u32 rx_len;
@@ -93,8 +95,10 @@ struct tcp_sock {
   __u32 rx_seq;
   /* Remote advertised receive window */
   __u32 tx_remote_avail;
-  /* Bytes of the oldest unacknowledged region queued for retransmission */
-  __u32 tx_rexmit;
+  /* Oldest sequence number still queued for retransmission */
+  __u32 tx_rexmit_seq;
+  /* One past last sequence number queued for retransmission */
+  __u32 tx_rexmit_end_seq;
   /* Number of duplicate ACKs received */
   __u8 rx_dupack_cnt;
   /* Number of ACK packets received */

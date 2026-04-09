@@ -73,14 +73,6 @@ static inline const char *tcp_slow_state_name(__u8 state)
   }
 }
 
-static inline int tcp_slow_should_log(__u64 *counter)
-{
-  __u64 n;
-
-  n = ++(*counter);
-  return n <= 8 || (n & (n - 1)) == 0;
-}
-
 int tcp_slow_init(struct tcp_slow_context *ctx);
 int tcp_slow_app_poll(struct tcp_slow_context *ctx);
 int tcp_slow_fast_poll(struct tcp_slow_context *ctx);

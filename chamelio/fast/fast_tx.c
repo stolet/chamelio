@@ -13,6 +13,7 @@
 #include "clock.h"
 #include "infra.h"
 #include "ebpf.h"
+#include "log.h"
 #include "scheduler_fns.h"
 
 static inline int tx_poll_guest(struct fast_context *ctx,
@@ -36,7 +37,7 @@ int fast_tx_poll(struct fast_context *ctx)
   if (n_guests == 0)
     return 0;
 
-  /* Skip tx path if no guest has both a tx VM and pending scheduler work. */
+  /* Skip tx path if no guest has both a tx ebpf vm and pending scheduler work. */
   has_tx_work = 0;
   for (i = 0; i < n_guests; i++)
   {

@@ -18,6 +18,7 @@
 #include "queue_fns.h"
 #include "scheduler_fns.h"
 #include "verifier.h"
+#include "utils_sync.h"
 
 /* Combined infra + ebpf entry symbols in the bytecode. */
 #define COMB_RX_ENTRY "fast_comb_rx"
@@ -46,6 +47,8 @@ static inline struct cham_sched_entry *ebpf_sched_head(
     struct cham_scheduler *sched, __u64 elsize);
 static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize);
 static inline void *ebpf_queue_head(struct dqueue *q, __u64 elsize);
+static inline void ebpf_spin_lock(volatile __u32 *sl);
+static inline void ebpf_spin_unlock(volatile __u32 *sl);
 
 enum ebpf_helper_id
 {
@@ -64,6 +67,8 @@ enum ebpf_helper_id
   EBPF_HELPER_QUEUE_DEQUEUE = 1013,
   EBPF_HELPER_RDTSC = 1014,
   EBPF_HELPER_RATE_DELAY_TSC = 1015,
+  EBPF_HELPER_SPIN_LOCK = 1016,
+  EBPF_HELPER_SPIN_UNLOCK = 1017,
 };
 
 struct ebpf_helper_desc
@@ -111,6 +116,10 @@ static const struct ebpf_helper_desc ebpf_helpers[] = {
       "ebpf_rdtsc", ebpf_rdtsc },
   { EBPF_HELPER_RATE_DELAY_TSC,
       "ebpf_rate_delay_tsc", ebpf_rate_delay_tsc },
+  { EBPF_HELPER_SPIN_LOCK,
+      "ebpf_spin_lock", ebpf_spin_lock },
+  { EBPF_HELPER_SPIN_UNLOCK,
+      "ebpf_spin_unlock", ebpf_spin_unlock },
 };
 
 int control_ebpf_init(struct control_context *ctx)
@@ -437,21 +446,31 @@ static inline __u64 ebpf_rate_delay_tsc(__u32 bytes, __u32 rate_kbps)
   return (num + rate_kbps - 1) / rate_kbps;
 }
 
+static inline void ebpf_spin_lock(volatile __u32 *sl)
+{
+  util_spin_lock(sl);
+}
+
+static inline void ebpf_spin_unlock(volatile __u32 *sl)
+{
+  util_spin_unlock(sl);
+}
+
 static inline struct cham_sched_entry *ebpf_sched_head(
     struct cham_scheduler *sched, __u64 elsize)
 {
-  (void)elsize;
+  (void) elsize;
   return sched_head(sched);
 }
 
 static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize)
 {
-  (void)elsize;
+  (void) elsize;
   return queue_tail(q);
 }
 
 static inline void *ebpf_queue_head(struct dqueue *q, __u64 elsize)
 {
-  (void)elsize;
+  (void) elsize;
   return queue_head(q);
 }

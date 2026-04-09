@@ -40,7 +40,6 @@ uint64_t fast_comb_deq(struct fast_comb_deq_ctx *ctx, size_t mem_len)
   int deq_ret;
   int ret;
   int j;
-  int last_queue_empty;
   struct fast_context *f_ctx = ctx->f_ctx;
   struct guest_fast *g = ctx->g;
   struct rte_mbuf *mb;
@@ -55,55 +54,47 @@ uint64_t fast_comb_deq(struct fast_comb_deq_ctx *ctx, size_t mem_len)
 
   if (charge_budget)
     tsc_start = clock_rdtsc();
-  last_queue_empty = 1;
   for (j = 0; j < g->proto.ndqueues && *ctx->ndeq < ctx->max; j++)
   {
     qcur = &g->proto.dqueues[g->proto.dqueues_head];
-    qe = queue_head(&qcur->dq);
-
-    /* If there are no messages in queue, continue to next */
-    if (qe == NULL)
+    while (*ctx->ndeq < ctx->max)
     {
-      dqueue_rotate_head(g, qcur);
-      last_queue_empty = 1;
-      continue;
-    }
+      qe = queue_head(&qcur->dq);
 
-    last_queue_empty = 0;
-    mb = ctx->mbs[*ctx->ntx];
-    mb->data_off = 0;
-    fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, f_ctx->virt_gre);
+      /* Stop draining this queue once it is empty */
+      if (qe == NULL)
+        break;
 
-    g->proto.ebpf_ctx.qe = qe;
-    g->proto.ebpf_ctx.qid = qcur->id;
+      mb = ctx->mbs[*ctx->ntx];
+      mb->data_off = 0;
+      fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, f_ctx->virt_gre);
 
-    deq_ret = (int) __cham_comb(&g->proto.ebpf_ctx,
-        sizeof(struct cham_ebpf_ctx));
-    (*ctx->ndeq)++;
+      g->proto.ebpf_ctx.qe = qe;
+      g->proto.ebpf_ctx.qid = qcur->id;
 
-    if (deq_ret < 0)
-      return (uint64_t) -1;
+      deq_ret = (int) __cham_comb(&g->proto.ebpf_ctx,
+          sizeof(struct cham_ebpf_ctx));
+      (*ctx->ndeq)++;
 
-    if (deq_ret > 0)
-    {
-      ret = infra_tx(f_ctx, g, mb, deq_ret);
-      if (ret == 0)
+      if (deq_ret < 0)
+        return (uint64_t) -1;
+
+      if (deq_ret > 0)
       {
-        f_ctx->tx_mbs[f_ctx->tx_n] = mb;
-        f_ctx->tx_n++;
-        (*ctx->ntx)++;
+        ret = infra_tx(f_ctx, g, mb, deq_ret);
+        if (ret == 0)
+        {
+          f_ctx->tx_mbs[f_ctx->tx_n] = mb;
+          f_ctx->tx_n++;
+          (*ctx->ntx)++;
+        }
       }
+
+      ret = queue_dequeue(&qcur->dq);
+      if (ret != 0)
+        return (uint64_t) -1;
     }
 
-    ret = queue_dequeue(&qcur->dq);
-    if (ret != 0)
-      return (uint64_t) -1;
-  }
-
-  /* Rotate head if last polled queue didn't increment head */
-  if (!last_queue_empty)
-  {
-    qcur = &g->proto.dqueues[g->proto.dqueues_head];
     dqueue_rotate_head(g, qcur);
   }
 
@@ -188,6 +179,13 @@ static inline void dqueue_rotate_head(struct guest_fast *g,
 {
   g->proto.dqueues[g->proto.dqueues_tail].next = qcur->id;
   g->proto.dqueues_tail = qcur->id;
-  g->proto.dqueues_head = qcur->next;
+
+  /* When there's only one queue, keep head pointing to it (circular list).
+     Otherwise, advance head to the next queue. */
+  if (g->proto.ndqueues == 1)
+    g->proto.dqueues_head = qcur->id;
+  else
+    g->proto.dqueues_head = qcur->next;
+
   qcur->next = PROTOQ_ID_INVALID;
 }

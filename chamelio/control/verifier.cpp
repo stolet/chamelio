@@ -275,6 +275,36 @@ extern "C"
                 .context_descriptor = nullptr,
                 .unsupported = false,
             };
+        case 1016:
+            return EbpfHelperPrototype{
+                .name = "ebpf_spin_lock",
+                .return_type = EBPF_RETURN_TYPE_INTEGER,
+                .argument_type = {
+                    EBPF_ARGUMENT_TYPE_ANYTHING,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                },
+                .reallocate_packet = false,
+                .context_descriptor = nullptr,
+                .unsupported = false,
+            };
+        case 1017:
+            return EbpfHelperPrototype{
+                .name = "ebpf_spin_unlock",
+                .return_type = EBPF_RETURN_TYPE_INTEGER,
+                .argument_type = {
+                    EBPF_ARGUMENT_TYPE_ANYTHING,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                },
+                .reallocate_packet = false,
+                .context_descriptor = nullptr,
+                .unsupported = false,
+            };
         default:
             std::cerr << "could not find helper id=" << id << "\n";
             EbpfHelperPrototype unknown{};
@@ -305,6 +335,8 @@ extern "C"
             case 1013:
             case 1014:
             case 1015:
+            case 1016:
+            case 1017:
                 return true;
             default:
                 return false;
