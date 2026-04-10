@@ -436,7 +436,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   if (ret != 0)
     return -1;
 
-  // bpf_print(10000); // marker
+  bpf_print(10000); // marker
   // bpf_print((__u32)payload_len);
   // bpf_print((__u32)bump_cham->tx_ip);
   // bpf_print((__u32)bump_cham->tx_port);
