@@ -62,42 +62,25 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   server_map = ctx->maps[SERVER_MAP].addr;
   port_map = ctx->maps[PORT_MAP].addr;
   client_map = ctx->maps[CLIENT_MAP].addr;
-  // bpf_print(9000);
-
   eth = (struct eth_hdr *)pkt;
   if (f_beui16(eth->type) != ETH_TYPE_IP)
-  {
-    bpf_print(9001);
     return -1;
-  }
 
   ip = (struct ip_hdr *)(pkt + sizeof(struct eth_hdr));
   if (IPH_V(ip) != 4 || IPH_HL(ip) < 5)
-  {
-    bpf_print(9002);
     return -1;
-  }
 
   ip_hdrs_len = IPH_HL(ip) * 4;
   ip_total_len = f_beui16(ip->len);
 
   if (ip->proto != IP_PROTO_UDP)
-  {
-    bpf_print(9003);
     return -1;
-  }
 
   if (f_beui16(ip->offset) & 0x3FFF)
-  {
-    bpf_print(9004);
     return -1; // fragmented packet dropped
-  }
 
   if (ip_total_len < ip_hdrs_len + (__u16)sizeof(struct udp_hdr))
-  {
-    bpf_print(9005);
     return -1;
-  }
 
   /* Verify IPv4 header checksum */
   ip_saved_chksum = ip->chksum;
@@ -105,25 +88,16 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   ip_comp_chksum = ipv4_checksum((void *)ip);
   ip->chksum = ip_saved_chksum;
   if (ip_comp_chksum != ip_saved_chksum)
-  {
-    bpf_print(9006);
     return -1;
-  }
 
   /* Parse UDP header */
   udp = (struct udp_hdr *)((__u8 *)ip + ip_hdrs_len);
   udp_len = f_beui16(udp->len);
   if (udp_len < sizeof(struct udp_hdr))
-  {
-    bpf_print(9007);
     return -1;
-  }
 
   if (ip_total_len < ip_hdrs_len + udp_len)
-  {
-    bpf_print(9008);
     return -1;
-  }
 
   /* Verify UDP checksum for IPv4 (0 means “no checksum”) */
   udp_saved_chksum = udp->chksum;
@@ -134,12 +108,8 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     udp->chksum = udp_saved_chksum;
 
     if (udp_comp_chksum != udp_saved_chksum)
-    {
-      bpf_print(9009);
       return -1;
-    }
   }
-  // bpf_print(9010);
 
   // Parse rpc header
 
@@ -148,21 +118,14 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   rpc_len = f_beui16(rpc_hdr->len);
 
   if (rpc_len < sizeof(struct rpc_hdr))
-  {
-    bpf_print(9011);
     return -1;
-  }
 
   if (rpc_len != udp_len - sizeof(struct udp_hdr))
-  {
-    bpf_print(9012);
     return -1;
-  }
 
   payload_len = (__u16)(udp_len - sizeof(struct udp_hdr));
   payload = (__u8 *)udp + sizeof(struct udp_hdr);
   service = f_beui16(rpc_hdr->service);
-  // bpf_print(9013);
 
   port_entry = &port_map[f_beui16(udp->dst)];
 
@@ -170,46 +133,26 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   {
     // request, so it's server/worker receiving
     if (port_entry->server_id == (__u32)INVALID_ID)
-    {
-      bpf_print(9014);
       return -1;
-    }
 
     server = &server_map[port_entry->server_id];
     if (server->n_workers == 0)
-    {
-      bpf_print(9015);
       return -1;
-    }
 
     // select the first worker for now
     // TODO: change in ms4
     if (server->workers[0] == (__u32)INVALID_ID)
-    {
-      bpf_print(9016);
       return -1;
-    }
     worker = &worker_map[server->workers[0]];
     if (service >= MAX_SERVICE_NUMBER || !server->service_table[service])
-    {
-      bpf_print(9017);
       return -1;
-    }
-    // bpf_print(9018);
 
     // copy payload to worker rx buffer
     rx_base = (__u8 *)ctx->shm_base + worker->rx_off;
     free_bytes = worker->rx_len - worker->rx_avail;
 
     if (payload_len > free_bytes)
-    {
-      // bpf_print(9019);
-      // bpf_print((int)payload_len);
-      // bpf_print((int)worker->rx_len);
-      // bpf_print((int)worker->rx_avail);
-      // bpf_print((int)free_bytes);
       return -1;
-    }
     tail = worker->rx_head + worker->rx_avail;
     if (tail >= worker->rx_len)
       tail -= worker->rx_len;
@@ -229,10 +172,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     q = &ctx->equeues[worker->app_bump_qid].eq;
     qe = queue_tail(q);
     if (qe == NULL)
-    {
-      bpf_print(9020);
       return -1;
-    }
     bump = &qe->data.bump_app_rx;
     bump->opaque = worker->opaque;
     bump->rx_avail = payload_len;
@@ -243,21 +183,14 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   else
   {
     if (port_entry->client_id == (__u32)INVALID_ID)
-    {
-      bpf_print(9021);
       return -1;
-    }
 
     client = &client_map[port_entry->client_id];
-    bpf_print(9022);
     rx_base = (__u8 *)ctx->shm_base + client->rx_off;
     free_bytes = client->rx_len - client->rx_avail;
 
     if (payload_len > free_bytes)
-    {
-      bpf_print(9023);
       return -1;
-    }
     tail = client->rx_head + client->rx_avail;
     if (tail >= client->rx_len)
       tail -= client->rx_len;
@@ -276,10 +209,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     q = &ctx->equeues[client->app_bump_qid].eq;
     qe = queue_tail(q);
     if (qe == NULL)
-    {
-      bpf_print(9024);
       return -1;
-    }
     bump = &qe->data.bump_app_rx;
     bump->opaque = client->opaque;
     bump->rx_avail = payload_len;
@@ -290,12 +220,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   ret = queue_enqueue(q, RPC_QUEUE_BUMP_APP_RX);
   if (ret != 0)
-  {
-    bpf_print(9025);
     return -1;
-  }
-
-  // bpf_print(9026);
 
   return 0;
 }
@@ -332,9 +257,6 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
 
   qe = (struct rpc_queue_bump_entry *)ctx->qe;
   bump = &qe->data.bump_cham_rx;
-  bpf_print(9100);
-  bpf_print((int)bump->type);
-  bpf_print((int)bump->rx_head);
 
   // 2 cases based on whether it's a request (worker receiving) or response (client receiving)
   if (!bump->type)
@@ -342,30 +264,24 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
     // worker receiving
     struct rpc_worker *worker_map = ctx->maps[WORKERS_MAP].addr;
     struct rpc_worker *worker = &worker_map[bump->sock_id];
-    bpf_print(9101);
-    bpf_print((int)worker->rx_avail);
 
     new_head = worker->rx_head + bump->rx_head;
     if (new_head >= worker->rx_len)
       new_head -= worker->rx_len;
     worker->rx_head = new_head;
     worker->rx_avail -= bump->rx_head;
-    bpf_print((int)worker->rx_avail);
   }
   else
   {
     // client receiving
     struct rpc_client *client_map = ctx->maps[CLIENT_MAP].addr;
     struct rpc_client *client = &client_map[bump->sock_id];
-    bpf_print(9102);
-    bpf_print((int)client->rx_avail);
 
     new_head = client->rx_head + bump->rx_head;
     if (new_head >= client->rx_len)
       new_head -= client->rx_len;
     client->rx_head = new_head;
     client->rx_avail -= bump->rx_head;
-    bpf_print((int)client->rx_avail);
   }
 
   return 0;
