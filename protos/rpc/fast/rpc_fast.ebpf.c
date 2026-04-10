@@ -399,7 +399,6 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     client->tx_head = new_head;
     client->tx_avail -= payload_len;
   }
-  // TODO: comment tx_avail if required
   else
   {
     worker->tx_head = new_head;
