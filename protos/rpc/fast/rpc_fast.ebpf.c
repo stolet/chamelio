@@ -132,18 +132,15 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   {
     // request, so it's server/worker receiving
     if (port_entry->server_id == (__u32)INVALID_ID)
-    {
       return -1;
 
     server = &server_map[port_entry->server_id];
     if (server->n_workers == 0)
-    {
       return -1;
 
     // select the first worker for now
     // TODO: change in ms4
     if (server->workers[0] == (__u32)INVALID_ID)
-    {
       return -1;
     worker = &worker_map[server->workers[0]];
     if (service >= MAX_SERVICE_NUMBER || !server->service_table[service])
@@ -156,7 +153,6 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     free_bytes = worker->rx_len - worker->rx_avail;
 
     if (payload_len > free_bytes)
-    {
       return -1;
     tail = worker->rx_head + worker->rx_avail;
     if (tail >= worker->rx_len)
@@ -229,6 +225,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   return 0;
 }
+
 
 SEC("chamelio/event_tx")
 int event_tx(struct cham_ebpf_ctx *ctx)
