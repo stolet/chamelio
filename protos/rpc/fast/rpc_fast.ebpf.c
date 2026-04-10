@@ -62,7 +62,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   server_map = ctx->maps[SERVER_MAP].addr;
   port_map = ctx->maps[PORT_MAP].addr;
   client_map = ctx->maps[CLIENT_MAP].addr;
-  bpf_print(9000);
+  // bpf_print(9000);
 
   eth = (struct eth_hdr *)pkt;
   if (f_beui16(eth->type) != ETH_TYPE_IP)
@@ -139,7 +139,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       return -1;
     }
   }
-  bpf_print(9010);
+  // bpf_print(9010);
 
   // Parse rpc header
 
@@ -162,7 +162,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   payload_len = (__u16)(udp_len - sizeof(struct udp_hdr));
   payload = (__u8 *)udp + sizeof(struct udp_hdr);
   service = f_beui16(rpc_hdr->service);
-  bpf_print(9013);
+  // bpf_print(9013);
 
   port_entry = &port_map[f_beui16(udp->dst)];
 
@@ -195,7 +195,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       bpf_print(9017);
       return -1;
     }
-    bpf_print(9018);
+    // bpf_print(9018);
 
     // copy payload to worker rx buffer
     rx_base = (__u8 *)ctx->shm_base + worker->rx_off;
@@ -203,11 +203,11 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
     if (payload_len > free_bytes)
     {
-      bpf_print(9019);
-      bpf_print((int)payload_len);
-      bpf_print((int)worker->rx_len);
-      bpf_print((int)worker->rx_avail);
-      bpf_print((int)free_bytes);
+      // bpf_print(9019);
+      // bpf_print((int)payload_len);
+      // bpf_print((int)worker->rx_len);
+      // bpf_print((int)worker->rx_avail);
+      // bpf_print((int)free_bytes);
       return -1;
     }
     tail = worker->rx_head + worker->rx_avail;
@@ -295,7 +295,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     return -1;
   }
 
-  bpf_print(9026);
+  // bpf_print(9026);
 
   return 0;
 }
