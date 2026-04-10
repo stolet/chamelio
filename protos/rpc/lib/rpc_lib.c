@@ -240,7 +240,6 @@ struct rpc_context_lib *rpc_ctx_new()
       LOG_ERROR("failed to create fast->app bump queue");
       return NULL;
     }
-    fprintf(stderr, "fast_app_qs[%d] off=%llu\n", i, res->fa_offs[i]);
     dq_list[i] = dq;
   }
 
@@ -413,14 +412,12 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   struct rpc_queue_entry *qe;
   struct rpc_queue_new_server_req *ns_req;
 
-  fprintf(stderr, "DBG rpc_new_server: ctx=%p rpc=%p\n", (void*)ctx, (void*)rpc);
   if (!ctx || !rpc)
   {
     LOG_ERROR("null rpc context");
     return NULL;
   }
   id = __sync_fetch_and_add(&rpc->next_serverid, 1);
-  fprintf(stderr, "DBG rpc_new_server: id=%d\n", id);
   if (id >= MAX_SERVERS)
   {
     LOG_ERROR("exceeded max number of rpc servers");
@@ -435,10 +432,7 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   server->id = INVALID_ID;
 
   eq = ctx->app_slow_q;
-  fprintf(stderr, "DBG rpc_new_server: eq=%p eq->entries=%p eq->tail=%u\n",
-          (void*)eq, eq ? eq->entries : NULL, eq ? eq->tail : 0);
   qe = queue_tail(eq);
-  fprintf(stderr, "DBG rpc_new_server: qe=%p\n", (void*)qe);
   if (!qe)
   {
     LOG_ERROR("failed to get queue tail for new server req");
@@ -449,7 +443,6 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   ns_req->local_port = port;
   ns_req->opaque = (__u64)server;
   ret = queue_enqueue(eq, RPC_QUEUE_NEW_SERVER_REQ);
-  fprintf(stderr, "DBG rpc_new_server: enqueue ret=%d, polling...\n", ret);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue new server req");
@@ -458,7 +451,6 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   // poll until we get response
   while (server->bind_success == -1)
     rpc_poll_slow(ctx);
-  fprintf(stderr, "DBG rpc_new_server: bind_success=%d\n", server->bind_success);
   if (!server->bind_success)
   {
     LOG_ERROR("bind failed for rpc server");
@@ -815,8 +807,6 @@ int rpc_handle_call(struct rpc_worker_lib *w,
     LOG_ERROR("null rpc worker");
     return -1;
   }
-  fprintf(stderr, "RPC_HANDLE_CALL enter worker=%u rx_avail=%u rx_head=%u\n",
-          w->worker_id, w->rx_avail, w->rx_head);
   // check if there is something in the RX buffer of the worker
   if (w->rx_avail == 0)
   {
@@ -841,8 +831,6 @@ int rpc_handle_call(struct rpc_worker_lib *w,
   hdr.service.x = ntohs(hdr.service.x);
   hdr.len.x = ntohs(hdr.len.x);
   hdr.rid.x = ntohl(hdr.rid.x);
-  fprintf(stderr, "RPC_HANDLE_CALL hdr service=%u len=%u rid=%u\n",
-          hdr.service.x, hdr.len.x, hdr.rid.x);
 
   // len of payload
   n = hdr.len.x - sizeof(struct rpc_hdr);
@@ -877,8 +865,6 @@ int rpc_handle_call(struct rpc_worker_lib *w,
   if (new_head >= w->rx_len)
     new_head -= w->rx_len;
   w->rx_head = new_head;
-  fprintf(stderr, "RPC_HANDLE_CALL consumed worker=%u rx_avail=%u rx_head=%u\n",
-          w->worker_id, w->rx_avail, w->rx_head);
 
   // TODO: store some information about the call in the worker struct?
 
@@ -901,8 +887,6 @@ int rpc_handle_call(struct rpc_worker_lib *w,
     LOG_ERROR("failed to enqueue bump req");
     return -1;
   }
-  fprintf(stderr, "RPC_HANDLE_CALL bump queued worker=%u rx_head=%u\n",
-          w->worker_id, hdr.len.x);
 
   return n;
 }
@@ -1131,17 +1115,12 @@ static int handle_rx_bump(struct rpc_queue_bump_entry *qe)
     client->rx_avail += bump->rx_avail;
     client->rx_ip = bump->rx_ip;
     client->rx_port = bump->rx_port;
-    fprintf(stderr, "RPC_RX_BUMP client rx_avail=%u rx_ip=%u rx_port=%u add=%u\n",
-            client->rx_avail, client->rx_ip, client->rx_port, bump->rx_avail);
     break;
   case 0: // request delivered to worker
     worker = (struct rpc_worker_lib *)bump->opaque;
     worker->rx_avail += bump->rx_avail;
     worker->rx_ip = bump->rx_ip;
     worker->rx_port = bump->rx_port;
-    fprintf(stderr, "RPC_RX_BUMP worker=%u rx_avail=%u rx_ip=%u rx_port=%u add=%u\n",
-            worker->worker_id, worker->rx_avail, worker->rx_ip,
-            worker->rx_port, bump->rx_avail);
     break;
   default:
     LOG_ERROR("unknown bump type in rx bump: %u", bump->type);
