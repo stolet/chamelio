@@ -332,6 +332,9 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
 
   qe = (struct rpc_queue_bump_entry *)ctx->qe;
   bump = &qe->data.bump_cham_rx;
+  bpf_print(9100);
+  bpf_print((int)bump->type);
+  bpf_print((int)bump->rx_head);
 
   // 2 cases based on whether it's a request (worker receiving) or response (client receiving)
   if (!bump->type)
@@ -339,24 +342,30 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
     // worker receiving
     struct rpc_worker *worker_map = ctx->maps[WORKERS_MAP].addr;
     struct rpc_worker *worker = &worker_map[bump->sock_id];
+    bpf_print(9101);
+    bpf_print((int)worker->rx_avail);
 
     new_head = worker->rx_head + bump->rx_head;
     if (new_head >= worker->rx_len)
       new_head -= worker->rx_len;
     worker->rx_head = new_head;
     worker->rx_avail -= bump->rx_head;
+    bpf_print((int)worker->rx_avail);
   }
   else
   {
     // client receiving
     struct rpc_client *client_map = ctx->maps[CLIENT_MAP].addr;
     struct rpc_client *client = &client_map[bump->sock_id];
+    bpf_print(9102);
+    bpf_print((int)client->rx_avail);
 
     new_head = client->rx_head + bump->rx_head;
     if (new_head >= client->rx_len)
       new_head -= client->rx_len;
     client->rx_head = new_head;
     client->rx_avail -= bump->rx_head;
+    bpf_print((int)client->rx_avail);
   }
 
   return 0;

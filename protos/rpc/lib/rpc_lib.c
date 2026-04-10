@@ -815,6 +815,8 @@ int rpc_handle_call(struct rpc_worker_lib *w,
     LOG_ERROR("null rpc worker");
     return -1;
   }
+  fprintf(stderr, "RPC_HANDLE_CALL enter worker=%u rx_avail=%u rx_head=%u\n",
+          w->worker_id, w->rx_avail, w->rx_head);
   // check if there is something in the RX buffer of the worker
   if (w->rx_avail == 0)
   {
@@ -839,6 +841,8 @@ int rpc_handle_call(struct rpc_worker_lib *w,
   hdr.service.x = ntohs(hdr.service.x);
   hdr.len.x = ntohs(hdr.len.x);
   hdr.rid.x = ntohl(hdr.rid.x);
+  fprintf(stderr, "RPC_HANDLE_CALL hdr service=%u len=%u rid=%u\n",
+          hdr.service.x, hdr.len.x, hdr.rid.x);
 
   // len of payload
   n = hdr.len.x - sizeof(struct rpc_hdr);
@@ -873,6 +877,8 @@ int rpc_handle_call(struct rpc_worker_lib *w,
   if (new_head >= w->rx_len)
     new_head -= w->rx_len;
   w->rx_head = new_head;
+  fprintf(stderr, "RPC_HANDLE_CALL consumed worker=%u rx_avail=%u rx_head=%u\n",
+          w->worker_id, w->rx_avail, w->rx_head);
 
   // TODO: store some information about the call in the worker struct?
 
@@ -895,6 +901,8 @@ int rpc_handle_call(struct rpc_worker_lib *w,
     LOG_ERROR("failed to enqueue bump req");
     return -1;
   }
+  fprintf(stderr, "RPC_HANDLE_CALL bump queued worker=%u rx_head=%u\n",
+          w->worker_id, hdr.len.x);
 
   return n;
 }
@@ -1123,12 +1131,17 @@ static int handle_rx_bump(struct rpc_queue_bump_entry *qe)
     client->rx_avail += bump->rx_avail;
     client->rx_ip = bump->rx_ip;
     client->rx_port = bump->rx_port;
+    fprintf(stderr, "RPC_RX_BUMP client rx_avail=%u rx_ip=%u rx_port=%u add=%u\n",
+            client->rx_avail, client->rx_ip, client->rx_port, bump->rx_avail);
     break;
   case 0: // request delivered to worker
     worker = (struct rpc_worker_lib *)bump->opaque;
     worker->rx_avail += bump->rx_avail;
     worker->rx_ip = bump->rx_ip;
     worker->rx_port = bump->rx_port;
+    fprintf(stderr, "RPC_RX_BUMP worker=%u rx_avail=%u rx_ip=%u rx_port=%u add=%u\n",
+            worker->worker_id, worker->rx_avail, worker->rx_ip,
+            worker->rx_port, bump->rx_avail);
     break;
   default:
     LOG_ERROR("unknown bump type in rx bump: %u", bump->type);
