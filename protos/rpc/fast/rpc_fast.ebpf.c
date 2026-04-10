@@ -67,8 +67,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     return -1;
 
   ip = (struct ip_hdr *)(pkt + sizeof(struct eth_hdr));
-  if (IPH_V(ip) != 4 || IPH_HL(ip) < 5)
-    return -1;
+  if (IPH_V(ip) != 4 || IPH_HL(ip) < 5) return -1;
 
   ip_hdrs_len = IPH_HL(ip) * 4;
   ip_total_len = f_beui16(ip->len);
@@ -133,25 +132,31 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   {
     // request, so it's server/worker receiving
     if (port_entry->server_id == (__u32)INVALID_ID)
+    {
       return -1;
 
     server = &server_map[port_entry->server_id];
     if (server->n_workers == 0)
+    {
       return -1;
 
     // select the first worker for now
     // TODO: change in ms4
     if (server->workers[0] == (__u32)INVALID_ID)
+    {
       return -1;
     worker = &worker_map[server->workers[0]];
     if (service >= MAX_SERVICE_NUMBER || !server->service_table[service])
+    {
       return -1;
+    }
 
     // copy payload to worker rx buffer
     rx_base = (__u8 *)ctx->shm_base + worker->rx_off;
     free_bytes = worker->rx_len - worker->rx_avail;
 
     if (payload_len > free_bytes)
+    {
       return -1;
     tail = worker->rx_head + worker->rx_avail;
     if (tail >= worker->rx_len)
@@ -344,19 +349,11 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     p->ip.src = t_beui32(client->local_ip);
     p->udp.src = t_beui16(client->local_port);
 
-    // bpf_print(111111111);
-    // bpf_print(client->tx_avail);
-    // bpf_print(client->tx_head);
-    // bpf_print(client->local_port);
-
     tx_off = client->tx_off;
     tx_head = client->tx_head;
     tx_len = client->tx_len;
 
     app_bump_qid = client->app_bump_qid;
-    // bpf_print(10000); // marker
-    // bpf_print(app_bump_qid);
-    // bpf_print(client->app_bump_qid);  // what queue is fast-path enqueuing to
 
     opaque = client->opaque;
   }
@@ -427,19 +424,6 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   ret = queue_enqueue(q, RPC_QUEUE_BUMP_APP_TX);
   if (ret != 0)
     return -1;
-
-  // bpf_print(10000); // marker
-  // bpf_print((__u32)payload_len);
-  // bpf_print((__u32)bump_cham->tx_ip);
-  // bpf_print((__u32)bump_cham->tx_port);
-  // bpf_print((__u32)client->local_ip);
-  // bpf_print((__u32)client->local_port);
-  // bpf_print((__u32)client->tx_off);
-  // bpf_print((__u32)client->tx_head);
-  // bpf_print((__u32)client->tx_len);
-  // bpf_print((__u32)client->tx_avail);
-  // bpf_print((__u32)bump_cham->sock_id);
-  // bpf_print(20000); // end marker
 
   return pkt_hdrs_len + payload_len;
 }
