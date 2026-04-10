@@ -298,33 +298,22 @@ int rpc_poll_calls(struct rpc_context_lib *ctx)
   struct rpc_queue_bump_entry *qe;
   struct dqueue **dq_list;
 
-  // fprintf(stderr, "rpc_poll_calls called ctx=%p\n", ctx);
-
   if (!ctx)
   {
     LOG_ERROR("rpc_poll_calls: null rpc context");
     return -1;
   }
-  // LOG_DEBUG("polling for calls on fast->app queues, %p", ctx->fast_app_qs);
   // Poll the call queues for any new messages
   n = 0;
   ncores = ctx->ncores;
   dq_list = ctx->fast_app_qs;
 
-  // LOG_DEBUG("rpc_poll_calls: ncores=%d\n", ncores);
   for (i = 0; i < ncores && n < POLL_BATCH; i++)
   {
-    // LOG_DEBUG("  fast_app_qs[%d] = %p dq offset=%llu\n",
-    //         i, dq_list[i], dq_list[i]->off);
-
     q = dq_list[i];
-    // LOG_DEBUG("  polling fast_app_qs[%d]=%p off=%lu\n",
-    //           i, q, q->off);
-    // LOG_DEBUG("  queue_head returned %p\n", qe);
 
     while (n < POLL_BATCH && (qe = queue_head(q)) != NULL)
     {
-      // LOG_DEBUG("  got entry type=%d\n", qe->type);
       n++;
       switch (qe->type)
       {
@@ -341,7 +330,6 @@ int rpc_poll_calls(struct rpc_context_lib *ctx)
       }
       queue_dequeue(q);
     }
-    // LOG_DEBUG("rpc_poll_calls: processed %d entries\n", n);
   }
   return n;
 }
@@ -1068,9 +1056,6 @@ static int handle_tx_bump(struct rpc_queue_bump_entry *qe)
   __u32 *tx_head, *tx_avail;
 
   bump = &qe->data.bump_app_tx;
-
-  // fprintf(stderr, "handle_tx_bump: type=%u tx_head=%u opaque=%llu\n",
-  //         bump->type, bump->tx_head, bump->opaque);
 
   switch (bump->type)
   {
