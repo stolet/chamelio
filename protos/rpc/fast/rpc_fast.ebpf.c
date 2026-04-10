@@ -204,6 +204,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     if (payload_len > free_bytes)
     {
       bpf_print(9019);
+      bpf_print((int)payload_len);
+      bpf_print((int)worker->rx_len);
+      bpf_print((int)worker->rx_avail);
+      bpf_print((int)free_bytes);
       return -1;
     }
     tail = worker->rx_head + worker->rx_avail;
@@ -499,7 +503,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   if (ret != 0)
     return -1;
 
-  bpf_print(10000); // marker
+  // bpf_print(10000); // marker
   // bpf_print((__u32)payload_len);
   // bpf_print((__u32)bump_cham->tx_ip);
   // bpf_print((__u32)bump_cham->tx_port);
