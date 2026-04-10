@@ -413,12 +413,14 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   struct rpc_queue_entry *qe;
   struct rpc_queue_new_server_req *ns_req;
 
+  fprintf(stderr, "DBG rpc_new_server: ctx=%p rpc=%p\n", (void*)ctx, (void*)rpc);
   if (!ctx || !rpc)
   {
     LOG_ERROR("null rpc context");
     return NULL;
   }
   id = __sync_fetch_and_add(&rpc->next_serverid, 1);
+  fprintf(stderr, "DBG rpc_new_server: id=%d\n", id);
   if (id >= MAX_SERVERS)
   {
     LOG_ERROR("exceeded max number of rpc servers");
@@ -433,7 +435,10 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   server->id = INVALID_ID;
 
   eq = ctx->app_slow_q;
+  fprintf(stderr, "DBG rpc_new_server: eq=%p eq->entries=%p eq->tail=%u\n",
+          (void*)eq, eq ? eq->entries : NULL, eq ? eq->tail : 0);
   qe = queue_tail(eq);
+  fprintf(stderr, "DBG rpc_new_server: qe=%p\n", (void*)qe);
   if (!qe)
   {
     LOG_ERROR("failed to get queue tail for new server req");
@@ -444,6 +449,7 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   ns_req->local_port = port;
   ns_req->opaque = (__u64)server;
   ret = queue_enqueue(eq, RPC_QUEUE_NEW_SERVER_REQ);
+  fprintf(stderr, "DBG rpc_new_server: enqueue ret=%d, polling...\n", ret);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue new server req");
@@ -452,6 +458,7 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   // poll until we get response
   while (server->bind_success == -1)
     rpc_poll_slow(ctx);
+  fprintf(stderr, "DBG rpc_new_server: bind_success=%d\n", server->bind_success);
   if (!server->bind_success)
   {
     LOG_ERROR("bind failed for rpc server");
@@ -688,7 +695,7 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
     return -1;
   }
 
-  return 0;
+  return (int)len;
 }
 
 int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
@@ -790,7 +797,7 @@ int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
     return -1;
   }
 
-  return 0;
+  return (int)len;
 }
 
 int rpc_handle_call(struct rpc_worker_lib *w,
@@ -862,7 +869,7 @@ int rpc_handle_call(struct rpc_worker_lib *w,
 
   // Update rx buffer head and avail
   w->rx_avail -= hdr.len.x;
-  new_head = w->rx_head + n;
+  new_head = w->rx_head + hdr.len.x;
   if (new_head >= w->rx_len)
     new_head -= w->rx_len;
   w->rx_head = new_head;
@@ -889,7 +896,7 @@ int rpc_handle_call(struct rpc_worker_lib *w,
     return -1;
   }
 
-  return 0;
+  return n;
 }
 
 int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
@@ -964,7 +971,7 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
   because both of them were written in the RX buffer */
 
   c->rx_avail -= hdr.len.x;
-  new_head = c->rx_head + n;
+  new_head = c->rx_head + hdr.len.x;
   if (new_head >= c->rx_len)
     new_head -= c->rx_len;
   c->rx_head = new_head;
@@ -989,7 +996,7 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
     return -1;
   }
 
-  return 0;
+  return n;
 }
 
 int rpc_call_complete(struct rpc_worker_lib *w)

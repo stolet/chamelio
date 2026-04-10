@@ -566,7 +566,7 @@ int handle_new_service_req(struct rpc_slow_context *ctx,
     return -1;
   }
   //register service in the server's service table
-  s->service_table[req->service_id] = 1;
+  server->service_table[req->service_id] = 1;
   res->success = 1;
 
   ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_SERVICE_RES);

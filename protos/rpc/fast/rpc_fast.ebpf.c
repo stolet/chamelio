@@ -113,10 +113,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
     if (udp_comp_chksum != udp_saved_chksum)
     {
-      bpf_print(1002); // checksum mismatch}
+      // bpf_print(1002); // checksum mismatch}
       return -1;
     }
-    bpf_print(1003); // checksum match
+    // bpf_print(1003); // checksum match
   }
 
   // Parse rpc header
@@ -140,15 +140,19 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   if (rpc_hdr->type == 0)
   {
     // request, so it's server/worker receiving
+    if (port_entry->server_id == (__u32)INVALID_ID)
+      return -1;
 
     server = &server_map[port_entry->server_id];
-    if (!server)
+    if (server->n_workers == 0)
       return -1;
 
     // select the first worker for now
     // TODO: change in ms4
+    if (server->workers[0] == (__u32)INVALID_ID)
+      return -1;
     worker = &worker_map[server->workers[0]];
-    if (!worker)
+    if (service >= MAX_SERVICE_NUMBER || !server->service_table[service])
       return -1;
 
     // copy payload to worker rx buffer
@@ -186,11 +190,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   }
   else
   {
-
-    client = &client_map[port_entry->client_id];
-    if (!client)
+    if (port_entry->client_id == (__u32)INVALID_ID)
       return -1;
 
+    client = &client_map[port_entry->client_id];
     rx_base = (__u8 *)ctx->shm_base + client->rx_off;
     free_bytes = client->rx_len - client->rx_avail;
 
