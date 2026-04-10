@@ -131,8 +131,10 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
   ctx->proto = p;
   ctx->n_apps = 0;
   ctx->next_app = 0;
+  ctx->n_socks = 0;
   ctx->n_clients = 0;
   ctx->n_servers = 0;
+  ctx->n_workers = 0;
 
   // LOG_DEBUG("created port to server map with id=%d", pt_to_ser_map->id);
   // initialize port to server map entries to invalid server id
