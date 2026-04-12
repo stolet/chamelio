@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
+#include <stdatomic.h>
 
 #include <cham_lib.h>
 
@@ -231,7 +232,7 @@ struct tcp_context_lib * tcp_ctx_new()
     tcp->shm_base = shm_base;
   }
 
-  while (tcp->shm_base == NULL) {}
+  while (__atomic_load_n(&tcp->shm_base, __ATOMIC_SEQ_CST) == NULL) {}
 
   eq = equeue_new(res->as_nelems, res->as_elsize,
       tcp->shm_base + res->as_off, res->as_off);
