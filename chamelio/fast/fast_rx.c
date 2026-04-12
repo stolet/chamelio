@@ -22,13 +22,13 @@ static inline void rx_poll_guest_comb(struct guest_fast *g,
 int fast_rx_poll(struct fast_context *ctx)
 {
   int i, nrx;
-  struct rte_mbuf *mbs[FAST_BATCH_SIZE];
+  struct rte_mbuf *mbs[FAST_RX_BATCH_SIZE];
   struct guest_fast *g;
   __u64 tsc_start = 0, pkt_off;
   const int use_comb = ctx->fp_jit_combined;
   const int charge_budget = ctx->perf_iso;
 
-  nrx = FAST_BATCH_SIZE;
+  nrx = FAST_RX_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < nrx)
     nrx = TXBUF_SIZE - ctx->tx_n;
 

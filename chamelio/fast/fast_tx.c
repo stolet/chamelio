@@ -58,7 +58,7 @@ int fast_tx_poll(struct fast_context *ctx)
   if (!has_tx_work)
     return 0;
 
-  max = FAST_BATCH_SIZE;
+  max = FAST_TX_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
     max = TXBUF_SIZE - ctx->tx_n;
 

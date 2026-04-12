@@ -38,7 +38,7 @@ int fast_queues_poll(struct fast_context *ctx)
   const int use_comb = ctx->fp_jit_combined;
   const int charge_budget = ctx->perf_iso;
 
-  max = FAST_BATCH_SIZE;
+  max = FAST_DEQ_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
     max = TXBUF_SIZE - ctx->tx_n;
 
