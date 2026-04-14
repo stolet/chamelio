@@ -32,12 +32,13 @@ static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u32 priority) 
 
 static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx);
 static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx);
+static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx);
 
 // TODO: reduce code duplication
 SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
 {
-  int ret;
+  int ret, i;
   __u32 free_bytes, tail, part;
   __u16 payload_len, ip_hdrs_len, ip_total_len;
   __u16 udp_len, rpc_len, service;
@@ -56,6 +57,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   struct rpc_queue_bump_entry *qe;
   struct rpc_queue_bump_app_rx *bump;
   struct rpc_client *client_map, *client;
+  __u32 best_worker_id, fewest_jobs, worker_id;
 
   pkt = ctx->pkt;
   worker_map = ctx->maps[WORKERS_MAP].addr;
@@ -138,15 +140,40 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     if (server->n_workers == 0)
       return -1;
 
-    // select the first worker for now
-    // TODO: change in ms4
-    if (server->workers[0] == (__u32)INVALID_ID)
-      return -1;
-    worker = &worker_map[server->workers[0]];
     if (service >= MAX_SERVICE_NUMBER || !server->service_table[service])
     {
       return -1;
     }
+
+    best_worker_id = (__u32)INVALID_ID;
+    fewest_jobs = (__u32)-1;
+#pragma unroll
+    for (i = 0; i < MAX_WORKERS; i++)
+    {
+      if (i >= server->n_workers)
+        break;
+
+      worker_id = server->workers[i];
+      if (worker_id == (__u32)INVALID_ID)
+        continue;
+
+      worker = &worker_map[worker_id];
+      free_bytes = worker->rx_len - worker->rx_avail;
+      if (payload_len > free_bytes)
+        continue;
+
+      if (best_worker_id == (__u32)INVALID_ID ||
+          worker->jobs_pending < fewest_jobs)
+      {
+        best_worker_id = worker_id;
+        fewest_jobs = worker->jobs_pending;
+      }
+    }
+
+    if (best_worker_id == (__u32)INVALID_ID)
+      return -1;
+
+    worker = &worker_map[best_worker_id];
 
     // copy payload to worker rx buffer
     rx_base = (__u8 *)ctx->shm_base + worker->rx_off;
@@ -169,6 +196,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       bpf_memcpy(rx_base, payload + part, payload_len - part);
     }
     worker->rx_avail += payload_len;
+    worker->jobs_pending += 1;
 
     q = &ctx->equeues[worker->app_bump_qid].eq;
     qe = queue_tail(q);
@@ -289,6 +317,21 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   return 0;
 }
 
+static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
+{
+  __u16 i;
+  struct rpc_port_entry *ports;
+
+  ports = ctx->maps[PORT_MAP].addr;
+  for (i = MIN_PORT; i < MAX_PORT; i++)
+  {
+    if (ports[i].server_id == (__u32)INVALID_ID &&
+        ports[i].client_id == (__u32)INVALID_ID)
+      return i;
+  }
+  return 0;
+}
+
 static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 {
   int ret;
@@ -342,6 +385,17 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     // client sending
     client_map = ctx->maps[CLIENT_MAP].addr;
     client = &client_map[bump_cham->sock_id];
+
+    // Auto-assign ephemeral port if local_port == 0
+    if (client->local_port == 0)
+    {
+      __u16 free_port = find_free_port(ctx);
+      if (free_port == 0)
+        return -1;
+      struct rpc_port_entry *ports = ctx->maps[PORT_MAP].addr;
+      ports[free_port].client_id = client->id;
+      client->local_port = free_port;
+    }
 
     p->ip.src = t_beui32(client->local_ip);
     p->udp.src = t_beui16(client->local_port);

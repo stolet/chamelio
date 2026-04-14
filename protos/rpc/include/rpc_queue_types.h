@@ -86,6 +86,8 @@ struct rpc_queue_new_worker_res
   __u32 worker_id;
   /* Opaque pointer to worker in app library */
   __u64 opaque;
+  /* Offset of worker state in shared memory */
+  __u64 worker_off;
   /* Queue ID of RX buffer */
   __u16 rx_qid;
   /* Length of RX buffer */
