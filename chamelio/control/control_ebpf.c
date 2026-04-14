@@ -14,6 +14,7 @@
 #include "clang.h"
 #include "clock.h"
 #include "ebpf.h"
+#include "ebpf_helpers.h"
 #include "log.h"
 #include "queue_fns.h"
 #include "scheduler_fns.h"
@@ -44,7 +45,7 @@ static struct comb_bc_blob *guest_bc_slot(struct control_context *ctx,
     __u16 gid, int event_idx);
 static int publish_agg_vms(struct control_context *ctx, __u16 gid);
 static int load_comb_bytecode(struct control_context *ctx);
-static int register_helpers(struct ebpf_vm_c *vm);
+static int register_helpers(struct ebpf_vm_c *vm, int skip_agg_linked);
 static void comb_bc_free(struct comb_bc_blob *bc);
 
 /* Helpers */
@@ -63,33 +64,12 @@ static inline void *ebpf_queue_head(struct dqueue *q, __u64 elsize);
 static inline void ebpf_spin_lock(volatile __u32 *sl);
 static inline void ebpf_spin_unlock(volatile __u32 *sl);
 
-enum ebpf_helper_id
-{
-  EBPF_HELPER_QUEUE_TAIL = 1001,
-  EBPF_HELPER_QUEUE_ENQUEUE = 1002,
-  EBPF_HELPER_MEMCPY = 1003,
-  EBPF_HELPER_PRINT = 1004,
-  EBPF_HELPER_IPV4_CKSUM = 1005,
-  EBPF_HELPER_IPV4_UDPTCP_CKSUM = 1006,
-  EBPF_HELPER_SCHED_HEAD = 1007,
-  EBPF_HELPER_SCHED_POP = 1008,
-  EBPF_HELPER_SCHED_ADD = 1009,
-  EBPF_HELPER_MAP_GET = 1010,
-  EBPF_HELPER_MAP_LOOKUP = 1011,
-  EBPF_HELPER_QUEUE_HEAD = 1012,
-  EBPF_HELPER_QUEUE_DEQUEUE = 1013,
-  EBPF_HELPER_RDTSC = 1014,
-  EBPF_HELPER_RATE_DELAY_TSC = 1015,
-  EBPF_HELPER_SPIN_LOCK = 1016,
-  EBPF_HELPER_SPIN_UNLOCK = 1017,
-  EBPF_HELPER_SCHED_REMOVE = 1018,
-};
-
 struct ebpf_helper_desc
 {
   __u32 id;
   const char *name;
   void *fn;
+  int agg_linked;
 };
 
 struct ebpf_prog_desc
@@ -107,41 +87,41 @@ enum agg_event {
 
 static const struct ebpf_helper_desc ebpf_helpers[] = {
   { EBPF_HELPER_QUEUE_TAIL, 
-      "ebpf_queue_tail", ebpf_queue_tail },
+      "ebpf_queue_tail", ebpf_queue_tail, 1 },
   { EBPF_HELPER_QUEUE_ENQUEUE, 
-      "queue_enqueue", queue_enqueue },
+      "queue_enqueue", queue_enqueue, 1 },
   { EBPF_HELPER_MEMCPY, 
-      "ebpf_memcpy", ebpf_memcpy },
+      "ebpf_memcpy", ebpf_memcpy, 1 },
   { EBPF_HELPER_PRINT, 
-      "ebpf_print", ebpf_print },
+      "ebpf_print", ebpf_print, 0 },
   { EBPF_HELPER_IPV4_CKSUM, 
-      "ebpf_ipv4_checksum", ebpf_ipv4_checksum },
+      "ebpf_ipv4_checksum", ebpf_ipv4_checksum, 0 },
   { EBPF_HELPER_IPV4_UDPTCP_CKSUM, 
-    "ebpf_ipv4_udptcp_cksum", ebpf_ipv4_udptcp_cksum },
+    "ebpf_ipv4_udptcp_cksum", ebpf_ipv4_udptcp_cksum, 0 },
   { EBPF_HELPER_SCHED_HEAD, 
-      "ebpf_sched_head", ebpf_sched_head },
+      "ebpf_sched_head", ebpf_sched_head, 1 },
   { EBPF_HELPER_SCHED_POP, 
-      "sched_pop", sched_pop },
+      "sched_pop", sched_pop, 1 },
   { EBPF_HELPER_SCHED_ADD, 
-      "sched_add", sched_add },
+      "sched_add", sched_add, 1 },
   { EBPF_HELPER_MAP_GET, 
-      "ebpf_map_get", ebpf_map_get },
+      "ebpf_map_get", ebpf_map_get, 1 },
   { EBPF_HELPER_MAP_LOOKUP, 
-      "ebpf_map_lookup", ebpf_map_lookup },
+      "ebpf_map_lookup", ebpf_map_lookup, 1 },
   { EBPF_HELPER_QUEUE_HEAD,
-      "ebpf_queue_head", ebpf_queue_head },
+      "ebpf_queue_head", ebpf_queue_head, 1 },
   { EBPF_HELPER_QUEUE_DEQUEUE,
-      "queue_dequeue", queue_dequeue },
+      "queue_dequeue", queue_dequeue, 1 },
   { EBPF_HELPER_RDTSC,
-      "ebpf_rdtsc", ebpf_rdtsc },
+      "ebpf_rdtsc", ebpf_rdtsc, 1 },
   { EBPF_HELPER_RATE_DELAY_TSC,
-      "ebpf_rate_delay_tsc", ebpf_rate_delay_tsc },
+      "ebpf_rate_delay_tsc", ebpf_rate_delay_tsc, 1 },
   { EBPF_HELPER_SPIN_LOCK,
-      "ebpf_spin_lock", ebpf_spin_lock },
+      "ebpf_spin_lock", ebpf_spin_lock, 0 },
   { EBPF_HELPER_SPIN_UNLOCK,
-      "ebpf_spin_unlock", ebpf_spin_unlock },
+      "ebpf_spin_unlock", ebpf_spin_unlock, 0 },
   { EBPF_HELPER_SCHED_REMOVE,
-      "sched_remove", sched_remove },
+      "sched_remove", sched_remove, 1 },
 };
 
 int control_ebpf_init(struct control_context *ctx)
@@ -402,7 +382,7 @@ static int verify_and_emit(struct control_context *ctx,
     goto err;
   }
 
-  ret = register_helpers(vm);
+  ret = register_helpers(vm, 0);
   if (ret != 0)
   {
     LOG_ERROR("failed to register helpers");
@@ -446,7 +426,7 @@ static struct ebpf_vm_c *jit(struct control_context *ctx,
   }
 
   /* Registers the helper functions used by the eBPF snippets */
-  res = register_helpers(vm);
+  res = register_helpers(vm, 0);
   if (res != 0)
   {
     LOG_ERROR("failed to register helpers");
@@ -483,13 +463,16 @@ error:
   return NULL;
 }
 
-static int register_helpers(struct ebpf_vm_c *vm)
+static int register_helpers(struct ebpf_vm_c *vm, int skip_agg_linked)
 {
   int res;
   size_t i;
 
   for (i = 0; i < ARRAY_SIZE(ebpf_helpers); i++)
   {
+    if (skip_agg_linked && ebpf_helpers[i].agg_linked)
+      continue;
+
     res = ebpf_vm_register_helper(vm, ebpf_helpers[i].id,
         ebpf_helpers[i].name, ebpf_helpers[i].fn);
     if (res != 0)
@@ -506,12 +489,16 @@ static int load_comb_bytecode(struct control_context *ctx)
 {
   int ret;
   char src_path[PATH_MAX];
+  char helper_path[PATH_MAX];
+  char perf_iso_def[64];
+  char virt_gre_def[64];
+  const char *defs[2];
 
   /* These are passed as preprocessor macros during compilation */
   const char *build_dir = CHAMELIO_BUILD_DIR;
   const char *src_dir = CHAMELIO_SRC_DIR;
 
-  if (ctx->comb_bc.data != NULL)
+  if (ctx->comb_bc.data != NULL && ctx->comb_helpers_bc.data != NULL)
     return 0;
 
   ret = snprintf(src_path, sizeof(src_path),
@@ -522,8 +509,47 @@ static int load_comb_bytecode(struct control_context *ctx)
     return -1;
   }
 
-  return clang_compile(build_dir, src_path,
+  ret = snprintf(helper_path, sizeof(helper_path),
+      "%s/chamelio/fast/fast_comb_helpers.c", src_dir);
+  if (ret < 0 || ret >= (int) sizeof(helper_path))
+  {
+    LOG_ERROR("failed to build helper source path");
+    return -1;
+  }
+
+  ret = snprintf(perf_iso_def, sizeof(perf_iso_def), "-DCHAM_COMB_PERF_ISO=%u",
+      ctx->config->perf_iso ? 1 : 0);
+  if (ret < 0 || ret >= (int) sizeof(perf_iso_def))
+  {
+    LOG_ERROR("failed to build perf isolation define");
+    return -1;
+  }
+
+  ret = snprintf(virt_gre_def, sizeof(virt_gre_def), "-DCHAM_COMB_VIRT_GRE=%u",
+      ctx->config->virt_gre ? 1 : 0);
+  if (ret < 0 || ret >= (int) sizeof(virt_gre_def))
+  {
+    LOG_ERROR("failed to build virt gre define");
+    return -1;
+  }
+
+  defs[0] = virt_gre_def;
+  defs[1] = perf_iso_def;
+  ret = clang_compile(build_dir, src_path, src_path, defs, ARRAY_SIZE(defs),
       &ctx->comb_bc.data, &ctx->comb_bc.len);
+  if (ret != 0)
+    return ret;
+
+  ret = clang_compile(build_dir, src_path, helper_path, defs,
+      ARRAY_SIZE(defs), &ctx->comb_helpers_bc.data,
+      &ctx->comb_helpers_bc.len);
+  if (ret != 0)
+  {
+    comb_bc_free(&ctx->comb_bc);
+    return ret;
+  }
+
+  return 0;
 }
 
 static struct comb_bc_blob *guest_bc_slot(struct control_context *ctx,
@@ -563,8 +589,8 @@ static struct ebpf_vm_c *build_agg_vm(struct control_context *ctx,
   int ret;
   int nr_mods = 0;
   int i;
-  size_t mods_len[1 + CHAMELIO_MAX_GUESTS];
-  const void *mods[1 + CHAMELIO_MAX_GUESTS];
+  size_t mods_len[2 + CHAMELIO_MAX_GUESTS];
+  const void *mods[2 + CHAMELIO_MAX_GUESTS];
   struct ebpf_vm_c *vm;
 
   vm = ebpf_vm_create();
@@ -574,7 +600,7 @@ static struct ebpf_vm_c *build_agg_vm(struct control_context *ctx,
     return NULL;
   }
 
-  ret = register_helpers(vm);
+  ret = register_helpers(vm, 1);
   if (ret != 0)
   {
     LOG_ERROR("failed to register helpers");
@@ -583,6 +609,10 @@ static struct ebpf_vm_c *build_agg_vm(struct control_context *ctx,
 
   mods[nr_mods] = ctx->comb_bc.data;
   mods_len[nr_mods] = ctx->comb_bc.len;
+  nr_mods++;
+
+  mods[nr_mods] = ctx->comb_helpers_bc.data;
+  mods_len[nr_mods] = ctx->comb_helpers_bc.len;
   nr_mods++;
 
   for (i = 0; i < CHAMELIO_MAX_GUESTS; i++)

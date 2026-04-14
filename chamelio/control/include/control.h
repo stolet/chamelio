@@ -87,6 +87,8 @@ struct control_context {
   struct configuration *config;
   /* Infra bytecode blob for combined JIT */
   struct comb_bc_blob comb_bc;
+  /* Helper bytecode blob linked into aggregate combined JIT */
+  struct comb_bc_blob comb_helpers_bc;
   /* Per-slot guest bytecode used to rebuild aggregate entries */
   struct guest_comb_bc guest_bc[CHAMELIO_MAX_GUESTS];
   /* Aggregate combined JIT objects */

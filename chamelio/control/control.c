@@ -39,6 +39,8 @@ int control_context_init(struct control_context *ctl_ctx,
   ctl_ctx->nic_ctx = nic_ctx;
   ctl_ctx->comb_bc.data = NULL;
   ctl_ctx->comb_bc.len = 0;
+  ctl_ctx->comb_helpers_bc.data = NULL;
+  ctl_ctx->comb_helpers_bc.len = 0;
   memset(ctl_ctx->guest_bc, 0, sizeof(ctl_ctx->guest_bc));
   ctl_ctx->agg_rx_vm = NULL;
   ctl_ctx->agg_deq_vm = NULL;

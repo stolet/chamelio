@@ -10,6 +10,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "clang.h"
 #include "log.h"
 
 static void free_args(char **args, unsigned count);
@@ -22,14 +23,16 @@ static int load_compile_commands(const char *build_dir, const char *src_path,
 static int get_command_paths(CXCompileCommand cmd, const char *build_dir,
   char **out_cmd_dir, char **out_cmd_file);
 static int build_clang_args(CXCompileCommand cmd, const char *src_path,
-  const char *cmd_file, const char *build_dir, char ***out_args,
-  unsigned *out_argc, char *out_bc_path, size_t bc_path_len);
+  const char *cmd_file, const char *build_dir, const char *const *extra_defs,
+  size_t nr_defs, char ***out_args, unsigned *out_argc, char *out_bc_path,
+  size_t bc_path_len);
 static int read_file_into_memory(const char *path, void **out_data,
   size_t *out_len);
 
 
-int clang_compile(const char *build_dir,
-  const char *src_path, void **out_data, size_t *out_len)
+int clang_compile(const char *build_dir, const char *cmd_src_path,
+  const char *src_path, const char *const *extra_defs, size_t nr_defs,
+  void **out_data, size_t *out_len)
 {
   int rc = -1;
   char *cmd_dir = NULL;
@@ -41,7 +44,7 @@ int clang_compile(const char *build_dir,
   CXCompileCommands cmds = NULL;
   CXCompileCommand cmd = NULL;
 
-  if (!build_dir || !src_path || !out_data || !out_len)
+  if (!build_dir || !cmd_src_path || !src_path || !out_data || !out_len)
   {
     return -1;
   }
@@ -56,7 +59,7 @@ int clang_compile(const char *build_dir,
   LLVMInitializeAllAsmPrinters();
   LLVMInitializeAllAsmParsers();
 
-  if (load_compile_commands(build_dir, src_path, &db, &cmds, &cmd) != 0)
+  if (load_compile_commands(build_dir, cmd_src_path, &db, &cmds, &cmd) != 0)
   {
     LOG_ERROR("failed to load compile commands");
     goto cleanup;
@@ -68,8 +71,8 @@ int clang_compile(const char *build_dir,
     goto cleanup;
   }
 
-  if (build_clang_args(cmd, src_path, cmd_file, build_dir, &args, &argc,
-      temp_bc, sizeof(temp_bc)) != 0)
+  if (build_clang_args(cmd, src_path, cmd_file, build_dir, extra_defs,
+      nr_defs, &args, &argc, temp_bc, sizeof(temp_bc)) != 0)
   {
     LOG_ERROR("failed to build clang args");
     goto cleanup;
@@ -197,8 +200,9 @@ static int get_command_paths(CXCompileCommand cmd, const char *build_dir,
 }
 
 static int build_clang_args(CXCompileCommand cmd, const char *src_path,
-  const char *cmd_file, const char *build_dir, char ***out_args,
-  unsigned *out_argc, char *out_bc_path, size_t bc_path_len)
+  const char *cmd_file, const char *build_dir, const char *const *extra_defs,
+  size_t nr_defs, char ***out_args, unsigned *out_argc, char *out_bc_path,
+  size_t bc_path_len)
 {
   int has_c = 0;
   int has_emit_llvm = 0;
@@ -214,7 +218,7 @@ static int build_clang_args(CXCompileCommand cmd, const char *src_path,
 
   out_bc_path[0] = '\0';
   num_args = clang_CompileCommand_getNumArgs(cmd);
-  max_args = (size_t)num_args + 10;
+  max_args = (size_t)num_args + nr_defs + 10;
   args = calloc(max_args + 1, sizeof(char*));
   if (!args)
   {
@@ -304,6 +308,16 @@ static int build_clang_args(CXCompileCommand cmd, const char *src_path,
     LOG_ERROR("failed to add -O3");
     free_args(args, arg_idx);
     return -1;
+  }
+
+  for (size_t i = 0; i < nr_defs; i++)
+  {
+    if (push_arg(args, &arg_idx, max_args, extra_defs[i]) != 0)
+    {
+      LOG_ERROR("failed to add extra clang define");
+      free_args(args, arg_idx);
+      return -1;
+    }
   }
 
   if (!has_c && push_arg(args, &arg_idx, max_args, "-c") != 0)

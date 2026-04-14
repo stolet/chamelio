@@ -21,6 +21,18 @@ static inline int deq_poll_slot(struct fast_context *ctx, int slot,
 static inline void dqueue_rotate_head(struct guest_fast *g,
     struct cham_dqueue *qcur);
 
+#ifdef CHAM_COMB_VIRT_GRE
+#define comb_virt_gre(_ctx) CHAM_COMB_VIRT_GRE
+#else
+#define comb_virt_gre(_ctx) ((_ctx)->virt_gre)
+#endif
+
+#ifdef CHAM_COMB_PERF_ISO
+#define comb_perf_iso(_ctx) CHAM_COMB_PERF_ISO
+#else
+#define comb_perf_iso(_ctx) ((_ctx)->perf_iso)
+#endif
+
 #define DEFINE_EVENT_STUB(kind, slot)                                         \
   __attribute__((weak)) uint64_t event_##kind##_slot_##slot(void *mem,        \
       size_t mem_len)                                                         \
@@ -53,7 +65,8 @@ DEFINE_EVENT_STUB(tx, 3)
     if (!g->proto.has_event_rx)                                               \
       return;                                                                 \
                                                                                 \
-    fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off, ctx->virt_gre);   \
+    fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off,                    \
+        comb_virt_gre(ctx));                                                  \
     (void) event_rx_slot_##slot(&g->proto.ebpf_ctx,                           \
         sizeof(struct cham_ebpf_ctx));                                        \
                                                                                 \
@@ -94,7 +107,8 @@ DEFINE_EVENT_STUB(tx, 3)
                                                                                 \
       mb = mbs[*ntx];                                                         \
       mb->data_off = 0;                                                       \
-      fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, ctx->virt_gre);        \
+      fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb,                        \
+          comb_virt_gre(ctx));                                                \
                                                                                 \
       tx_ret = (int) event_tx_slot_##slot(&g->proto.ebpf_ctx,                 \
           sizeof(struct cham_ebpf_ctx));                                      \
@@ -159,7 +173,8 @@ DEFINE_EVENT_STUB(tx, 3)
                                                                                 \
         mb = mbs[*ntx];                                                       \
         mb->data_off = 0;                                                     \
-        fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, ctx->virt_gre);      \
+        fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb,                      \
+            comb_virt_gre(ctx));                                              \
                                                                                 \
         g->proto.ebpf_ctx.qe = qe;                                            \
         g->proto.ebpf_ctx.qid = qcur->id;                                     \
@@ -220,7 +235,7 @@ uint64_t fast_rx_poll_comb(void *mem, size_t mem_len)
   struct guest_fast *g;
   struct rte_mbuf *mbs[FAST_RX_BATCH_SIZE];
   __u64 tsc_start = 0, pkt_off;
-  const int charge_budget = ctx->perf_iso;
+  const int charge_budget = comb_perf_iso(ctx);
 
   (void) mem_len;
   nrx = FAST_RX_BATCH_SIZE;
@@ -266,7 +281,7 @@ uint64_t fast_queues_poll_comb(void *mem, size_t mem_len)
   int i, max, ret, ndeq, ntx;
   struct fast_context *ctx = mem;
   struct rte_mbuf **mbs;
-  const int charge_budget = ctx->perf_iso;
+  const int charge_budget = comb_perf_iso(ctx);
 
   (void) mem_len;
   max = FAST_DEQ_BATCH_SIZE;
@@ -307,7 +322,7 @@ uint64_t fast_tx_poll_comb(void *mem, size_t mem_len)
   struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
-  const int charge_budget = ctx->perf_iso;
+  const int charge_budget = comb_perf_iso(ctx);
 
   (void) mem_len;
   if (n_guests == 0)
