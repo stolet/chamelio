@@ -39,6 +39,10 @@ int control_context_init(struct control_context *ctl_ctx,
   ctl_ctx->nic_ctx = nic_ctx;
   ctl_ctx->comb_bc.data = NULL;
   ctl_ctx->comb_bc.len = 0;
+  memset(ctl_ctx->guest_bc, 0, sizeof(ctl_ctx->guest_bc));
+  ctl_ctx->agg_rx_vm = NULL;
+  ctl_ctx->agg_deq_vm = NULL;
+  ctl_ctx->agg_tx_vm = NULL;
   ctl_ctx->f_ctxs = NULL;
   ctl_ctx->fast_batch_last = NULL;
   ctl_ctx->fast_stats_tsc = 0;
@@ -149,6 +153,12 @@ int control_context_init(struct control_context *ctl_ctx,
         config->perf_iso_boost;
   }
   ctl_ctx->fast_stats_tsc = clock_rdtsc();
+
+  if (config->fp_jit_combined && control_ebpf_publish(ctl_ctx) != 0)
+  {
+    LOG_ERROR("failed to publish aggregate combined entries");
+    goto free_control_txqs;
+  }
 
   return 0;
 

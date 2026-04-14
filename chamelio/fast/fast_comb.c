@@ -3,175 +3,422 @@
 #include <rte_mbuf.h>
 
 #include "fast.h"
-#include "infra.h"
 #include "fast_comb.h"
 #include "fast_ebpf.h"
-#include "eth_hdr.h"
-#include "ip_hdr.h"
-#include "gre_hdr.h"
-#include "udp.h"
+#include "infra.h"
+#include "txcache.h"
 #include "clock.h"
 #include "queue_fns.h"
 #include "scheduler_fns.h"
 
+static inline int tx_poll_slot(struct fast_context *ctx, int slot,
+    struct rte_mbuf **mbs, int max, int *ntx, int charge_budget);
+static inline void rx_poll_slot(struct fast_context *ctx,
+    struct guest_fast *g, struct rte_mbuf *mb, __u64 pkt_off,
+    __u64 tsc_start, int charge_budget);
+static inline int deq_poll_slot(struct fast_context *ctx, int slot,
+    struct rte_mbuf **mbs, int max, int *ntx, int *ndeq, int charge_budget);
 static inline void dqueue_rotate_head(struct guest_fast *g,
     struct cham_dqueue *qcur);
 
-/* Weak stub to satisfy the host link; overridden by eBPF entry when linked. */
-__attribute__((weak))
-uint64_t __cham_comb(void *mem, size_t mem_len)
+#define DEFINE_EVENT_STUB(kind, slot)                                         \
+  __attribute__((weak)) uint64_t event_##kind##_slot_##slot(void *mem,        \
+      size_t mem_len)                                                         \
+  {                                                                           \
+    (void) mem;                                                               \
+    (void) mem_len;                                                           \
+    return 0;                                                                 \
+  }
+
+DEFINE_EVENT_STUB(rx, 0)
+DEFINE_EVENT_STUB(rx, 1)
+DEFINE_EVENT_STUB(rx, 2)
+DEFINE_EVENT_STUB(rx, 3)
+DEFINE_EVENT_STUB(deq, 0)
+DEFINE_EVENT_STUB(deq, 1)
+DEFINE_EVENT_STUB(deq, 2)
+DEFINE_EVENT_STUB(deq, 3)
+DEFINE_EVENT_STUB(tx, 0)
+DEFINE_EVENT_STUB(tx, 1)
+DEFINE_EVENT_STUB(tx, 2)
+DEFINE_EVENT_STUB(tx, 3)
+
+#define DEFINE_RX_SLOT(slot)                                                  \
+  static inline void rx_poll_slot_##slot(struct fast_context *ctx,            \
+      struct guest_fast *g, struct rte_mbuf *mb, __u64 pkt_off,              \
+      __u64 tsc_start, int charge_budget)                                     \
+  {                                                                           \
+    __u64 tsc_spent;                                                          \
+                                                                                \
+    if (!g->proto.has_event_rx)                                               \
+      return;                                                                 \
+                                                                                \
+    fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off, ctx->virt_gre);   \
+    (void) event_rx_slot_##slot(&g->proto.ebpf_ctx,                           \
+        sizeof(struct cham_ebpf_ctx));                                        \
+                                                                                \
+    if (charge_budget)                                                        \
+    {                                                                         \
+      tsc_spent = clock_rdtsc() - tsc_start;                                  \
+      __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);             \
+    }                                                                         \
+  }
+
+#define DEFINE_TX_SLOT(slot)                                                  \
+  static inline int tx_poll_slot_##slot(struct fast_context *ctx,             \
+      struct rte_mbuf **mbs, int max, int *ntx, int charge_budget)           \
+  {                                                                           \
+    int tx_ret;                                                               \
+    int ret;                                                                  \
+    __u64 tsc_start = 0, tsc_spent;                                           \
+    struct guest_fast *g = &ctx->guests[slot];                                \
+                                                                                \
+    if (!g->proto.has_event_tx)                                               \
+      return 0;                                                               \
+                                                                                \
+    if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)                         \
+      return 0;                                                               \
+                                                                                \
+    if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)  \
+      return 0;                                                               \
+                                                                                \
+    if (charge_budget)                                                        \
+      tsc_start = clock_rdtsc();                                              \
+    tx_ret = 0;                                                               \
+    while (*ntx < max)                                                        \
+    {                                                                         \
+      struct rte_mbuf *mb;                                                    \
+                                                                                \
+      if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)                       \
+        break;                                                                \
+                                                                                \
+      mb = mbs[*ntx];                                                         \
+      mb->data_off = 0;                                                       \
+      fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, ctx->virt_gre);        \
+                                                                                \
+      tx_ret = (int) event_tx_slot_##slot(&g->proto.ebpf_ctx,                 \
+          sizeof(struct cham_ebpf_ctx));                                      \
+      if (tx_ret < 0)                                                         \
+        break;                                                                \
+                                                                                \
+      ret = infra_tx(ctx, g, mb, tx_ret);                                     \
+      if (ret == 0)                                                           \
+      {                                                                       \
+        ctx->tx_mbs[ctx->tx_n] = mb;                                          \
+        ctx->tx_n++;                                                          \
+        (*ntx)++;                                                             \
+      }                                                                       \
+    }                                                                         \
+                                                                                \
+    if (charge_budget)                                                        \
+    {                                                                         \
+      tsc_spent = clock_rdtsc() - tsc_start;                                  \
+      __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);             \
+    }                                                                         \
+                                                                                \
+    if (tx_ret < 0)                                                           \
+      return -1;                                                              \
+                                                                                \
+    return 0;                                                                 \
+  }
+
+#define DEFINE_DEQ_SLOT(slot)                                                 \
+  static inline int deq_poll_slot_##slot(struct fast_context *ctx,            \
+      struct rte_mbuf **mbs, int max, int *ntx, int *ndeq,                    \
+      int charge_budget)                                                      \
+  {                                                                           \
+    int deq_ret;                                                              \
+    int ret;                                                                  \
+    int j;                                                                    \
+    struct guest_fast *g = &ctx->guests[slot];                                \
+    struct cham_dqueue *qcur;                                                 \
+    struct queue_entry *qe;                                                   \
+    __u64 tsc_start = 0, tsc_spent;                                           \
+                                                                                \
+    if (!g->proto.has_event_deq)                                              \
+      return 0;                                                               \
+                                                                                \
+    if (g->proto.dqueues_head == PROTOQ_ID_INVALID)                           \
+      return 0;                                                               \
+                                                                                \
+    if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)  \
+      return 0;                                                               \
+                                                                                \
+    if (charge_budget)                                                        \
+      tsc_start = clock_rdtsc();                                              \
+    for (j = 0; j < g->proto.ndqueues && *ndeq < max; j++)                    \
+    {                                                                         \
+      qcur = &g->proto.dqueues[g->proto.dqueues_head];                        \
+      while (*ndeq < max)                                                     \
+      {                                                                       \
+        struct rte_mbuf *mb;                                                  \
+                                                                                \
+        qe = queue_head(&qcur->dq);                                           \
+        if (qe == NULL)                                                       \
+          break;                                                              \
+                                                                                \
+        mb = mbs[*ntx];                                                       \
+        mb->data_off = 0;                                                     \
+        fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, ctx->virt_gre);      \
+                                                                                \
+        g->proto.ebpf_ctx.qe = qe;                                            \
+        g->proto.ebpf_ctx.qid = qcur->id;                                     \
+                                                                                \
+        deq_ret = (int) event_deq_slot_##slot(&g->proto.ebpf_ctx,             \
+            sizeof(struct cham_ebpf_ctx));                                    \
+        (*ndeq)++;                                                            \
+                                                                                \
+        if (deq_ret < 0)                                                      \
+          return -1;                                                          \
+                                                                                \
+        if (deq_ret > 0)                                                      \
+        {                                                                     \
+          ret = infra_tx(ctx, g, mb, deq_ret);                                \
+          if (ret == 0)                                                       \
+          {                                                                   \
+            ctx->tx_mbs[ctx->tx_n] = mb;                                      \
+            ctx->tx_n++;                                                      \
+            (*ntx)++;                                                         \
+          }                                                                   \
+        }                                                                     \
+                                                                                \
+        ret = queue_dequeue(&qcur->dq);                                       \
+        if (ret != 0)                                                         \
+          return -1;                                                          \
+      }                                                                       \
+                                                                                \
+      dqueue_rotate_head(g, qcur);                                            \
+    }                                                                         \
+                                                                                \
+    if (charge_budget)                                                        \
+    {                                                                         \
+      tsc_spent = clock_rdtsc() - tsc_start;                                  \
+      __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);             \
+    }                                                                         \
+                                                                                \
+    return 0;                                                                 \
+  }
+
+DEFINE_RX_SLOT(0)
+DEFINE_RX_SLOT(1)
+DEFINE_RX_SLOT(2)
+DEFINE_RX_SLOT(3)
+DEFINE_TX_SLOT(0)
+DEFINE_TX_SLOT(1)
+DEFINE_TX_SLOT(2)
+DEFINE_TX_SLOT(3)
+DEFINE_DEQ_SLOT(0)
+DEFINE_DEQ_SLOT(1)
+DEFINE_DEQ_SLOT(2)
+DEFINE_DEQ_SLOT(3)
+
+uint64_t fast_rx_poll_comb(void *mem, size_t mem_len)
 {
-  return 0;
-}
+  int i;
+  int nrx;
+  struct fast_context *ctx = mem;
+  struct guest_fast *g;
+  struct rte_mbuf *mbs[FAST_RX_BATCH_SIZE];
+  __u64 tsc_start = 0, pkt_off;
+  const int charge_budget = ctx->perf_iso;
 
-uint64_t fast_comb_rx(struct fast_comb_rx_ctx *ctx, size_t mem_len)
-{
-  struct guest_fast *g = ctx->g;
+  (void) mem_len;
+  nrx = FAST_RX_BATCH_SIZE;
+  if (TXBUF_SIZE - ctx->tx_n < nrx)
+    nrx = TXBUF_SIZE - ctx->tx_n;
 
-  fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, ctx->mb, ctx->pkt_off,
-      ctx->virt_gre);
-  (void) __cham_comb(&g->proto.ebpf_ctx, sizeof(struct cham_ebpf_ctx));
-
-  return 1;
-}
-
-uint64_t fast_comb_deq(struct fast_comb_deq_ctx *ctx, size_t mem_len)
-{
-  int deq_ret;
-  int ret;
-  int j;
-  struct fast_context *f_ctx = ctx->f_ctx;
-  struct guest_fast *g = ctx->g;
-  struct rte_mbuf *mb;
-  struct cham_dqueue *qcur;
-  struct queue_entry *qe;
-  __u64 tsc_start = 0, tsc_spent;
-  const int charge_budget = f_ctx->perf_iso;
-
-  /* Continue if this guest is out of budget */
-  if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+  nrx = nic_fast_rx(&ctx->nic_ctx, nrx, mbs);
+  if (nrx <= 0)
     return 0;
 
-  if (charge_budget)
-    tsc_start = clock_rdtsc();
-  for (j = 0; j < g->proto.ndqueues && *ctx->ndeq < ctx->max; j++)
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *) + 64);
+
+  for (i = 0; i < nrx; i++)
   {
-    qcur = &g->proto.dqueues[g->proto.dqueues_head];
-    while (*ctx->ndeq < ctx->max)
+    if (i + 1 < nrx)
     {
-      qe = queue_head(&qcur->dq);
-
-      /* Stop draining this queue once it is empty */
-      if (qe == NULL)
-        break;
-
-      mb = ctx->mbs[*ctx->ntx];
-      mb->data_off = 0;
-      fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, f_ctx->virt_gre);
-
-      g->proto.ebpf_ctx.qe = qe;
-      g->proto.ebpf_ctx.qid = qcur->id;
-
-      deq_ret = (int) __cham_comb(&g->proto.ebpf_ctx,
-          sizeof(struct cham_ebpf_ctx));
-      (*ctx->ndeq)++;
-
-      if (deq_ret < 0)
-        return (uint64_t) -1;
-
-      if (deq_ret > 0)
-      {
-        ret = infra_tx(f_ctx, g, mb, deq_ret);
-        if (ret == 0)
-        {
-          f_ctx->tx_mbs[f_ctx->tx_n] = mb;
-          f_ctx->tx_n++;
-          (*ctx->ntx)++;
-        }
-      }
-
-      ret = queue_dequeue(&qcur->dq);
-      if (ret != 0)
-        return (uint64_t) -1;
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[i + 1], __u8 *));
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[i + 1], __u8 *) + 64);
     }
 
-    dqueue_rotate_head(g, qcur);
+    if (charge_budget)
+      tsc_start = clock_rdtsc();
+
+    g = infra_rx(ctx, mbs[i], &pkt_off);
+    if (g == NULL)
+      continue;
+
+    if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+      continue;
+
+    rx_poll_slot(ctx, g, mbs[i], pkt_off, tsc_start, charge_budget);
   }
 
-  /* Subtract from guest's budget */
-  if (charge_budget)
-  {
-    tsc_spent = clock_rdtsc() - tsc_start;
-    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
-  }
+  for (i = 0; i < nrx; i++)
+    txcache_free(ctx, mbs[i]);
 
-  return 0;
+  return nrx;
 }
 
-uint64_t fast_comb_tx(struct fast_comb_tx_ctx *ctx, size_t mem_len)
+uint64_t fast_queues_poll_comb(void *mem, size_t mem_len)
 {
-  int tx_ret;
-  int ret;
-  int max;
-  int ntx;
-  struct fast_context *f_ctx = ctx->f_ctx;
-  struct guest_fast *g = ctx->g;
-  struct rte_mbuf *mb;
+  int i, max, ret, ndeq, ntx;
+  struct fast_context *ctx = mem;
   struct rte_mbuf **mbs;
-  __u64 tsc_start = 0, tsc_spent;
-  const int charge_budget = f_ctx->perf_iso;
+  const int charge_budget = ctx->perf_iso;
 
-  if (g->proto.event_tx_vm == NULL)
+  (void) mem_len;
+  max = FAST_DEQ_BATCH_SIZE;
+  if (TXBUF_SIZE - ctx->tx_n < max)
+    max = TXBUF_SIZE - ctx->tx_n;
+
+  max = txcache_alloc(ctx, &mbs, max);
+  if (max <= 0)
     return 0;
 
-  if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
-    return 0;
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *) + 64);
 
-  if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
-    return 0;
-
-  mbs = ctx->mbs;
-  max = ctx->max;
-  ntx = *ctx->ntx;
-
-  if (charge_budget)
-    tsc_start = clock_rdtsc();
-  tx_ret = 0;
-  while (ntx < max)
+  ntx = 0;
+  ndeq = 0;
+  for (i = 0; i < ctx->n_guests && ndeq < max; i++)
   {
-    if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
-      break;
-
-    mb = mbs[ntx];
-    mb->data_off = 0;
-    fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, f_ctx->virt_gre);
-
-    tx_ret = (int) __cham_comb(&g->proto.ebpf_ctx,
-        sizeof(struct cham_ebpf_ctx));
-
-    if (tx_ret < 0)
-      break;
-
-    ret = infra_tx(f_ctx, g, mb, tx_ret);
-    if (ret == 0)
+    if (ndeq + 1 < max)
     {
-      f_ctx->tx_mbs[f_ctx->tx_n] = mb;
-      f_ctx->tx_n++;
-      ntx++;
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[ndeq + 1], __u8 *));
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[ndeq + 1], __u8 *) + 64);
     }
+
+    ret = deq_poll_slot(ctx, i, mbs, max, &ntx, &ndeq, charge_budget);
+    if (ret != 0)
+      return (uint64_t) -1;
   }
 
-  if (charge_budget)
+  txcache_unalloc(ctx, max - ntx);
+  return ndeq;
+}
+
+uint64_t fast_tx_poll_comb(void *mem, size_t mem_len)
+{
+  int max, ret;
+  int i, ntx, has_tx_work;
+  struct fast_context *ctx = mem;
+  struct guest_fast *g;
+  struct rte_mbuf **mbs;
+  __u8 n_guests = ctx->n_guests;
+  const int charge_budget = ctx->perf_iso;
+
+  (void) mem_len;
+  if (n_guests == 0)
+    return 0;
+
+  has_tx_work = 0;
+  for (i = 0; i < n_guests; i++)
   {
-    tsc_spent = clock_rdtsc() - tsc_start;
-    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
+    g = &ctx->guests[i];
+    if (!g->proto.has_event_tx)
+      continue;
+
+    if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
+      continue;
+
+    if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+      continue;
+
+    has_tx_work = 1;
+    break;
   }
-  *ctx->ntx = ntx;
 
-  if (tx_ret < 0)
-    return (uint64_t) -1;
+  if (!has_tx_work)
+    return 0;
 
-  return 0;
+  max = FAST_TX_BATCH_SIZE;
+  if (TXBUF_SIZE - ctx->tx_n < max)
+    max = TXBUF_SIZE - ctx->tx_n;
+
+  max = txcache_alloc(ctx, &mbs, max);
+  if (max == 0)
+    return 0;
+
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *));
+  rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *) + 64);
+
+  ntx = 0;
+  for (i = 0; i < n_guests && ntx < max; i++)
+  {
+    if (ntx + 1 < max)
+    {
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[ntx + 1], __u8 *));
+      rte_prefetch0(rte_pktmbuf_mtod(mbs[ntx + 1], __u8 *) + 64);
+    }
+
+    ret = tx_poll_slot(ctx, i, mbs, max, &ntx, charge_budget);
+    if (ret != 0)
+      return (uint64_t) -1;
+  }
+
+  txcache_unalloc(ctx, max - ntx);
+  return ntx;
+}
+
+static inline void rx_poll_slot(struct fast_context *ctx,
+    struct guest_fast *g, struct rte_mbuf *mb, __u64 pkt_off,
+    __u64 tsc_start, int charge_budget)
+{
+  switch (g->id)
+  {
+    case 0:
+      rx_poll_slot_0(ctx, g, mb, pkt_off, tsc_start, charge_budget);
+      break;
+    case 1:
+      rx_poll_slot_1(ctx, g, mb, pkt_off, tsc_start, charge_budget);
+      break;
+    case 2:
+      rx_poll_slot_2(ctx, g, mb, pkt_off, tsc_start, charge_budget);
+      break;
+    case 3:
+      rx_poll_slot_3(ctx, g, mb, pkt_off, tsc_start, charge_budget);
+      break;
+    default:
+      break;
+  }
+}
+
+static inline int tx_poll_slot(struct fast_context *ctx, int slot,
+    struct rte_mbuf **mbs, int max, int *ntx, int charge_budget)
+{
+  switch (slot)
+  {
+    case 0:
+      return tx_poll_slot_0(ctx, mbs, max, ntx, charge_budget);
+    case 1:
+      return tx_poll_slot_1(ctx, mbs, max, ntx, charge_budget);
+    case 2:
+      return tx_poll_slot_2(ctx, mbs, max, ntx, charge_budget);
+    case 3:
+      return tx_poll_slot_3(ctx, mbs, max, ntx, charge_budget);
+    default:
+      return 0;
+  }
+}
+
+static inline int deq_poll_slot(struct fast_context *ctx, int slot,
+    struct rte_mbuf **mbs, int max, int *ntx, int *ndeq, int charge_budget)
+{
+  switch (slot)
+  {
+    case 0:
+      return deq_poll_slot_0(ctx, mbs, max, ntx, ndeq, charge_budget);
+    case 1:
+      return deq_poll_slot_1(ctx, mbs, max, ntx, ndeq, charge_budget);
+    case 2:
+      return deq_poll_slot_2(ctx, mbs, max, ntx, ndeq, charge_budget);
+    case 3:
+      return deq_poll_slot_3(ctx, mbs, max, ntx, ndeq, charge_budget);
+    default:
+      return 0;
+  }
 }
 
 static inline void dqueue_rotate_head(struct guest_fast *g,
@@ -180,8 +427,6 @@ static inline void dqueue_rotate_head(struct guest_fast *g,
   g->proto.dqueues[g->proto.dqueues_tail].next = qcur->id;
   g->proto.dqueues_tail = qcur->id;
 
-  /* When there's only one queue, keep head pointing to it (circular list).
-     Otherwise, advance head to the next queue. */
   if (g->proto.ndqueues == 1)
     g->proto.dqueues_head = qcur->id;
   else

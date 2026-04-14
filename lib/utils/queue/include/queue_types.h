@@ -7,6 +7,12 @@
 #include "utils.h"
 #include "eth_hdr.h"
 
+struct ebpf_vm_c;
+#ifndef EBPF_JITTED_FN_T
+#define EBPF_JITTED_FN_T
+typedef __u64 (*ebpf_jitted_fn)(void *mem, size_t mem_len);
+#endif
+
 /* Type of queue entries */
 enum queue_type {
   /* Signals that the queue is empty */
@@ -207,6 +213,12 @@ struct queue_up_ebpf_req {
   struct ebpf_vm_c *event_tx_vm;
   /* Function pointer to ebpf deq function. Used only in message to fast */
   struct ebpf_vm_c *event_deq_vm;
+  /* Aggregate combined rx entry */
+  ebpf_jitted_fn agg_rx_fn;
+  /* Aggregate combined dequeue entry */
+  ebpf_jitted_fn agg_deq_fn;
+  /* Aggregate combined tx entry */
+  ebpf_jitted_fn agg_tx_fn;
 } __attribute__((packed));
 
 /* Request to free an EBPF snippet */
@@ -275,7 +287,7 @@ struct queue_arp_tx_req {
 
 
 struct queue_entry {
-  /* Type of queue entry. Don't update outside of enqueue or dequeue */
+  /* Type of queue entries. Don't update outside of enqueue or dequeue */
   volatile __u8 type;
   /* Data section of queue entry */
   union {

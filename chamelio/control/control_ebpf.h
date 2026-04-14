@@ -11,5 +11,6 @@ void control_ebpf_free(struct guest_control *g,
 void control_ebpf_upload(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req);
 int control_ebpf_init(struct control_context *ctx);
+int control_ebpf_publish(struct control_context *ctx);
 
 #endif

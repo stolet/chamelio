@@ -11,6 +11,7 @@
 #include "config.h"
 #include "arp.h"
 #include "fast_stats.h"
+#include "ebpf.h"
 #include "queue_types.h"
 #include "shmalloc.h"
 
@@ -35,6 +36,12 @@ struct proto_fast {
   struct cham_dqueue dqueues[MAX_PROTO_QUEUES];
   /* Handle containing protocol state passed to custom fast-path */  
   struct cham_ebpf_ctx ebpf_ctx;
+  /* RX event handler has been uploaded */
+  __u8 has_event_rx;
+  /* TX event handler has been uploaded */
+  __u8 has_event_tx;
+  /* Dequeue event handler has been uploaded */
+  __u8 has_event_deq;
 
   /* Jitted LLVM VM to process one received packet */
   struct ebpf_vm_c *event_rx_vm;
@@ -115,6 +122,10 @@ struct fast_context {
   struct netvirt_table *inner_table;
   /* Network virtualization table indexed by guest ID and outer IP */
   struct netvirt_table *gid_table;
+  /* Aggregate combined entries shared across fast-path cores */
+  ebpf_jitted_fn agg_rx_fn;
+  ebpf_jitted_fn agg_deq_fn;
+  ebpf_jitted_fn agg_tx_fn;
 };
 
 /* Initialises the fast-path context when a core is launched */

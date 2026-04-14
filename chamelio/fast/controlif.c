@@ -115,6 +115,9 @@ static inline void handle_new_guest(struct fast_context *ctx,
   g->proto.ndqueues = 0;
   g->proto.dqueues_head = PROTOQ_ID_INVALID;
   g->proto.dqueues_tail = PROTOQ_ID_INVALID;
+  g->proto.has_event_rx = 0;
+  g->proto.has_event_tx = 0;
+  g->proto.has_event_deq = 0;
   
   g->proto.event_rx_vm = NULL;
   g->proto.event_tx_vm = NULL;
@@ -256,14 +259,31 @@ static inline void handle_disableq(struct fast_context *ctx,
 static inline void handle_upload_ebpf(struct fast_context *ctx, 
     struct queue_entry *qe)
 {
-  struct guest_fast *g;
-  struct proto_fast *p;
   struct queue_up_ebpf_req *req;
 
   req = &qe->data.up_ebpf_req;
-  g = &ctx->guests[req->gid];
-  p = &g->proto;
-  
+  if (ctx->fp_jit_combined)
+  {
+    if (req->gid < CHAMELIO_MAX_GUESTS)
+    {
+      struct guest_fast *g = &ctx->guests[req->gid];
+
+      g->proto.has_event_rx = 1;
+      g->proto.has_event_deq = 1;
+      g->proto.has_event_tx = 1;
+    }
+    ctx->agg_rx_fn = req->agg_rx_fn;
+    ctx->agg_deq_fn = req->agg_deq_fn;
+    ctx->agg_tx_fn = req->agg_tx_fn;
+    return;
+  }
+
+  struct guest_fast *g = &ctx->guests[req->gid];
+  struct proto_fast *p = &g->proto;
+
+  p->has_event_rx = 1;
+  p->has_event_deq = 1;
+  p->has_event_tx = 1;
   p->event_rx_vm = req->event_rx_vm;
   p->event_tx_vm = req->event_tx_vm;
   p->event_deq_vm = req->event_deq_vm;

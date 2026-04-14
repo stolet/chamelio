@@ -4,7 +4,6 @@
 #include <rte_mbuf.h>
 
 #include "fast.h"
-#include "fast_comb.h"
 #include "fast_ebpf.h"
 #include "ip_hdr.h"
 #include "gre_hdr.h"
@@ -18,9 +17,6 @@
 static inline int tx_poll_guest(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf **mbs, int max, int *ntx,
     int charge_budget);
-static inline int tx_poll_guest_comb(struct fast_context *ctx,
-    struct guest_fast *g, struct rte_mbuf **mbs, int max, int *ntx,
-    int charge_budget);
 
 int fast_tx_poll(struct fast_context *ctx)
 {
@@ -29,7 +25,6 @@ int fast_tx_poll(struct fast_context *ctx)
   struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
-  const int use_comb = ctx->fp_jit_combined;
   const int charge_budget = ctx->perf_iso;
   
   /* Return if no guests have registered */
@@ -81,10 +76,7 @@ int fast_tx_poll(struct fast_context *ctx)
     }
 
     g = &ctx->guests[i];
-    if (use_comb)
-      ret = tx_poll_guest_comb(ctx, g, mbs, max, &ntx, charge_budget);
-    else
-      ret = tx_poll_guest(ctx, g, mbs, max, &ntx, charge_budget);
+    ret = tx_poll_guest(ctx, g, mbs, max, &ntx, charge_budget);
 
     (void) ret;
   }
@@ -160,39 +152,5 @@ static inline int tx_poll_guest(struct fast_context *ctx,
   if (tx_ret < 0)
     return -1;
 
-  return 0;
-}
-
-static inline int tx_poll_guest_comb(struct fast_context *ctx,
-    struct guest_fast *g, struct rte_mbuf **mbs, int max, int *ntx,
-    int charge_budget)
-{
-  int exec_ret;
-  int tx_ret;
-  struct fast_comb_tx_ctx jit_ctx = {
-    .f_ctx = ctx,
-    .g = g,
-    .mbs = mbs,
-    .max = max,
-    .ntx = ntx,
-  };
-
-  /* Continue to next guest if ebpf code hasn't been uploaded yet */
-  if (g->proto.event_tx_vm == NULL)
-    return 0;
-
-  /* Continue to next guest if there is no pending scheduler work */
-  if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
-    return 0;
-
-  /* Continue to next guest if out of budget */
-  if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
-    return 0;
-
-  exec_ret = ebpf_vm_exec(g->proto.event_tx_vm, &jit_ctx, sizeof(jit_ctx),
-      &tx_ret);
-
-  if (tx_ret < 0 || exec_ret < 0)
-    return -1;
   return 0;
 }

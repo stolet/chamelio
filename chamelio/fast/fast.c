@@ -18,6 +18,9 @@
 
 
 struct guest_fast * init_guest(__u8 id, __u64 shm_len);
+int fast_loop_default(struct fast_context *ctx);
+int fast_loop_comb(struct fast_context *ctx);
+
 
 int fast_context_init(struct fast_context *f_ctx, 
     struct nic_context *nic_ctx, __u16 thread_id,
@@ -34,6 +37,9 @@ int fast_context_init(struct fast_context *f_ctx,
   f_ctx->fp_jit_combined = config->fp_jit_combined;
   f_ctx->virt_gre = config->virt_gre;
   f_ctx->perf_iso = config->perf_iso;
+  f_ctx->agg_rx_fn = NULL;
+  f_ctx->agg_deq_fn = NULL;
+  f_ctx->agg_tx_fn = NULL;
   f_ctx->shm_fd_internal = shm_fd_internal;
   f_ctx->shm_base_internal= shm_base_internal;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
@@ -107,8 +113,20 @@ int fast_batch_stats_snapshot(const struct fast_context *ctx,
 int fast_loop(struct fast_context *ctx)
 {
   int ret;
+  
+  if (ctx->fp_jit_combined)
+    ret = fast_loop_comb(ctx);
+  else
+    ret = fast_loop_default(ctx);
+    
+  return ret;
+}
 
-  while(1) 
+int fast_loop_default(struct fast_context *ctx)
+{
+  int ret;
+  
+  while (1)
   {
     ret = fast_rx_poll(ctx);
     if (ret < 0)
@@ -148,6 +166,53 @@ int fast_loop(struct fast_context *ctx)
     }
     
     /* Flush entries in transmit buffer added by controlif_poll */
+    fast_txflush(ctx);
+  }
+}
+
+int fast_loop_comb(struct fast_context *ctx)
+{
+  int ret;
+  
+  while (1)
+  {
+    ret = controlif_poll(ctx);
+    if (ret < 0)
+    {
+      LOG_ERROR("controlif_poll failed");
+    }
+
+    ret = (int) ctx->agg_rx_fn(ctx, sizeof(*ctx));
+    if (ret < 0)
+    {
+      LOG_ERROR("poll_rx_comb failed");
+      return -1;
+    }
+    ctx->batch_stats.rx_calls++;
+    ctx->batch_stats.rx_items += ret;
+
+    ret = (int) ctx->agg_deq_fn(ctx, sizeof(*ctx));
+    if (ret < 0)
+    {
+      LOG_ERROR("poll_queues_comb failed");
+    }
+    else
+    {
+      ctx->batch_stats.queue_calls++;
+      ctx->batch_stats.queue_items += ret;
+    }
+
+    ret = (int) ctx->agg_tx_fn(ctx, sizeof(*ctx));
+    if (ret < 0)
+    {
+      LOG_ERROR("poll_tx_comb failed");
+    }
+    else
+    {
+      ctx->batch_stats.tx_calls++;
+      ctx->batch_stats.tx_items += ret;
+    }
+
     fast_txflush(ctx);
   }
 }

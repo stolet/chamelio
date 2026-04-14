@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "config.h"
+#include "ebpf.h"
 #include "queue.h"
 #include "arp.h"
 #include "fast_stats.h"
@@ -17,6 +18,12 @@
 struct comb_bc_blob {
   void *data;
   size_t len;
+};
+
+struct guest_comb_bc {
+  struct comb_bc_blob rx;
+  struct comb_bc_blob deq;
+  struct comb_bc_blob tx;
 };
 
 struct proto_queue_control {
@@ -80,6 +87,12 @@ struct control_context {
   struct configuration *config;
   /* Infra bytecode blob for combined JIT */
   struct comb_bc_blob comb_bc;
+  /* Per-slot guest bytecode used to rebuild aggregate entries */
+  struct guest_comb_bc guest_bc[CHAMELIO_MAX_GUESTS];
+  /* Aggregate combined JIT objects */
+  struct ebpf_vm_c *agg_rx_vm;
+  struct ebpf_vm_c *agg_deq_vm;
+  struct ebpf_vm_c *agg_tx_vm;
   /* NIC paremeters and configuration */
   struct nic_context *nic_ctx;
   /* Next fast-path core to poll */

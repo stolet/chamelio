@@ -21,18 +21,31 @@
 #include "utils_sync.h"
 
 /* Combined infra + ebpf entry symbols in the bytecode. */
-#define COMB_RX_ENTRY "fast_comb_rx"
-#define COMB_TX_ENTRY "fast_comb_tx"
-#define COMB_DEQ_ENTRY "fast_comb_deq"
+#define COMB_RX_ENTRY "fast_rx_poll_comb"
+#define COMB_TX_ENTRY "fast_tx_poll_comb"
+#define COMB_DEQ_ENTRY "fast_queues_poll_comb"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 static struct ebpf_vm_c *verify_and_jit(struct control_context *ctx,
     struct bpf_object *bpf_obj, const char *prog_name, const char *comb_entry);
+static int verify_and_emit(struct control_context *ctx,
+    struct bpf_object *bpf_obj, const char *prog_name,
+    const char *slot_sym, struct comb_bc_blob *out_bc);
 static struct ebpf_vm_c *jit(struct control_context *ctx,
     const void *ebpf_instrs, size_t size, const char *comb_entry);
+static struct ebpf_vm_c *build_agg_vm(struct control_context *ctx,
+    const char *entry_sym, int event_idx, __u16 gid,
+    const struct comb_bc_blob *slot_bc);
+static int rebuild_agg_vms(struct control_context *ctx, __u16 gid,
+    const struct comb_bc_blob *rx_bc, const struct comb_bc_blob *deq_bc,
+    const struct comb_bc_blob *tx_bc);
+static struct comb_bc_blob *guest_bc_slot(struct control_context *ctx,
+    __u16 gid, int event_idx);
+static int publish_agg_vms(struct control_context *ctx, __u16 gid);
 static int load_comb_bytecode(struct control_context *ctx);
 static int register_helpers(struct ebpf_vm_c *vm);
+static void comb_bc_free(struct comb_bc_blob *bc);
 
 /* Helpers */
 static void ebpf_print(int a);
@@ -86,6 +99,12 @@ struct ebpf_prog_desc
   struct ebpf_vm_c **out_vm;
 };
 
+enum agg_event {
+  AGG_EVENT_RX = 0,
+  AGG_EVENT_DEQ,
+  AGG_EVENT_TX,
+};
+
 static const struct ebpf_helper_desc ebpf_helpers[] = {
   { EBPF_HELPER_QUEUE_TAIL, 
       "ebpf_queue_tail", ebpf_queue_tail },
@@ -127,10 +146,24 @@ static const struct ebpf_helper_desc ebpf_helpers[] = {
 
 int control_ebpf_init(struct control_context *ctx)
 {
+  int ret;
+
   if (!ctx->config->fp_jit_combined)
     return 0;
 
-  return load_comb_bytecode(ctx);
+  ret = load_comb_bytecode(ctx);
+  if (ret != 0)
+    return ret;
+
+  return rebuild_agg_vms(ctx, CHAMELIO_MAX_GUESTS, NULL, NULL, NULL);
+}
+
+int control_ebpf_publish(struct control_context *ctx)
+{
+  if (!ctx->config->fp_jit_combined)
+    return 0;
+
+  return publish_agg_vms(ctx, CHAMELIO_MAX_GUESTS);
 }
 
 void control_ebpf_allocate(struct guest_control *g,
@@ -176,6 +209,9 @@ void control_ebpf_upload(struct control_context *ctx,
   struct queue_up_ebpf_res *res;
   struct queue_entry *qe_res;
   struct bpf_object *bpf_obj = NULL;
+  struct comb_bc_blob rx_bc = { 0 };
+  struct comb_bc_blob deq_bc = { 0 };
+  struct comb_bc_blob tx_bc = { 0 };
   struct ebpf_vm_c *event_rx_vm = NULL;
   struct ebpf_vm_c *event_tx_vm = NULL;
   struct ebpf_vm_c *event_deq_vm = NULL;
@@ -196,6 +232,35 @@ void control_ebpf_upload(struct control_context *ctx,
   if (bpf_obj == NULL)
   {
     LOG_ERROR("failed to open bpf_obj from bytecode");
+    goto out;
+  }
+
+  if (ctx->config->fp_jit_combined)
+  {
+    char slot_sym[32];
+
+    ret = snprintf(slot_sym, sizeof(slot_sym), "event_rx_slot_%u", g->id);
+    if (ret < 0 || ret >= (int) sizeof(slot_sym) ||
+        verify_and_emit(ctx, bpf_obj, "event_rx", slot_sym, &rx_bc) != 0)
+      goto out;
+
+    ret = snprintf(slot_sym, sizeof(slot_sym), "event_deq_slot_%u", g->id);
+    if (ret < 0 || ret >= (int) sizeof(slot_sym) ||
+        verify_and_emit(ctx, bpf_obj, "event_deq", slot_sym, &deq_bc) != 0)
+      goto out;
+
+    ret = snprintf(slot_sym, sizeof(slot_sym), "event_tx_slot_%u", g->id);
+    if (ret < 0 || ret >= (int) sizeof(slot_sym) ||
+        verify_and_emit(ctx, bpf_obj, "event_tx", slot_sym, &tx_bc) != 0)
+      goto out;
+
+    if (rebuild_agg_vms(ctx, g->id, &rx_bc, &deq_bc, &tx_bc) != 0)
+      goto out;
+
+    if (publish_agg_vms(ctx, g->id) != 0)
+      goto out;
+
+    success = 1;
     goto out;
   }
 
@@ -228,6 +293,9 @@ void control_ebpf_upload(struct control_context *ctx,
 out:
   if (!success)
   {
+    comb_bc_free(&rx_bc);
+    comb_bc_free(&deq_bc);
+    comb_bc_free(&tx_bc);
     if (event_rx_vm != NULL)
       ebpf_vm_destroy(event_rx_vm);
     if (event_tx_vm != NULL)
@@ -293,6 +361,67 @@ static struct ebpf_vm_c *verify_and_jit(
     LOG_ERROR("failed to jit %s", prog_name);
 
   return vm;
+}
+
+static int verify_and_emit(struct control_context *ctx,
+    struct bpf_object *bpf_obj, const char *prog_name,
+    const char *slot_sym, struct comb_bc_blob *out_bc)
+{
+  int ret;
+  const void *insns;
+  struct bpf_program *prog;
+  struct ebpf_vm_c *vm = NULL;
+
+  prog = bpf_object__find_program_by_name(bpf_obj, prog_name);
+  if (prog == NULL)
+  {
+    LOG_ERROR("failed to get %s from bpf_obj", prog_name);
+    return -1;
+  }
+
+  insns = bpf_program__insns(prog);
+  ret = verifier_analyze(insns, bpf_program__insn_cnt(prog),
+      ctx->config->shm_len, (char *) prog_name);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to verify %s", prog_name);
+    return -1;
+  }
+
+  vm = ebpf_vm_create();
+  if (vm == NULL)
+  {
+    LOG_ERROR("failed to create llvmbpf vm");
+    return -1;
+  }
+
+  ret = ebpf_vm_load_code(vm, insns, bpf_program__insn_cnt(prog) * 8);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to load ebpf bytecode");
+    goto err;
+  }
+
+  ret = register_helpers(vm);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to register helpers");
+    goto err;
+  }
+
+  ret = ebpf_vm_emit_named_bitcode(vm, slot_sym, &out_bc->data, &out_bc->len);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to emit bitcode for %s", prog_name);
+    goto err;
+  }
+
+  ebpf_vm_destroy(vm);
+  return 0;
+
+err:
+  ebpf_vm_destroy(vm);
+  return -1;
 }
 
 static struct ebpf_vm_c *jit(struct control_context *ctx,
@@ -395,6 +524,198 @@ static int load_comb_bytecode(struct control_context *ctx)
 
   return clang_compile(build_dir, src_path,
       &ctx->comb_bc.data, &ctx->comb_bc.len);
+}
+
+static struct comb_bc_blob *guest_bc_slot(struct control_context *ctx,
+    __u16 gid, int event_idx)
+{
+  struct guest_comb_bc *bc;
+
+  if (gid >= CHAMELIO_MAX_GUESTS)
+    return NULL;
+
+  bc = &ctx->guest_bc[gid];
+  switch (event_idx)
+  {
+    case AGG_EVENT_RX:
+      return &bc->rx;
+    case AGG_EVENT_DEQ:
+      return &bc->deq;
+    case AGG_EVENT_TX:
+      return &bc->tx;
+    default:
+      return NULL;
+  }
+}
+
+static void comb_bc_free(struct comb_bc_blob *bc)
+{
+  if (bc->data != NULL)
+    free(bc->data);
+  bc->data = NULL;
+  bc->len = 0;
+}
+
+static struct ebpf_vm_c *build_agg_vm(struct control_context *ctx,
+    const char *entry_sym, int event_idx, __u16 gid,
+    const struct comb_bc_blob *slot_bc)
+{
+  int ret;
+  int nr_mods = 0;
+  int i;
+  size_t mods_len[1 + CHAMELIO_MAX_GUESTS];
+  const void *mods[1 + CHAMELIO_MAX_GUESTS];
+  struct ebpf_vm_c *vm;
+
+  vm = ebpf_vm_create();
+  if (vm == NULL)
+  {
+    LOG_ERROR("failed to create aggregate llvmbpf vm");
+    return NULL;
+  }
+
+  ret = register_helpers(vm);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to register helpers");
+    goto err;
+  }
+
+  mods[nr_mods] = ctx->comb_bc.data;
+  mods_len[nr_mods] = ctx->comb_bc.len;
+  nr_mods++;
+
+  for (i = 0; i < CHAMELIO_MAX_GUESTS; i++)
+  {
+    const struct comb_bc_blob *bc;
+
+    if (i == gid && slot_bc != NULL)
+      bc = slot_bc;
+    else
+      bc = guest_bc_slot(ctx, i, event_idx);
+
+    if (bc == NULL || bc->data == NULL || bc->len == 0)
+      continue;
+
+    mods[nr_mods] = bc->data;
+    mods_len[nr_mods] = bc->len;
+    nr_mods++;
+  }
+
+  ret = ebpf_vm_compile_bitcode_modules(vm, mods, mods_len, nr_mods,
+      entry_sym);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to compile aggregate entry %s", entry_sym);
+    goto err;
+  }
+
+  return vm;
+
+err:
+  ebpf_vm_destroy(vm);
+  return NULL;
+}
+
+static int rebuild_agg_vms(struct control_context *ctx, __u16 gid,
+    const struct comb_bc_blob *rx_bc, const struct comb_bc_blob *deq_bc,
+    const struct comb_bc_blob *tx_bc)
+{
+  struct ebpf_vm_c *rx_vm;
+  struct ebpf_vm_c *deq_vm;
+  struct ebpf_vm_c *tx_vm;
+  struct comb_bc_blob *cur_bc;
+
+  rx_vm = build_agg_vm(ctx, COMB_RX_ENTRY, AGG_EVENT_RX, gid, rx_bc);
+  if (rx_vm == NULL)
+    return -1;
+
+  deq_vm = build_agg_vm(ctx, COMB_DEQ_ENTRY, AGG_EVENT_DEQ, gid, deq_bc);
+  if (deq_vm == NULL)
+  {
+    ebpf_vm_destroy(rx_vm);
+    return -1;
+  }
+
+  tx_vm = build_agg_vm(ctx, COMB_TX_ENTRY, AGG_EVENT_TX, gid, tx_bc);
+  if (tx_vm == NULL)
+  {
+    ebpf_vm_destroy(rx_vm);
+    ebpf_vm_destroy(deq_vm);
+    return -1;
+  }
+
+  if (gid < CHAMELIO_MAX_GUESTS)
+  {
+    cur_bc = guest_bc_slot(ctx, gid, AGG_EVENT_RX);
+    comb_bc_free(cur_bc);
+    *cur_bc = *rx_bc;
+
+    cur_bc = guest_bc_slot(ctx, gid, AGG_EVENT_DEQ);
+    comb_bc_free(cur_bc);
+    *cur_bc = *deq_bc;
+
+    cur_bc = guest_bc_slot(ctx, gid, AGG_EVENT_TX);
+    comb_bc_free(cur_bc);
+    *cur_bc = *tx_bc;
+  }
+
+  ctx->agg_rx_vm = rx_vm;
+  ctx->agg_deq_vm = deq_vm;
+  ctx->agg_tx_vm = tx_vm;
+  return 0;
+}
+
+static int publish_agg_vms(struct control_context *ctx, __u16 gid)
+{
+  int i;
+  int ret;
+  struct queue_entry *qe_req;
+  struct queue_up_ebpf_req *req;
+  ebpf_jitted_fn agg_rx_fn;
+  ebpf_jitted_fn agg_deq_fn;
+  ebpf_jitted_fn agg_tx_fn;
+
+  if (ctx->agg_rx_vm == NULL || ctx->agg_deq_vm == NULL ||
+      ctx->agg_tx_vm == NULL)
+  {
+    LOG_ERROR("aggregate combined entries are not built");
+    return -1;
+  }
+
+  agg_rx_fn = ebpf_vm_jitted_fn(ctx->agg_rx_vm);
+  agg_deq_fn = ebpf_vm_jitted_fn(ctx->agg_deq_vm);
+  agg_tx_fn = ebpf_vm_jitted_fn(ctx->agg_tx_vm);
+  if (agg_rx_fn == NULL || agg_deq_fn == NULL || agg_tx_fn == NULL)
+  {
+    LOG_ERROR("aggregate combined entry is missing a function pointer");
+    return -1;
+  }
+
+  for (i = 0; i < ctx->config->fp_cores_max; i++)
+  {
+    qe_req = queue_tail(ctx->ctl_fast_qs[i]);
+    if (qe_req == NULL)
+    {
+      LOG_ERROR("failed to get queue entry to publish aggregate jit");
+      return -1;
+    }
+
+    req = &qe_req->data.up_ebpf_req;
+    memset(req, 0, sizeof(*req));
+    req->gid = gid;
+    req->agg_rx_fn = agg_rx_fn;
+    req->agg_deq_fn = agg_deq_fn;
+    req->agg_tx_fn = agg_tx_fn;
+    ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_UPLOAD_EBPF_REQ);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue aggregate jit publish");
+      return -1;
+    }
+  }
+
+  return 0;
 }
 
 static void ebpf_print(int a)
