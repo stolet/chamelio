@@ -18,8 +18,8 @@ static int sock_ctl_rx(struct tcp_slow_context *ctx, struct tcp_sock *sock,
 int tcp_fast_poll(struct tcp_slow_context *ctx)
 {
   int nr;
-  struct tcp_queue_bump_entry *sig_qe;
-  struct tcp_queue_bump_entry *pkt_qe;
+  struct tcp_queue_ctl_entry *sig_qe;
+  struct tcp_queue_pkt_entry *pkt_qe;
 
   nr = 0;
   while (nr < SLOW_BATCH_SIZE)

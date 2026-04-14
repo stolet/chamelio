@@ -44,13 +44,13 @@ int tcp_ctl_tx_reply(struct tcp_slow_context *ctx, __u32 local_ip,
 int tcp_tx_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock)
 {
   int ret;
-  struct tcp_queue_bump_entry *sig_qe;
+  struct tcp_queue_ctl_entry *sig_qe;
 
   sig_qe = queue_tail(ctx->slow_fast_sig_q);
   if (sig_qe == NULL)
     return -1;
 
-  sig_qe->data.fast_sock.sock_id = sock->id;
+  sig_qe->data.ctl_remit.sock_id = sock->id;
   ret = queue_enqueue(ctx->slow_fast_sig_q, TCP_QUEUE_TX_RETRANSMIT);
   if (ret != 0)
     return -1;
@@ -65,8 +65,8 @@ static int ctl_pkt_enqueue(struct tcp_slow_context *ctx, __u32 local_ip,
     __u32 ack, __u16 flags, __u16 wnd)
 {
   int ret;
-  struct tcp_queue_bump_entry *pkt_qe;
-  struct tcp_queue_bump_entry *sig_qe;
+  struct tcp_queue_pkt_entry *pkt_qe;
+  struct tcp_queue_ctl_entry *sig_qe;
 
   pkt_qe = queue_tail(ctx->slow_fast_pkt_q);
   if (pkt_qe == NULL)

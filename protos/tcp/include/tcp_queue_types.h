@@ -380,16 +380,38 @@ struct tcp_queue_bump_entry {
     struct tcp_queue_bump_app_rx bump_app_rx;
     struct tcp_queue_bump_cham_tx bump_cham_tx;
     struct tcp_queue_bump_cham_rx bump_cham_rx;
+    /* Keeps bump queue entries compact */
+    __u8 raw[31];
+  } __attribute__((packed)) data;
+} __attribute__((packed));
+
+struct tcp_queue_ctl_entry {
+  /* Type of queue entry. Don't update outside of enqueue or dequeue */
+  volatile __u8 type;
+  /* Data section of queue entry */
+  union {
     struct tcp_queue_ctl_sig ctl_sig;
+    struct tcp_queue_ctl_remit ctl_remit;
+    /* Keeps control signal entries compact */
+    __u8 raw[31];
+  } __attribute__((packed)) data;
+} __attribute__((packed));
+
+struct tcp_queue_pkt_entry {
+  /* Type of queue entry. Don't update outside of enqueue or dequeue */
+  volatile __u8 type;
+  /* Data section of queue entry */
+  union {
     struct tcp_queue_ctl_pkt ctl_pkt;
-    struct tcp_queue_ctl_remit fast_sock;
-    /* Keeps queue entry the size of a cache line */
+    /* Keeps packet queue entries the size of a cache line */
     __u8 raw[63];
   } __attribute__((packed)) data;
 } __attribute__((packed));
 
-/* We want queue entries to be cache line sized for faster retrieval */
+/* Keep queue entry sizes explicit because different queues use different layouts */
 STATIC_ASSERT(sizeof(struct tcp_queue_entry) == 512, tcp_queue_entry_size);
-STATIC_ASSERT(sizeof(struct tcp_queue_bump_entry) == 64, tcp_bump_queue_entry_size);
+STATIC_ASSERT(sizeof(struct tcp_queue_bump_entry) == 32, tcp_bump_queue_entry_size);
+STATIC_ASSERT(sizeof(struct tcp_queue_ctl_entry) == 32, tcp_ctl_queue_entry_size);
+STATIC_ASSERT(sizeof(struct tcp_queue_pkt_entry) == 64, tcp_pkt_queue_entry_size);
 
 #endif

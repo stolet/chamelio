@@ -18,6 +18,12 @@
 
 /* Miscelaneous helpers */
 static __always_inline __u8 is_qe_valid(struct queue_entry *qe, void *shm_end);  
+static __always_inline __u8 is_qe_bump_valid(struct queue_entry *qe,
+    void *shm_end);
+static __always_inline __u8 is_qe_ctl_valid(struct queue_entry *qe,
+    void *shm_end);
+static __always_inline __u8 is_qe_pkt_valid(struct queue_entry *qe,
+    void *shm_end);
 static __always_inline __u8 is_pktlen_valid(void *pkt, void *pkt_end);
 static __always_inline __u8 is_paylen_valid(void *pkt, 
     void *pkt_end, __u16 hdrs_len, __u16 paylen);
@@ -367,7 +373,34 @@ static __always_inline __u8 is_qe_valid(struct queue_entry *qe, void *shm_end)
 {
   void *qe_end;
   
+  qe_end = (__u8 *) qe + sizeof(struct queue_entry);
+  return qe_end < shm_end;
+}
+
+static __always_inline __u8 is_qe_bump_valid(struct queue_entry *qe,
+    void *shm_end)
+{
+  void *qe_end;
+
   qe_end = (__u8 *) qe + sizeof(struct tcp_queue_bump_entry);
+  return qe_end < shm_end;
+}
+
+static __always_inline __u8 is_qe_ctl_valid(struct queue_entry *qe,
+    void *shm_end)
+{
+  void *qe_end;
+
+  qe_end = (__u8 *) qe + sizeof(struct tcp_queue_ctl_entry);
+  return qe_end < shm_end;
+}
+
+static __always_inline __u8 is_qe_pkt_valid(struct queue_entry *qe,
+    void *shm_end)
+{
+  void *qe_end;
+
+  qe_end = (__u8 *) qe + sizeof(struct tcp_queue_pkt_entry);
   return qe_end < shm_end;
 }
 
@@ -485,8 +518,8 @@ static __always_inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
   struct equeue *sig_q;
   struct equeue *pkt_q;
   struct tcp_ctl_cfg *cfg;
-  struct tcp_queue_bump_entry *sig_qe;
-  struct tcp_queue_bump_entry *pkt_qe;
+  struct tcp_queue_ctl_entry *sig_qe;
+  struct tcp_queue_pkt_entry *pkt_qe;
   struct cham_map *map;
 
   /* Get control configuration containing queue ids */
@@ -497,13 +530,13 @@ static __always_inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
 
   /* Get first available entry in end of pkt queue */
   pkt_q = &ctx->equeues[cfg->fast_slow_pkt_qid].eq;
-  pkt_qe = ebpf_queue_tail(pkt_q, sizeof(struct tcp_queue_bump_entry));
+  pkt_qe = ebpf_queue_tail(pkt_q, sizeof(struct tcp_queue_pkt_entry));
   if (pkt_qe == NULL)
     return -1;
 
   /* Get first available entry in end of signal queue */
   sig_q = &ctx->equeues[cfg->fast_slow_sig_qid].eq;
-  sig_qe = ebpf_queue_tail(sig_q, sizeof(struct tcp_queue_bump_entry));
+  sig_qe = ebpf_queue_tail(sig_q, sizeof(struct tcp_queue_ctl_entry));
   if (sig_qe == NULL)
     return -1;
 
@@ -798,10 +831,15 @@ static __always_inline void tx_sock_tx_bump(struct tcp_sock *sock,
 
 static __always_inline int deq_handle_bump_tx(struct cham_ebpf_ctx *ctx)
 {
+  __u8 qe_valid;
   struct tcp_sock *sock;
   struct tcp_queue_bump_entry *qe;
   struct tcp_queue_bump_cham_tx *bump;
   struct cham_map *map;
+
+  qe_valid = is_qe_bump_valid(ctx->qe, ctx->shm_end);
+  if (!qe_valid)
+    return -1;
 
   qe = (struct tcp_queue_bump_entry *) ctx->qe;
   bump = &qe->data.bump_cham_tx;
@@ -825,12 +863,16 @@ static __always_inline int deq_handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
 static __always_inline int deq_handle_bump_rx(struct cham_ebpf_ctx *ctx)
 {
-  __u8 pktlen_valid, rxfull;
+  __u8 qe_valid, pktlen_valid, rxfull;
   __u32 hdrlen;
   struct tcp_sock *sock;
   struct tcp_queue_bump_cham_rx *bump;
   struct tcp_queue_bump_entry *qe;
   struct cham_map *map;
+
+  qe_valid = is_qe_bump_valid(ctx->qe, ctx->shm_end);
+  if (!qe_valid)
+    return -1;
 
   qe = (struct tcp_queue_bump_entry *) ctx->qe;
   bump = &qe->data.bump_cham_rx;
@@ -871,12 +913,17 @@ static __always_inline int deq_handle_bump_rx(struct cham_ebpf_ctx *ctx)
 static __always_inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx)
 {
   int ret;
+  __u8 qe_valid;
   __u32 hdrlen;
   struct cham_map *map;
   struct tcp_ctl_cfg *cfg;
   struct dqueue *ctl_pkt_q;
-  struct tcp_queue_bump_entry *ctl_pkt_qe;
+  struct tcp_queue_pkt_entry *ctl_pkt_qe;
   struct tcp_pkt_inner *ctl_pkt;
+
+  qe_valid = is_qe_ctl_valid(ctx->qe, ctx->shm_end);
+  if (!qe_valid)
+    return -1;
 
   /* Return if we can't find map containing queue ids */
   map = &ctx->maps[CFG_MAP];
@@ -886,8 +933,11 @@ static __always_inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx)
   
   /* Get control packet */
   ctl_pkt_q = &ctx->dqueues[cfg->slow_fast_pkt_qid].dq;
-  ctl_pkt_qe = ebpf_queue_head(ctl_pkt_q, sizeof(struct tcp_queue_bump_entry));
+  ctl_pkt_qe = ebpf_queue_head(ctl_pkt_q, sizeof(struct tcp_queue_pkt_entry));
   if (ctl_pkt_qe == NULL)
+    return -1;
+  qe_valid = is_qe_pkt_valid((struct queue_entry *) ctl_pkt_qe, ctx->shm_end);
+  if (!qe_valid)
     return -1;
   ctl_pkt = &ctl_pkt_qe->data.ctl_pkt.pkt;
   
@@ -906,13 +956,18 @@ static __always_inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx)
 
 static __always_inline int deq_handle_retransmit(struct cham_ebpf_ctx *ctx)
 {
+  __u8 qe_valid;
   struct tcp_sock *sock;
-  struct tcp_queue_bump_entry *qe;
+  struct tcp_queue_ctl_entry *qe;
   struct tcp_queue_ctl_remit *cmd;
   struct cham_map *map;
   
-  qe = (struct tcp_queue_bump_entry *) ctx->qe;
-  cmd = &qe->data.fast_sock;
+  qe_valid = is_qe_ctl_valid(ctx->qe, ctx->shm_end);
+  if (!qe_valid)
+    return -1;
+
+  qe = (struct tcp_queue_ctl_entry *) ctx->qe;
+  cmd = &qe->data.ctl_remit;
 
   /* Return if we can't find socket */
   map = &ctx->maps[SOCK_MAP];

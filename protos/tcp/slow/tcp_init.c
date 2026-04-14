@@ -80,19 +80,19 @@ int tcp_init(struct tcp_slow_context *ctx)
       "TCP control configuration");
 
   protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
-      sizeof(struct tcp_queue_bump_entry), "fast->slow control signal queue");
+      sizeof(struct tcp_queue_ctl_entry), "fast->slow control signal queue");
   ctx->fast_slow_sig_q = tcp_dqueue_open(proto, protoq,
       "fast->slow control signal queue");
   fast_slow_sig_qid = protoq->id;
 
   protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
-      sizeof(struct tcp_queue_bump_entry), "fast->slow control packet queue");
+      sizeof(struct tcp_queue_pkt_entry), "fast->slow control packet queue");
   ctx->fast_slow_pkt_q = tcp_dqueue_open(proto, protoq,
       "fast->slow control packet queue");
   fast_slow_pkt_qid = protoq->id;
 
   protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
-      sizeof(struct tcp_queue_bump_entry), "slow->fast control signal queue");
+      sizeof(struct tcp_queue_ctl_entry), "slow->fast control signal queue");
   ctx->slow_fast_sig_q = tcp_equeue_open(proto, protoq,
       "slow->fast control signal queue");
   slow_fast_sig_qid = protoq->id;
@@ -103,7 +103,7 @@ int tcp_init(struct tcp_slow_context *ctx)
   }
 
   protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
-      sizeof(struct tcp_queue_bump_entry), "slow->fast control packet queue");
+      sizeof(struct tcp_queue_pkt_entry), "slow->fast control packet queue");
   ctx->slow_fast_pkt_q = tcp_equeue_open(proto, protoq,
       "slow->fast control packet queue");
   slow_fast_pkt_qid = protoq->id;
