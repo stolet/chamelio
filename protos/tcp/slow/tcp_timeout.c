@@ -135,7 +135,7 @@ static int sock_retx_tx(struct tcp_slow_context *ctx, struct tcp_sock *sock)
   if (sock_retx_flags(sock, meta->retx_kind, &flags) != 0)
     return -1;
 
-  return tcp_ctrl_tx_reply(ctx, sock->local_ip, sock->local_port,
+  return tcp_ctl_tx_reply(ctx, sock->local_ip, sock->local_port,
       sock->remote_ip, sock->remote_port, sock_retx_seq(sock),
       sock->rx_seq, flags);
 }
@@ -151,13 +151,13 @@ static void sock_retx_expire(struct tcp_slow_context *ctx, struct tcp_sock *sock
       tcp_sock_connect_fail(ctx, sock, ETIMEDOUT);
       break;
     case TCP_RETX_SYNACK:
-      tcp_ctrl_tx_reply(ctx, sock->local_ip, sock->local_port,
+      tcp_ctl_tx_reply(ctx, sock->local_ip, sock->local_port,
           sock->remote_ip, sock->remote_port, sock->tx_seq, sock->rx_seq,
           TAS_TCP_RST | TAS_TCP_ACK);
       tcp_sock_close_final(ctx, sock);
       break;
     case TCP_RETX_FIN:
-      tcp_ctrl_tx_reply(ctx, sock->local_ip, sock->local_port,
+      tcp_ctl_tx_reply(ctx, sock->local_ip, sock->local_port,
           sock->remote_ip, sock->remote_port, sock->tx_seq, sock->rx_seq,
           TAS_TCP_RST | TAS_TCP_ACK);
       tcp_sock_close_final(ctx, sock);

@@ -23,7 +23,7 @@ static inline int poll_guests(struct control_context *ctx);
 static inline int poll_timeouts(struct control_context *ctx);
 static inline void log_fast_batch_stats(struct control_context *ctx);
 
-int control_context_init(struct control_context *ctrl_ctx, 
+int control_context_init(struct control_context *ctl_ctx, 
     struct nic_context *nic_ctx, struct configuration *config, 
     struct shm_handle **fc_handles, struct shm_handle **cf_handles,
     struct shm_handle **txq_handles)
@@ -35,28 +35,28 @@ int control_context_init(struct control_context *ctrl_ctx,
   struct dqueue **fast_ctl_qs;
   struct equeue **ctl_fast_qs, **txqs;
 
-  ctrl_ctx->config = config;
-  ctrl_ctx->nic_ctx = nic_ctx;
-  ctrl_ctx->comb_bc.data = NULL;
-  ctrl_ctx->comb_bc.len = 0;
-  ctrl_ctx->f_ctxs = NULL;
-  ctrl_ctx->fast_batch_last = NULL;
-  ctrl_ctx->fast_stats_tsc = 0;
+  ctl_ctx->config = config;
+  ctl_ctx->nic_ctx = nic_ctx;
+  ctl_ctx->comb_bc.data = NULL;
+  ctl_ctx->comb_bc.len = 0;
+  ctl_ctx->f_ctxs = NULL;
+  ctl_ctx->fast_batch_last = NULL;
+  ctl_ctx->fast_stats_tsc = 0;
 
-  if (control_ebpf_init(ctrl_ctx) != 0)
+  if (control_ebpf_init(ctl_ctx) != 0)
   {
     LOG_ERROR("failed to build infra bytecode");
     return -1;
   }
 
-  ctrl_ctx->ivshmem_uxfd = -1;
-  ctrl_ctx->ivshmem_epfd = -1;
+  ctl_ctx->ivshmem_uxfd = -1;
+  ctl_ctx->ivshmem_epfd = -1;
 
-  ctrl_ctx->guest_uxfd = -1;
-  ctrl_ctx->guest_epfd = -1;
+  ctl_ctx->guest_uxfd = -1;
+  ctl_ctx->guest_epfd = -1;
 
   /* Initialize ARP table to default values */
-  arp_table_init(&ctrl_ctx->arp_table);
+  arp_table_init(&ctl_ctx->arp_table);
   
   /* Initialize timeout manager */
   tomgr = tomgr_init();
@@ -65,7 +65,7 @@ int control_context_init(struct control_context *ctrl_ctx,
     LOG_ERROR("failed to initialise timeout manager");
     return -1;
   }
-  ctrl_ctx->tomgr = tomgr;
+  ctl_ctx->tomgr = tomgr;
 
   /* Calibrate tsc so we can get accurate time */
   if (clock_calibrate_tsc() != 0)
@@ -81,8 +81,8 @@ int control_context_init(struct control_context *ctrl_ctx,
     LOG_ERROR("failed to allocate list of fast->control queues");
     goto free_tomgr;
   }
-  ctrl_ctx->fast_ctl_qs = fast_ctl_qs;
-  ctrl_ctx->next_core = 0;
+  ctl_ctx->fast_ctl_qs = fast_ctl_qs;
+  ctl_ctx->next_core = 0;
 
   /* Allocate pointer list for queues from control to fast */
   ctl_fast_qs = malloc(sizeof(struct equeue *) * config->fp_cores_max);
@@ -91,7 +91,7 @@ int control_context_init(struct control_context *ctrl_ctx,
     LOG_ERROR("failed to alloacate list of control->fast queues");
     goto free_fast_control_list;
   }
-  ctrl_ctx->ctl_fast_qs = ctl_fast_qs;
+  ctl_ctx->ctl_fast_qs = ctl_fast_qs;
 
   /* Allocate pointer list for queues containing packets for transmission */
   txqs = malloc(sizeof (struct equeue *) * config->fp_cores_max);
@@ -100,10 +100,10 @@ int control_context_init(struct control_context *ctrl_ctx,
     LOG_ERROR("failed to allocate list of control-path transmit queues");
     goto free_control_fast_list;
   }
-  ctrl_ctx->txqs = txqs;
-  ctrl_ctx->fast_batch_last = calloc(config->fp_cores_max,
-      sizeof(*ctrl_ctx->fast_batch_last));
-  if (ctrl_ctx->fast_batch_last == NULL)
+  ctl_ctx->txqs = txqs;
+  ctl_ctx->fast_batch_last = calloc(config->fp_cores_max,
+      sizeof(*ctl_ctx->fast_batch_last));
+  if (ctl_ctx->fast_batch_last == NULL)
   {
     LOG_ERROR("failed to allocate fast-path batch stat snapshots");
     goto free_control_txqs;
@@ -119,7 +119,7 @@ int control_context_init(struct control_context *ctrl_ctx,
       LOG_ERROR("failed to create fast to control path queue");
       goto free_control_txqs;
     }
-    ctrl_ctx->ctl_fast_qs[i] = cfq;
+    ctl_ctx->ctl_fast_qs[i] = cfq;
 
     fcq = dqueue_new(config->cham_queue_len, sizeof(struct queue_entry),
                      fc_handles[i]->addr, fc_handles[i]->off);
@@ -128,7 +128,7 @@ int control_context_init(struct control_context *ctrl_ctx,
       LOG_ERROR("failed to create control to fast path queue");
       goto free_control_txqs;
     }
-    ctrl_ctx->fast_ctl_qs[i] = fcq;
+    ctl_ctx->fast_ctl_qs[i] = fcq;
     
     txq = equeue_new(config->control_txq_len, config->control_txq_pkt_len, 
         txq_handles[i]->addr, txq_handles[i]->off);
@@ -137,23 +137,23 @@ int control_context_init(struct control_context *ctrl_ctx,
       LOG_ERROR("failed to create control path transmit queue");
       goto free_control_txqs;
     }
-    ctrl_ctx->txqs[i] = txq;
+    ctl_ctx->txqs[i] = txq;
   }
 
-  ctrl_ctx->n_guests = 0;
-  ctrl_ctx->next_guest = 0;
+  ctl_ctx->n_guests = 0;
+  ctl_ctx->next_guest = 0;
   if (config->perf_iso)
   {
-    ctrl_ctx->ts_refresh = clock_rdtsc();
-    ctrl_ctx->budget_cap = clock_us_to_tsc(config->perf_iso_cap) *
+    ctl_ctx->ts_refresh = clock_rdtsc();
+    ctl_ctx->budget_cap = clock_us_to_tsc(config->perf_iso_cap) *
         config->perf_iso_boost;
   }
-  ctrl_ctx->fast_stats_tsc = clock_rdtsc();
+  ctl_ctx->fast_stats_tsc = clock_rdtsc();
 
   return 0;
 
 free_control_txqs:
-  free(ctrl_ctx->fast_batch_last);
+  free(ctl_ctx->fast_batch_last);
   free(txqs);
 free_control_fast_list:
   free(ctl_fast_qs);

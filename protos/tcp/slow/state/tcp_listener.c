@@ -216,7 +216,7 @@ void tcp_listener_abort_children(struct tcp_slow_context *ctx,
       continue;
 
     if (sock->remote_port != 0)
-      tcp_ctrl_tx(ctx, sock, TAS_TCP_RST | TAS_TCP_ACK);
+      tcp_ctl_tx(ctx, sock, TAS_TCP_RST | TAS_TCP_ACK);
     tcp_sock_close_final(ctx, sock);
   }
 }

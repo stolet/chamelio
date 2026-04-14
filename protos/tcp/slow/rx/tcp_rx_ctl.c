@@ -7,11 +7,11 @@
 
 /*** RX Helpers ***************************************************************/
 
-static int ctrl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt);
-static void ctrl_rx_parse(const struct tcp_pkt_inner *pkt,
-    struct tcp_rx_ctrl *rx);
-static int sock_ctrl_rx(struct tcp_slow_context *ctx, struct tcp_sock *sock,
-    const struct tcp_rx_ctrl *rx);
+static int ctl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt);
+static void ctl_rx_parse(const struct tcp_pkt_inner *pkt,
+    struct tcp_rx_ctl *rx);
+static int sock_ctl_rx(struct tcp_slow_context *ctx, struct tcp_sock *sock,
+    const struct tcp_rx_ctl *rx);
 
 /*** RX Poll ******************************************************************/
 
@@ -31,7 +31,7 @@ int tcp_fast_poll(struct tcp_slow_context *ctx)
     nr++;
     switch (sig_qe->type)
     {
-      case TCP_QUEUE_CTRL_RX:
+      case TCP_QUEUE_CTL_RX:
         pkt_qe = queue_head(ctx->fast_slow_pkt_q);
         if (pkt_qe == NULL)
         {
@@ -39,7 +39,7 @@ int tcp_fast_poll(struct tcp_slow_context *ctx)
           queue_dequeue(ctx->fast_slow_sig_q);
           break;
         }
-        if (pkt_qe->type != TCP_QUEUE_CTRL_RX_PKT)
+        if (pkt_qe->type != TCP_QUEUE_CTL_RX_PKT)
         {
           LOG_WARN("unexpected fast->slow TCP control packet type=%d",
               pkt_qe->type);
@@ -48,7 +48,7 @@ int tcp_fast_poll(struct tcp_slow_context *ctx)
           break;
         }
 
-        ctrl_rx(ctx, &pkt_qe->data.ctl_pkt.pkt);
+        ctl_rx(ctx, &pkt_qe->data.ctl_pkt.pkt);
         queue_dequeue(ctx->fast_slow_pkt_q);
         break;
       default:
@@ -64,20 +64,20 @@ int tcp_fast_poll(struct tcp_slow_context *ctx)
 
 /*** RX Helpers ***************************************************************/
 
-static int ctrl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt)
+static int ctl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt)
 {
   __u32 listener_id;
-  struct tcp_rx_ctrl rx;
+  struct tcp_rx_ctl rx;
   struct tcp_sock *listen_sock;
   struct tcp_sock *sock;
 
-  ctrl_rx_parse(pkt, &rx);
+  ctl_rx_parse(pkt, &rx);
   sock = tcp_flow_lookup(ctx, rx.local_ip, rx.local_port, rx.remote_ip,
       rx.remote_port);
   if (sock != NULL)
   {
     util_spin_lock(&sock->lock);
-    sock_ctrl_rx(ctx, sock, &rx);
+    sock_ctl_rx(ctx, sock, &rx);
     util_spin_unlock(&sock->lock);
     return 0;
   }
@@ -88,7 +88,7 @@ static int ctrl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt)
   listener_id = tcp_listener_lookup(ctx, rx.local_ip, rx.local_port);
   if (listener_id == ID_INVALID)
   {
-    tcp_ctrl_tx_reply(ctx, rx.local_ip, rx.local_port, rx.remote_ip,
+    tcp_ctl_tx_reply(ctx, rx.local_ip, rx.local_port, rx.remote_ip,
         rx.remote_port, 0, rx.seq + 1, TAS_TCP_RST | TAS_TCP_ACK);
     return 0;
   }
@@ -97,7 +97,7 @@ static int ctrl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt)
   return tcp_rx_listen_syn(ctx, listen_sock, &rx);
 }
 
-static void ctrl_rx_parse(const struct tcp_pkt_inner *pkt, struct tcp_rx_ctrl *rx)
+static void ctl_rx_parse(const struct tcp_pkt_inner *pkt, struct tcp_rx_ctl *rx)
 {
   const struct ip_hdr *ip;
   const struct tcp_hdr *tcp;
@@ -114,8 +114,8 @@ static void ctrl_rx_parse(const struct tcp_pkt_inner *pkt, struct tcp_rx_ctrl *r
   rx->flags = TCPH_FLAGS(tcp);
 }
 
-static int sock_ctrl_rx(struct tcp_slow_context *ctx, struct tcp_sock *sock,
-    const struct tcp_rx_ctrl *rx)
+static int sock_ctl_rx(struct tcp_slow_context *ctx, struct tcp_sock *sock,
+    const struct tcp_rx_ctl *rx)
 {
   switch (sock->state)
   {

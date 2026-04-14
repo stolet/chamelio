@@ -452,7 +452,7 @@ static int sock_connect_start(struct tcp_slow_context *ctx, struct tcp_sock *soc
   flags = TAS_TCP_SYN;
   if ((sock->flags & TCP_SOCK_FLAG_ECN) != 0)
     flags |= TAS_TCP_ECE | TAS_TCP_CWR;
-  if (tcp_ctrl_tx(ctx, sock, flags) != 0)
+  if (tcp_ctl_tx(ctx, sock, flags) != 0)
   {
     tcp_sock_connect_fail(ctx, sock, EAGAIN);
     return -1;
@@ -482,7 +482,7 @@ static int sock_shutdown_start(struct tcp_slow_context *ctx, struct tcp_sock *so
 {
   sock->flags |= TCP_SOCK_FLAG_SHUT_RD | TCP_SOCK_FLAG_SHUT_WR;
   sock->state = TCP_SOCK_STATE_FIN_WAIT1;
-  if (tcp_ctrl_tx(ctx, sock, TAS_TCP_FIN | TAS_TCP_ACK) != 0)
+  if (tcp_ctl_tx(ctx, sock, TAS_TCP_FIN | TAS_TCP_ACK) != 0)
   {
     tcp_sock_close_final(ctx, sock);
     return -1;
@@ -500,7 +500,7 @@ static void sock_abort_open(struct tcp_slow_context *ctx, struct tcp_sock *sock)
 {
   if (sock->remote_port != 0)
   {
-    tcp_ctrl_tx(ctx, sock, sock->rx_seq == 0 ? TAS_TCP_RST :
+    tcp_ctl_tx(ctx, sock, sock->rx_seq == 0 ? TAS_TCP_RST :
         TAS_TCP_RST | TAS_TCP_ACK);
   }
   tcp_sock_close_final(ctx, sock);

@@ -19,7 +19,7 @@ enum tcp_retx_kind {
 
 /*** Types ********************************************************************/
 
-struct tcp_rx_ctrl {
+struct tcp_rx_ctl {
   __u32 local_ip;
   __u32 remote_ip;
   __u32 seq;
@@ -50,9 +50,9 @@ static inline struct tcp_flow_bucket *tcp_flow_map(struct tcp_slow_context *ctx)
   return ctx->proto->shm_base + ctx->flow_map->off;
 }
 
-static inline struct tcp_ctrl_cfg *tcp_ctrl_cfg_map(struct tcp_slow_context *ctx)
+static inline struct tcp_ctl_cfg *tcp_ctl_cfg_map(struct tcp_slow_context *ctx)
 {
-  return ctx->proto->shm_base + ctx->ctrl_map->off;
+  return ctx->proto->shm_base + ctx->ctl_map->off;
 }
 
 static inline struct tcp_sock_meta_slow *tcp_sock_meta(
@@ -160,11 +160,11 @@ struct tcp_sock *tcp_flow_lookup(struct tcp_slow_context *ctx, __u32 local_ip,
 
 /*** Ctrl TX API **************************************************************/
 
-int tcp_ctrl_tx(struct tcp_slow_context *ctx, struct tcp_sock *sock,
+int tcp_ctl_tx(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     __u16 flags);
-int tcp_ctrl_tx_resend(struct tcp_slow_context *ctx, struct tcp_sock *sock,
+int tcp_ctl_tx_resend(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     __u16 flags);
-int tcp_ctrl_tx_reply(struct tcp_slow_context *ctx, __u32 local_ip,
+int tcp_ctl_tx_reply(struct tcp_slow_context *ctx, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags);
 int tcp_tx_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock);
@@ -183,17 +183,17 @@ int tcp_app_listen_newconn(struct tcp_slow_context *ctx,
 /*** Open API *****************************************************************/
 
 int tcp_rx_syn_sent(struct tcp_slow_context *ctx, struct tcp_sock *sock,
-    const struct tcp_rx_ctrl *rx);
+    const struct tcp_rx_ctl *rx);
 int tcp_rx_syn_recv(struct tcp_slow_context *ctx, struct tcp_sock *sock,
-    const struct tcp_rx_ctrl *rx);
+    const struct tcp_rx_ctl *rx);
 int tcp_rx_listen_syn(struct tcp_slow_context *ctx, struct tcp_sock *listen_sock,
-    const struct tcp_rx_ctrl *rx);
+    const struct tcp_rx_ctl *rx);
 
 /*** Close API ****************************************************************/
 
 int tcp_rx_established(struct tcp_slow_context *ctx, struct tcp_sock *sock,
-    const struct tcp_rx_ctrl *rx);
+    const struct tcp_rx_ctl *rx);
 int tcp_rx_fin_wait1(struct tcp_slow_context *ctx, struct tcp_sock *sock,
-    const struct tcp_rx_ctrl *rx);
+    const struct tcp_rx_ctl *rx);
 
 #endif

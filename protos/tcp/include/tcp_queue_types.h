@@ -50,15 +50,15 @@ enum tcp_queue_type {
   /* Bump Chamelio when app calls recv */
   TCP_QUEUE_BUMP_CHAM_RX,
   /* Signal that a TCP control packet is ready for transmission */
-  TCP_QUEUE_CTRL_TX,
+  TCP_QUEUE_CTL_TX,
   /* Packet data for a TCP control packet to transmit */
-  TCP_QUEUE_CTRL_TX_PKT,
+  TCP_QUEUE_CTL_TX_PKT,
   /* Retransmit outstanding data for a socket in the fast-path */
   TCP_QUEUE_TX_RETRANSMIT,
   /* Signal that a punted TCP control packet is ready */
-  TCP_QUEUE_CTRL_RX,
+  TCP_QUEUE_CTL_RX,
   /* Packet data for a punted TCP control packet */
-  TCP_QUEUE_CTRL_RX_PKT,
+  TCP_QUEUE_CTL_RX_PKT,
   /* Bump app when peer ACKs sent bytes */
   TCP_QUEUE_BUMP_APP_TX,
   /* Bump app when Chamelio receives a packet */

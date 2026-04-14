@@ -138,7 +138,7 @@ struct tcp_slow_context {
   /* Maps 4-tuples to sockets for fast-path lookup */
   struct proto_map_lib *flow_map;
   /* Shared protocol config visible to the fast-path */
-  struct proto_map_lib *ctrl_map;
+  struct proto_map_lib *ctl_map;
 
   /* Slow-path listener state indexed by socket ID */
   struct tcp_listener_slow *listeners;

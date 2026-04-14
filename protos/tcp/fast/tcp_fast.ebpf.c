@@ -351,7 +351,7 @@ int event_deq(struct cham_ebpf_ctx *ctx)
       return deq_handle_bump_tx(ctx);
     case TCP_QUEUE_BUMP_CHAM_RX:
       return deq_handle_bump_rx(ctx);
-    case TCP_QUEUE_CTRL_TX:
+    case TCP_QUEUE_CTL_TX:
       return deq_handle_ctl_tx(ctx);
     case TCP_QUEUE_TX_RETRANSMIT:
       return deq_handle_retransmit(ctx);
@@ -484,14 +484,14 @@ static __always_inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
   int ret;
   struct equeue *sig_q;
   struct equeue *pkt_q;
-  struct tcp_ctrl_cfg *cfg;
+  struct tcp_ctl_cfg *cfg;
   struct tcp_queue_bump_entry *sig_qe;
   struct tcp_queue_bump_entry *pkt_qe;
   struct cham_map *map;
 
   /* Get control configuration containing queue ids */
   map = &ctx->maps[CFG_MAP];
-  cfg = ebpf_map_lookup(map->addr, 0, sizeof(struct tcp_ctrl_cfg));
+  cfg = ebpf_map_lookup(map->addr, 0, sizeof(struct tcp_ctl_cfg));
   if (cfg == NULL)
     return -1;
 
@@ -514,12 +514,12 @@ static __always_inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
   sig_qe->data.ctl_sig.ready = 1;
 
   /* Push packet to queue */
-  ret = queue_enqueue(pkt_q, TCP_QUEUE_CTRL_RX_PKT);
+  ret = queue_enqueue(pkt_q, TCP_QUEUE_CTL_RX_PKT);
   if (ret != 0)
     return -1;
 
   /* Push signal that packet is in queue */
-  ret = queue_enqueue(sig_q, TCP_QUEUE_CTRL_RX);
+  ret = queue_enqueue(sig_q, TCP_QUEUE_CTL_RX);
   if (ret != 0)
     return -1;
 
@@ -873,14 +873,14 @@ static __always_inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx)
   int ret;
   __u32 hdrlen;
   struct cham_map *map;
-  struct tcp_ctrl_cfg *cfg;
+  struct tcp_ctl_cfg *cfg;
   struct dqueue *ctl_pkt_q;
   struct tcp_queue_bump_entry *ctl_pkt_qe;
   struct tcp_pkt_inner *ctl_pkt;
 
   /* Return if we can't find map containing queue ids */
   map = &ctx->maps[CFG_MAP];
-  cfg = ebpf_map_lookup(map->addr, 0, sizeof(struct tcp_ctrl_cfg));
+  cfg = ebpf_map_lookup(map->addr, 0, sizeof(struct tcp_ctl_cfg));
   if (cfg == NULL)
     return -1;
   

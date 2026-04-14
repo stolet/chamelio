@@ -153,7 +153,7 @@ struct tcp_flow_bucket {
 } __attribute__((packed));
 
 /* Shared protocol configuration visible to the fast-path */
-struct tcp_ctrl_cfg {
+struct tcp_ctl_cfg {
   /* Signal queue used by fast-path to punt control packets to slow-path */
   __u16 fast_slow_sig_qid;
   /* Packet queue used by fast-path to punt control packets to slow-path */

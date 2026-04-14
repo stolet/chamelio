@@ -42,12 +42,12 @@ int tcp_init(struct tcp_slow_context *ctx)
   __u16 slow_fast_sig_qid;
   __u16 slow_fast_pkt_qid;
   struct proto_lib *proto;
-  struct proto_map_lib *ctrl_map;
+  struct proto_map_lib *ctl_map;
   struct proto_map_lib *flow_map;
   struct proto_map_lib *port_map;
   struct proto_map_lib *socks_map;
   struct proto_queue_lib *protoq;
-  struct tcp_ctrl_cfg *cfg;
+  struct tcp_ctl_cfg *cfg;
   struct tcp_flow_bucket *flows;
   struct tcp_listener_slow *listeners;
   struct tcp_port *bound_ports;
@@ -76,22 +76,22 @@ int tcp_init(struct tcp_slow_context *ctx)
       "socket map");
   flow_map = tcp_map_new(proto, TCP_FLOW_BUCKETS,
       sizeof(struct tcp_flow_bucket), "TCP flow lookup");
-  ctrl_map = tcp_map_new(proto, 1, sizeof(struct tcp_ctrl_cfg),
+  ctl_map = tcp_map_new(proto, 1, sizeof(struct tcp_ctl_cfg),
       "TCP control configuration");
 
-  protoq = tcp_queue_new(proto, ctx->config.ctrlq_len,
+  protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
       sizeof(struct tcp_queue_bump_entry), "fast->slow control signal queue");
   ctx->fast_slow_sig_q = tcp_dqueue_open(proto, protoq,
       "fast->slow control signal queue");
   fast_slow_sig_qid = protoq->id;
 
-  protoq = tcp_queue_new(proto, ctx->config.ctrlq_len,
+  protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
       sizeof(struct tcp_queue_bump_entry), "fast->slow control packet queue");
   ctx->fast_slow_pkt_q = tcp_dqueue_open(proto, protoq,
       "fast->slow control packet queue");
   fast_slow_pkt_qid = protoq->id;
 
-  protoq = tcp_queue_new(proto, ctx->config.ctrlq_len,
+  protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
       sizeof(struct tcp_queue_bump_entry), "slow->fast control signal queue");
   ctx->slow_fast_sig_q = tcp_equeue_open(proto, protoq,
       "slow->fast control signal queue");
@@ -102,7 +102,7 @@ int tcp_init(struct tcp_slow_context *ctx)
     abort();
   }
 
-  protoq = tcp_queue_new(proto, ctx->config.ctrlq_len,
+  protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
       sizeof(struct tcp_queue_bump_entry), "slow->fast control packet queue");
   ctx->slow_fast_pkt_q = tcp_equeue_open(proto, protoq,
       "slow->fast control packet queue");
@@ -114,7 +114,7 @@ int tcp_init(struct tcp_slow_context *ctx)
   flows = proto->shm_base + flow_map->off;
   tcp_flow_tbl_init(flows);
 
-  cfg = proto->shm_base + ctrl_map->off;
+  cfg = proto->shm_base + ctl_map->off;
   cfg->fast_slow_sig_qid = fast_slow_sig_qid;
   cfg->fast_slow_pkt_qid = fast_slow_pkt_qid;
   cfg->slow_fast_sig_qid = slow_fast_sig_qid;
@@ -134,7 +134,7 @@ int tcp_init(struct tcp_slow_context *ctx)
   ctx->socks_map = socks_map;
   ctx->port_map = port_map;
   ctx->flow_map = flow_map;
-  ctx->ctrl_map = ctrl_map;
+  ctx->ctl_map = ctl_map;
   ctx->listeners = listeners;
   ctx->sock_meta = sock_meta;
   ctx->bound_ports = bound_ports;

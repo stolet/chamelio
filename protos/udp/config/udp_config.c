@@ -13,7 +13,7 @@ enum cfg_params {
   CP_TXBUF_SZ,
   CP_APPQ_LEN,
   CP_BUMPQ_LEN,
-  CP_CTRLQ_LEN,
+  CP_CTLQ_LEN,
 };
 
 static struct option opts[] = {
@@ -32,9 +32,9 @@ static struct option opts[] = {
   { .name = "bumpq-len",
     .has_arg = required_argument,
     .val = CP_BUMPQ_LEN },
-  { .name = "ctrlq-len",
+  { .name = "ctlq-len",
     .has_arg = required_argument,
-    .val = CP_CTRLQ_LEN },
+    .val = CP_CTLQ_LEN },
 };
 
 static int config_defaults(struct udp_configuration *c);
@@ -76,8 +76,8 @@ int udp_config_parse(struct udp_configuration *c, int argc, char **argv)
         if (parse_u32(optarg, &c->bumpq_len) != 0)
           goto failed;
         break;
-      case CP_CTRLQ_LEN:
-        if (parse_u32(optarg, &c->ctrlq_len) != 0)
+      case CP_CTLQ_LEN:
+        if (parse_u32(optarg, &c->ctlq_len) != 0)
           goto failed;
         break;
       case -1:
@@ -105,7 +105,7 @@ static int config_defaults(struct udp_configuration *c)
   c->txbuf_sz = 32768;
   c->appq_len = 128;
   c->bumpq_len = 65536;
-  c->ctrlq_len = 1024;
+  c->ctlq_len = 1024;
   return 0;
 }
 
@@ -140,7 +140,7 @@ static void print_usage(struct udp_configuration *c, char *progname)
           " [default: %u]\n"
       "  --bumpq-len=NELEMS                     Bump queue length in elements"
           " [default: %u]\n"
-      "  --ctrlq-len=NELEMS                     Control queue length in elements"
+      "  --ctlq-len=NELEMS                     Control queue length in elements"
           " [default: %u]\n"
       "\n"
       "Virtualization:\n"
@@ -148,5 +148,5 @@ static void print_usage(struct udp_configuration *c, char *progname)
           "[default: disabled]\n"
       "\n"
       , progname, c->rxbuf_sz, c->txbuf_sz, c->appq_len, c->bumpq_len,
-      c->ctrlq_len);
+      c->ctlq_len);
 }

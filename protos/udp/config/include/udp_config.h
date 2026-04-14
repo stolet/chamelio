@@ -17,7 +17,7 @@ struct udp_configuration {
   /* Number of elements in the bump queues */
   __u32 bumpq_len;
   /* Number of elements in the control queues */
-  __u32 ctrlq_len;
+  __u32 ctlq_len;
 };
 
 int udp_config_parse(struct udp_configuration *c, int argc, char **argv);

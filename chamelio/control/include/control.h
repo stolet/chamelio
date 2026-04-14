@@ -136,7 +136,7 @@ struct control_context {
   struct netvirt_table *gid_table;
 };
 
-int control_context_init(struct control_context *ctrl_ctx, 
+int control_context_init(struct control_context *ctl_ctx, 
     struct nic_context *nic_ctx, struct configuration *config, 
     struct shm_handle **fc_handles, struct shm_handle **cf_handles,
     struct shm_handle **txq_handles);

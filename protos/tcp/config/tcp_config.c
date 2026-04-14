@@ -13,7 +13,7 @@ enum cfg_params {
   CP_TXBUF_SZ,
   CP_APPQ_LEN,
   CP_BUMPQ_LEN,
-  CP_CTRLQ_LEN,
+  CP_CTLQ_LEN,
   CP_TCP_RTT_INIT,
   CP_CC,
   CP_CC_CONTROL_GRANULARITY,
@@ -44,9 +44,9 @@ static struct option opts[] = {
   { .name = "bumpq-len",
     .has_arg = required_argument,
     .val = CP_BUMPQ_LEN },
-  { .name = "ctrlq-len",
+  { .name = "ctlq-len",
     .has_arg = required_argument,
-    .val = CP_CTRLQ_LEN },
+    .val = CP_CTLQ_LEN },
   { .name = "cc-rtt-init",
     .has_arg = required_argument,
     .val = CP_TCP_RTT_INIT },
@@ -128,8 +128,8 @@ int tcp_config_parse(struct tcp_configuration *c, int argc, char **argv)
         if (parse_u32(optarg, &c->bumpq_len) != 0)
           goto failed;
         break;
-      case CP_CTRLQ_LEN:
-        if (parse_u32(optarg, &c->ctrlq_len) != 0)
+      case CP_CTLQ_LEN:
+        if (parse_u32(optarg, &c->ctlq_len) != 0)
           goto failed;
         break;
       case CP_TCP_RTT_INIT:
@@ -213,7 +213,7 @@ static int config_defaults(struct tcp_configuration *c)
   c->txbuf_sz = 32768;
   c->appq_len = 128;
   c->bumpq_len = 65536;
-  c->ctrlq_len = 1024;
+  c->ctlq_len = 1024;
   c->cc_rtt_init = 50;
   c->cc_algorithm = TCP_CC_ALGO_CONST_RATE;
   c->cc_control_granularity = 50;
@@ -310,7 +310,7 @@ static void print_usage(struct tcp_configuration *c, char *progname)
           " [default: %u]\n"
       "  --bumpq-len=NELEMS                     Bump queue length in elements"
           " [default: %u]\n"
-      "  --ctrlq-len=NELEMS                     Control queue length in elements"
+      "  --ctlq-len=NELEMS                     Control queue length in elements"
           " [default: %u]\n"
       "\n"
       "Virtualization:\n"
@@ -345,7 +345,7 @@ static void print_usage(struct tcp_configuration *c, char *progname)
           " unlimited [default: %u]\n"
       "\n"
       , progname, c->rxbuf_sz, c->txbuf_sz, c->appq_len, c->bumpq_len,
-      c->ctrlq_len,
+      c->ctlq_len,
       c->cc_algorithm == TCP_CC_ALGO_DCTCP_RATE ? "dctcp-rate" : "const-rate",
       c->cc_rtt_init, c->cc_control_granularity, c->cc_control_interval,
       c->cc_rexmit_ints, (double) c->cc_dctcp_weight / UINT_MAX,

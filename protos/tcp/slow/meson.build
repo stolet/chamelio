@@ -11,7 +11,7 @@ tcp_slow_srcs = files(
   'app/tcp_app_req.c',
   'app/tcp_app_res.c',
   'app/tcp_appif.c',
-  'rx/tcp_rx_ctrl.c',
+  'rx/tcp_rx_ctl.c',
   'rx/tcp_rx_open.c',
   'rx/tcp_rx_close.c',
   'tcp_cc.c',

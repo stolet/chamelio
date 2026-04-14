@@ -6,14 +6,14 @@
 
 static int sock_ack_valid(const struct tcp_sock *sock, __u32 ack);
 static void sock_active_established(struct tcp_slow_context *ctx,
-    struct tcp_sock *sock, const struct tcp_rx_ctrl *rx);
+    struct tcp_sock *sock, const struct tcp_rx_ctl *rx);
 static int sock_passive_established(struct tcp_slow_context *ctx,
-    struct tcp_sock *sock, const struct tcp_rx_ctrl *rx);
+    struct tcp_sock *sock, const struct tcp_rx_ctl *rx);
 
 /*** Open API *****************************************************************/
 
 int tcp_rx_syn_sent(struct tcp_slow_context *ctx, struct tcp_sock *sock,
-    const struct tcp_rx_ctrl *rx)
+    const struct tcp_rx_ctl *rx)
 {
   if ((rx->flags & TAS_TCP_RST) != 0)
   {
@@ -30,13 +30,13 @@ int tcp_rx_syn_sent(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     return 0;
 
   sock_active_established(ctx, sock, rx);
-  tcp_ctrl_tx(ctx, sock, TAS_TCP_ACK);
+  tcp_ctl_tx(ctx, sock, TAS_TCP_ACK);
   tcp_app_connect_res(tcp_sock_actx(ctx, sock), sock->opaque, 0, sock);
   return 0;
 }
 
 int tcp_rx_syn_recv(struct tcp_slow_context *ctx, struct tcp_sock *sock,
-    const struct tcp_rx_ctrl *rx)
+    const struct tcp_rx_ctl *rx)
 {
   __u32 listener_id;
   struct tcp_sock *listen_sock;
@@ -49,7 +49,7 @@ int tcp_rx_syn_recv(struct tcp_slow_context *ctx, struct tcp_sock *sock,
 
   if ((rx->flags & TAS_TCP_SYN) != 0 && (rx->flags & TAS_TCP_ACK) == 0)
   {
-    tcp_ctrl_tx_resend(ctx, sock, TAS_TCP_SYN | TAS_TCP_ACK |
+    tcp_ctl_tx_resend(ctx, sock, TAS_TCP_SYN | TAS_TCP_ACK |
         ((sock->flags & TCP_SOCK_FLAG_ECN) != 0 ? TAS_TCP_ECE : 0));
     return 0;
   }
@@ -66,7 +66,7 @@ int tcp_rx_syn_recv(struct tcp_slow_context *ctx, struct tcp_sock *sock,
 }
 
 int tcp_rx_listen_syn(struct tcp_slow_context *ctx, struct tcp_sock *listen_sock,
-    const struct tcp_rx_ctrl *rx)
+    const struct tcp_rx_ctl *rx)
 {
   int ret;
   struct tcp_listener_slow *listener;
@@ -75,7 +75,7 @@ int tcp_rx_listen_syn(struct tcp_slow_context *ctx, struct tcp_sock *listen_sock
   listener = &ctx->listeners[listen_sock->id];
   if (!listener->active || listener->backlog_used >= listener->backlog_len)
   {
-    tcp_ctrl_tx_reply(ctx, rx->local_ip, rx->local_port, rx->remote_ip,
+    tcp_ctl_tx_reply(ctx, rx->local_ip, rx->local_port, rx->remote_ip,
         rx->remote_port, 0, rx->seq + 1, TAS_TCP_RST | TAS_TCP_ACK);
     return 0;
   }
@@ -109,18 +109,18 @@ int tcp_rx_listen_syn(struct tcp_slow_context *ctx, struct tcp_sock *listen_sock
   if (ret != 0)
   {
     sock->state = TCP_SOCK_STATE_CLOSED;
-    tcp_ctrl_tx_reply(ctx, rx->local_ip, rx->local_port, rx->remote_ip,
+    tcp_ctl_tx_reply(ctx, rx->local_ip, rx->local_port, rx->remote_ip,
         rx->remote_port, 0, rx->seq + 1, TAS_TCP_RST | TAS_TCP_ACK);
     return -1;
   }
 
   listener->backlog_used++;
-  ret = tcp_ctrl_tx(ctx, sock, TAS_TCP_SYN | TAS_TCP_ACK |
+  ret = tcp_ctl_tx(ctx, sock, TAS_TCP_SYN | TAS_TCP_ACK |
       ((sock->flags & TCP_SOCK_FLAG_ECN) != 0 ? TAS_TCP_ECE : 0));
   if (ret != 0)
   {
     tcp_sock_close_final(ctx, sock);
-    tcp_ctrl_tx_reply(ctx, rx->local_ip, rx->local_port, rx->remote_ip,
+    tcp_ctl_tx_reply(ctx, rx->local_ip, rx->local_port, rx->remote_ip,
         rx->remote_port, 0, rx->seq + 1, TAS_TCP_RST | TAS_TCP_ACK);
     return -1;
   }
@@ -128,7 +128,7 @@ int tcp_rx_listen_syn(struct tcp_slow_context *ctx, struct tcp_sock *listen_sock
   ret = tcp_timeout_arm(ctx, sock, TCP_RETX_SYNACK);
   if (ret != 0)
   {
-    tcp_ctrl_tx_reply(ctx, rx->local_ip, rx->local_port, rx->remote_ip,
+    tcp_ctl_tx_reply(ctx, rx->local_ip, rx->local_port, rx->remote_ip,
         rx->remote_port, sock->tx_seq, sock->rx_seq, TAS_TCP_RST | TAS_TCP_ACK);
     tcp_sock_close_final(ctx, sock);
     return -1;
@@ -145,7 +145,7 @@ static int sock_ack_valid(const struct tcp_sock *sock, __u32 ack)
 }
 
 static void sock_active_established(struct tcp_slow_context *ctx,
-    struct tcp_sock *sock, const struct tcp_rx_ctrl *rx)
+    struct tcp_sock *sock, const struct tcp_rx_ctl *rx)
 {
   tcp_timeout_cancel(ctx, sock);
   if ((rx->flags & TAS_TCP_ECE) == 0)
@@ -160,7 +160,7 @@ static void sock_active_established(struct tcp_slow_context *ctx,
 }
 
 static int sock_passive_established(struct tcp_slow_context *ctx,
-    struct tcp_sock *sock, const struct tcp_rx_ctrl *rx)
+    struct tcp_sock *sock, const struct tcp_rx_ctl *rx)
 {
   __u32 listener_id;
 

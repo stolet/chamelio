@@ -22,7 +22,7 @@ struct tcp_configuration {
   /* Number of elements in the bump queues */
   __u32 bumpq_len;
   /* Number of elements in the control queues */
-  __u32 ctrlq_len;
+  __u32 ctlq_len;
 
   /* Initial RTT estimate in microseconds */
   __u32 cc_rtt_init;
