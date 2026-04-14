@@ -142,7 +142,7 @@ static inline int queues_poll_guest_dequeue(struct fast_context *ctx,
     struct rte_mbuf *mb, int *ntx, int *ndeq)
 {
   int deq_ret;
-  int ret;
+  int ret, exec_ret;
 
   /* Prepare packet buffer for potential TX */
   mb->data_off = 0;
@@ -153,11 +153,11 @@ static inline int queues_poll_guest_dequeue(struct fast_context *ctx,
   g->proto.ebpf_ctx.qid = qcur->id;
 
   /* Execute custom dequeue procedure */
-  ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx,
+  exec_ret = ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx,
       sizeof(struct cham_ebpf_ctx), &deq_ret);
   (*ndeq)++;
 
-  if (deq_ret < 0)
+  if (deq_ret < 0 || exec_ret < 0)
     return -1;
 
   /* Add to transmission buffer if packet processed for TX */

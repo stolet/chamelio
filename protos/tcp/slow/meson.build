@@ -1,14 +1,21 @@
-tcp_slow_inc = include_directories('include', '../include')
+tcp_slow_inc = include_directories('.', 'include', '../include', 'app', 'rx',
+  'state')
 
 tcp_slow_srcs = files(
   'tcp_slow.c',
-  'tcp_slow_init.c',
-  'tcp_slow_state.c',
-  'tcp_slow_app.c',
-  'tcp_slow_fast.c',
-  'tcp_slow_cc.c',
-  'tcp_slow_timeout.c',
-  'appif.c',
+  'tcp_init.c',
+  'state/tcp_sock_state.c',
+  'state/tcp_listener.c',
+  'state/tcp_flow.c',
+  'state/tcp_ctl_tx.c',
+  'app/tcp_app_req.c',
+  'app/tcp_app_res.c',
+  'app/tcp_appif.c',
+  'rx/tcp_rx_ctrl.c',
+  'rx/tcp_rx_open.c',
+  'rx/tcp_rx_close.c',
+  'tcp_cc.c',
+  'tcp_timeout.c',
 )
 
 deps = [

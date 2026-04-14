@@ -11,6 +11,7 @@
 #include "infra.h"
 #include "ebpf.h"
 #include "txcache.h"
+#include "ip_hdr.h"
 
 static inline void rx_poll_guest(struct guest_fast *g,
     struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget,
@@ -110,6 +111,7 @@ static inline void rx_poll_guest_comb(struct guest_fast *g,
     .virt_gre = virt_gre,
   };
 
+  fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off, virt_gre);
   ebpf_vm_exec(g->proto.event_rx_vm, &jit_ctx, sizeof(jit_ctx), &ret);
 
   if (charge_budget && ret > 0)

@@ -66,6 +66,20 @@ struct tcp_sock {
   __u32 local_ip;
   /* Remote IP */
   __u32 remote_ip;
+    /* Local port */
+  __u16 local_port;
+  /* Remote port */
+  __u16 remote_port;
+  /* Socket state */
+  __u8 state;
+  /* 1 if this socket reuses a port 0 otherwise */
+  __u8 reuport;
+  /* Application ID that owns this socket */
+  __u8 app_id;
+  /* Application context ID that owns this socket */
+  __u8 ctx_id;
+  /* Socket flags */
+  __u8 flags;
   /* Spin lock */
   volatile __u32 lock;
 
@@ -120,22 +134,6 @@ struct tcp_sock {
   __u8 recovery_pad[3];
   /* Sequence number that ended the original outstanding region */
   __u32 recovery_end_seq;
-
-  /* Local port */
-  __u16 local_port;
-  /* Remote port */
-  __u16 remote_port;
-  /* Socket state */
-  __u8 state;
-  /* 1 if this socket reuses a port 0 otherwise */
-  __u8 reuport;
-  /* Application ID that owns this socket */
-  __u8 app_id;
-  /* Application context ID that owns this socket */
-  __u8 ctx_id;
-  /* Socket flags */
-  __u8 flags;
-  
 } __attribute__((packed));
 
 /* Maps a listener port to one or more listening sockets */

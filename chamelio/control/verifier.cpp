@@ -305,6 +305,21 @@ extern "C"
                 .context_descriptor = nullptr,
                 .unsupported = false,
             };
+        case 1018:
+            return EbpfHelperPrototype{
+                .name = "sched_remove",
+                .return_type = EBPF_RETURN_TYPE_INTEGER,
+                .argument_type = {
+                    EBPF_ARGUMENT_TYPE_ANYTHING,
+                    EBPF_ARGUMENT_TYPE_ANYTHING,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                },
+                .reallocate_packet = false,
+                .context_descriptor = nullptr,
+                .unsupported = false,
+            };
         default:
             std::cerr << "could not find helper id=" << id << "\n";
             EbpfHelperPrototype unknown{};
@@ -337,6 +352,7 @@ extern "C"
             case 1015:
             case 1016:
             case 1017:
+            case 1018:
                 return true;
             default:
                 return false;

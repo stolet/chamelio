@@ -13,7 +13,6 @@
 #include "clock.h"
 #include "infra.h"
 #include "ebpf.h"
-#include "log.h"
 #include "scheduler_fns.h"
 
 static inline int tx_poll_guest(struct fast_context *ctx,
@@ -101,6 +100,7 @@ static inline int tx_poll_guest(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf **mbs, int max, int *ntx,
     int charge_budget)
 {
+  int exec_ret;
   int tx_ret;
   int ret;
   __u64 tsc_start = 0, tsc_spent;
@@ -132,10 +132,10 @@ static inline int tx_poll_guest(struct fast_context *ctx,
     fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, ctx->virt_gre);
   
     /* Execute custom protocol tx procedure */
-    ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx,
+    exec_ret = ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx,
         sizeof(struct cham_ebpf_ctx), &tx_ret);
 
-    if (tx_ret < 0)
+    if (tx_ret < 0 || exec_ret < 0)
       break;
 
     /* Add destination MAC address */
@@ -167,6 +167,7 @@ static inline int tx_poll_guest_comb(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf **mbs, int max, int *ntx,
     int charge_budget)
 {
+  int exec_ret;
   int tx_ret;
   struct fast_comb_tx_ctx jit_ctx = {
     .f_ctx = ctx,
@@ -188,9 +189,10 @@ static inline int tx_poll_guest_comb(struct fast_context *ctx,
   if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
     return 0;
 
-  ebpf_vm_exec(g->proto.event_tx_vm, &jit_ctx, sizeof(jit_ctx), &tx_ret);
+  exec_ret = ebpf_vm_exec(g->proto.event_tx_vm, &jit_ctx, sizeof(jit_ctx),
+      &tx_ret);
 
-  if (tx_ret < 0)
+  if (tx_ret < 0 || exec_ret < 0)
     return -1;
   return 0;
 }

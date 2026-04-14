@@ -53,8 +53,6 @@ enum tcp_queue_type {
   TCP_QUEUE_CTRL_TX,
   /* Packet data for a TCP control packet to transmit */
   TCP_QUEUE_CTRL_TX_PKT,
-  /* Schedule socket transmission in the fast-path */
-  TCP_QUEUE_TX_SCHED,
   /* Retransmit outstanding data for a socket in the fast-path */
   TCP_QUEUE_TX_RETRANSMIT,
   /* Signal that a punted TCP control packet is ready */

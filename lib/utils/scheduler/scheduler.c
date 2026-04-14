@@ -3,7 +3,6 @@
 #include "log.h"
 
 static void sched_insert(struct cham_scheduler *sched, __u32 id);
-static void sched_remove(struct cham_scheduler *sched, __u32 id);
 
 void sched_init(struct cham_scheduler *sched)
 {
@@ -83,6 +82,42 @@ int sched_pop(struct cham_scheduler *sched)
   return 0;
 }
 
+int sched_remove(struct cham_scheduler *sched, __u32 id)
+{
+  __u32 prev, cur;
+  struct cham_sched_entry *entry;
+
+  prev = SCHED_ID_INVALID;
+  cur = sched->head;
+  while (cur != SCHED_ID_INVALID && cur != id)
+  {
+    prev = cur;
+    cur = sched->entries[cur].next_entry;
+  }
+  if (cur == SCHED_ID_INVALID)
+    return -1;
+
+  entry = &sched->entries[id];
+  if (prev == SCHED_ID_INVALID)
+  {
+    sched->head = entry->next_entry;
+  }
+  else
+  {
+    sched->entries[prev].next_entry = entry->next_entry;
+  }
+
+  if (sched->tail == id)
+    sched->tail = prev;
+  entry->id = SCHED_ID_INVALID;
+  entry->next_entry = SCHED_ID_INVALID;
+  entry->priority = 0;
+  entry->avail = 0;
+  entry->opaque = 0;
+
+  return 0;
+}
+
 static void sched_insert(struct cham_scheduler *sched, __u32 id)
 {
   __u32 prev, cur;
@@ -117,34 +152,4 @@ static void sched_insert(struct cham_scheduler *sched, __u32 id)
   sched->entries[prev].next_entry = id;
   if (entry->next_entry == SCHED_ID_INVALID)
     sched->tail = id;
-}
-
-static void sched_remove(struct cham_scheduler *sched, __u32 id)
-{
-  __u32 prev, cur;
-  struct cham_sched_entry *entry;
-
-  prev = SCHED_ID_INVALID;
-  cur = sched->head;
-  while (cur != SCHED_ID_INVALID && cur != id)
-  {
-    prev = cur;
-    cur = sched->entries[cur].next_entry;
-  }
-  if (cur == SCHED_ID_INVALID)
-    return;
-
-  entry = &sched->entries[id];
-  if (prev == SCHED_ID_INVALID)
-  {
-    sched->head = entry->next_entry;
-  }
-  else
-  {
-    sched->entries[prev].next_entry = entry->next_entry;
-  }
-
-  if (sched->tail == id)
-    sched->tail = prev;
-  entry->next_entry = SCHED_ID_INVALID;
 }

@@ -69,6 +69,7 @@ enum ebpf_helper_id
   EBPF_HELPER_RATE_DELAY_TSC = 1015,
   EBPF_HELPER_SPIN_LOCK = 1016,
   EBPF_HELPER_SPIN_UNLOCK = 1017,
+  EBPF_HELPER_SCHED_REMOVE = 1018,
 };
 
 struct ebpf_helper_desc
@@ -120,6 +121,8 @@ static const struct ebpf_helper_desc ebpf_helpers[] = {
       "ebpf_spin_lock", ebpf_spin_lock },
   { EBPF_HELPER_SPIN_UNLOCK,
       "ebpf_spin_unlock", ebpf_spin_unlock },
+  { EBPF_HELPER_SCHED_REMOVE,
+      "sched_remove", sched_remove },
 };
 
 int control_ebpf_init(struct control_context *ctx)

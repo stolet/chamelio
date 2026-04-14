@@ -11,6 +11,8 @@ void sched_init(struct cham_scheduler *sched);
 struct cham_sched_entry *sched_head(struct cham_scheduler *sched);
 /* Removes the lowest priority entry from the list */
 int sched_pop(struct cham_scheduler *sched);
+/* Removes a specific entry from the priority list */
+int sched_remove(struct cham_scheduler *sched, __u32 id);
 /* Adds an entry to the queue manager priority list */
 int sched_add(struct cham_scheduler *sched, __u32 id, __u64 priority,
     __u32 avail);

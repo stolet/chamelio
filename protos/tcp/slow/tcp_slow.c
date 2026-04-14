@@ -1,9 +1,9 @@
 #include <stdlib.h>
 
-#include "appif.h"
+#include "app/tcp_appif.h"
 #include "clock.h"
 #include "tcp_config.h"
-#include "tcp_slow_internal.h"
+#include "tcp_internal.h"
 #include "log.h"
 
 int main(int argc, char **argv)
@@ -18,14 +18,14 @@ int main(int argc, char **argv)
     abort();
   }
 
-  ret = tcp_slow_init(&ctx);
+  ret = tcp_init(&ctx);
   if (ret != 0)
   {
     LOG_ERROR("failed to initialise tcp slow context");
     abort();
   }
 
-  ret = appif_init(&ctx);
+  ret = tcp_appif_init(&ctx);
   if (ret != 0)
   {
     LOG_ERROR("failed to initialise appif");
@@ -34,11 +34,11 @@ int main(int argc, char **argv)
 
   while (1)
   {
-    appif_poll(&ctx);
-    tcp_slow_app_poll(&ctx);
-    tcp_slow_fast_poll(&ctx);
-    tcp_slow_cc_poll(&ctx);
-    tcp_slow_timeout_poll(&ctx);
+    tcp_appif_poll(&ctx);
+    tcp_app_poll(&ctx);
+    tcp_fast_poll(&ctx);
+    tcp_cc_poll(&ctx);
+    tcp_timeout_poll(&ctx);
 
     if (ctx.stats_log_tsc == 0)
     {
