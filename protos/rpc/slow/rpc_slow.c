@@ -296,20 +296,25 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
   cl->local_port = req->local_port;
 
   // bind the port to the client id in the port to client map
-  port = &pt_cl_map[req->local_port];
-  if (port->client_id != INVALID_ID || port->server_id != INVALID_ID)
+  
+  // port=0: auto-assign in fast path; for multicore clients
+  if (req->local_port != 0)
   {
-    LOG_ERROR("port already bound to another client or server");
-    res->success = 0;
-    ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_CLIENT_RES);
-    if (ret != 0)
+    port = &pt_cl_map[req->local_port];
+    if (port->client_id != INVALID_ID || port->server_id != INVALID_ID)
     {
-      LOG_ERROR("failed to enqueue rpc new client response");
+      LOG_ERROR("port already bound to another client or server");
+      res->success = 0;
+      ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_CLIENT_RES);
+      if (ret != 0)
+      {
+        LOG_ERROR("failed to enqueue rpc new client response");
+        return -1;
+      }
       return -1;
     }
-    return -1;
+    port->client_id = res->client_id;
   }
-  port->client_id = res->client_id;
   
   // Create queue for RX buffer
   protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
@@ -468,6 +473,8 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
 
   res->worker_id = ctx->n_workers;
   worker = &worker_map[ctx->n_workers];
+  res->worker_off = ctx->workers_map->off +
+                    ((__u64)ctx->n_workers * sizeof(struct rpc_worker));
   memset(worker, 0, sizeof(struct rpc_worker));
   // LOG_DEBUG("allocated worker structure in shared memory");
   worker->id = ctx->n_workers;

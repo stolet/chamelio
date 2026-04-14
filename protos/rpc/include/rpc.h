@@ -15,7 +15,7 @@
 /* Maximum port number */
 #define MAX_PORT 65534
 /* Maximum number of UDP sockets */
-#define MAX_SOCKETS MAX_PORT
+// #define MAX_SOCKETS MAX_PORT
 /* Maximum number of servers */
 #define MAX_SERVERS 6
 /* Maximum number of clients */

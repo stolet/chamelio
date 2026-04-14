@@ -14,6 +14,8 @@
 #define SOCK_INACTIVE (-1U)
 /* Invalid server ID */
 #define INVALID_ID -1
+/* Max concurrent in-flight requests per server */
+#define MAX_PENDING_RPC 256
 
 // enum rpc_entity_type
 // {
@@ -78,6 +80,11 @@ struct rpc_worker_lib
   __u32 tx_head;
   /* Pointer to the start of the TX buffer in shared memory */
   void *tx_buf;
+  /* Pointer to the worker state in shared memory */
+  void *shm_worker;
+
+  /* RID of the last request read by rpc_handle_call */
+  __u32 last_rid;
 };
 
 /* RPC client that makes calls */
@@ -198,14 +205,15 @@ struct rpc_client_lib *rpc_new_client(struct rpc_context_lib *ctx, __u32 ip, __u
 /* Allocates an RPC server */
 struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u16 port);
 /* Creates a new worker for a server */
-struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s);
+struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s, struct rpc_context_lib *ctx);
 /* Registers a service with the given server */
 int rpc_register(struct rpc_server_lib *server, __u8 service);
 /* Sends an RPC request to the given IP and port */
 int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
              __u16 service, void *buf, size_t len);
 /* Sends an RPC response for a call that was handled */
-int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
+int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
+               __u32 ip, __u16 port,
                __u32 rid, void *buf, size_t len);
 /* Parses the top request in worker queue */
 int rpc_handle_call(struct rpc_worker_lib *w,

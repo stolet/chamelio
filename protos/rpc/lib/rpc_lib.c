@@ -18,10 +18,12 @@
 #include "log.h"
 #include "uxsocket.h"
 #include "rpc_hdr.h"
+#include "rpc.h"
 
 #define POLL_BATCH 16
 
 static struct rpc_lib *rpc = NULL;
+static __thread struct rpc_context_lib *rpc_thread_ctx = NULL;
 
 static int handle_new_client_res(struct rpc_queue_entry *qe);
 static int handle_new_server_res(struct rpc_queue_entry *qe);
@@ -243,6 +245,7 @@ struct rpc_context_lib *rpc_ctx_new()
     dq_list[i] = dq;
   }
 
+  rpc_thread_ctx = ctx;
   return ctx;
 }
 
@@ -449,7 +452,7 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   return server;
 }
 
-struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s)
+struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s, struct rpc_context_lib *ctx)
 {
   struct rpc_worker_lib *worker;
   struct equeue *eq;
@@ -462,23 +465,36 @@ struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s)
     LOG_ERROR("null rpc context or server");
     return NULL;
   }
-  if (s->nworkers >= MAX_WORKERS)
+  //if no context provided, fall back to the server's context
+  if (ctx == NULL) ctx = s->ctx;
+
+  //if server ctx is also null, worker creation not possible
+  if (ctx == NULL)
   {
-    LOG_ERROR("exceeded max number of rpc workers per server");
+    LOG_ERROR("failed to find rpc context for worker");
     return NULL;
   }
-  index = s->nworkers;
+
+  index = __sync_fetch_and_add(&s->nworkers, 1);
+  if (index >= MAX_WORKERS)
+  {
+    LOG_ERROR("exceeded max number of rpc workers per server");
+    __sync_fetch_and_sub(&s->nworkers, 1);
+    return NULL;
+  }
   worker = &s->workers[index];
   memset(worker, 0, sizeof(struct rpc_worker_lib));
-  worker->ctx = s->ctx;
+  worker->ctx = ctx;
   worker->server = s;
+  worker->worker_id = INVALID_ID;
   // worker->type = RPC_ENTITY_WORKER;
 
-  eq = s->ctx->app_slow_q;
+  eq = ctx->app_slow_q;
   qe = queue_tail(eq);
   if (!qe)
   {
     LOG_ERROR("failed to get queue tail for new worker req");
+    __sync_fetch_and_sub(&s->nworkers, 1);
     return NULL;
   }
   nw_req = &qe->data.new_worker_req;
@@ -488,12 +504,13 @@ struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s)
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue new worker req");
+    __sync_fetch_and_sub(&s->nworkers, 1);
     return NULL;
   }
 
   // poll until we get response
   while (worker->rx_buf == NULL)
-    rpc_poll_slow(s->ctx);
+    rpc_poll_slow(ctx);
 
   return worker;
 }
@@ -678,7 +695,8 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   return (int)len;
 }
 
-int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
+int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
+               __u32 ip, __u16 port,
                __u32 rid, void *buf, size_t len)
 {
   struct equeue *eq;
@@ -687,11 +705,16 @@ int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
   struct rpc_hdr hdr;
   __u32 tail, n1, n2;
   int ret, n;
-  struct rpc_worker_lib *w;
 
   if (!s)
   {
     LOG_ERROR("null rpc server");
+    return -1;
+  }
+
+  if (!w)
+  {
+    LOG_ERROR("null rpc worker");
     return -1;
   }
 
@@ -700,12 +723,6 @@ int rpc_return(struct rpc_server_lib *s, __u32 ip, __u16 port,
     LOG_ERROR("rpc return with zero-length payload");
     return -1;
   }
-
-  // TODO: make a mapping of rid -> worker_id in the server to get which
-  //  worker will send the response.
-
-  // TODO: change this in the next ms
-  w = &s->workers[0];
 
   n = len + sizeof(struct rpc_hdr);
   if (n > w->tx_len - w->tx_avail)
@@ -981,6 +998,19 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
 
 int rpc_call_complete(struct rpc_worker_lib *w)
 {
+  struct rpc_worker *shm_worker;
+
+  if (!w || w->shm_worker == NULL)
+  {
+    LOG_ERROR("null rpc worker in call_complete");
+    return -1;
+  }
+
+  shm_worker = (struct rpc_worker *)w->shm_worker;
+  if (shm_worker->jobs_pending == 0)
+    return 0;
+
+  __sync_fetch_and_sub(&shm_worker->jobs_pending, 1);
   return 0;
 }
 
@@ -1030,9 +1060,8 @@ static int handle_new_worker_res(struct rpc_queue_entry *qe)
   worker->tx_qid = res->tx_qid;
   worker->tx_len = res->tx_len;
   worker->tx_buf = rpc->shm_base + res->tx_off;
+  worker->shm_worker = rpc->shm_base + res->worker_off;
   worker->worker_id = res->worker_id;
-  // increase worker count in server
-  worker->server->nworkers++;
   return 0;
 }
 
@@ -1113,3 +1142,4 @@ static int handle_rx_bump(struct rpc_queue_bump_entry *qe)
   }
   return 0;
 }
+
