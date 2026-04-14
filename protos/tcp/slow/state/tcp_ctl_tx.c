@@ -4,10 +4,10 @@
 
 /*** Ctrl TX Helpers **********************************************************/
 
-static int ctrl_pkt_enqueue(struct tcp_slow_context *ctx, __u32 local_ip,
+static int ctl_pkt_enqueue(struct tcp_slow_context *ctx, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags, __u16 wnd);
-static void ctrl_pkt_fill(struct tcp_pkt_inner *pkt, __u32 local_ip,
+static void ctl_pkt_fill(struct tcp_pkt_inner *pkt, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags, __u16 wnd);
 
@@ -15,7 +15,7 @@ static void ctrl_pkt_fill(struct tcp_pkt_inner *pkt, __u32 local_ip,
 
 int tcp_ctrl_tx(struct tcp_slow_context *ctx, struct tcp_sock *sock, __u16 flags)
 {
-  return ctrl_pkt_enqueue(ctx, sock->local_ip, sock->local_port, sock->remote_ip,
+  return ctl_pkt_enqueue(ctx, sock->local_ip, sock->local_port, sock->remote_ip,
       sock->remote_port, sock->tx_seq, sock->rx_seq, flags,
       tcp_sock_rx_wnd(sock));
 }
@@ -29,7 +29,7 @@ int tcp_ctrl_tx_resend(struct tcp_slow_context *ctx, struct tcp_sock *sock,
   if ((flags & (TAS_TCP_SYN | TAS_TCP_FIN)) != 0)
     seq--;
 
-  return ctrl_pkt_enqueue(ctx, sock->local_ip, sock->local_port, sock->remote_ip,
+  return ctl_pkt_enqueue(ctx, sock->local_ip, sock->local_port, sock->remote_ip,
       sock->remote_port, seq, sock->rx_seq, flags, tcp_sock_rx_wnd(sock));
 }
 
@@ -37,7 +37,7 @@ int tcp_ctrl_tx_reply(struct tcp_slow_context *ctx, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags)
 {
-  return ctrl_pkt_enqueue(ctx, local_ip, local_port, remote_ip, remote_port,
+  return ctl_pkt_enqueue(ctx, local_ip, local_port, remote_ip, remote_port,
       seq, ack, flags, 0);
 }
 
@@ -60,7 +60,7 @@ int tcp_tx_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock)
 
 /*** Ctrl TX Helpers **********************************************************/
 
-static int ctrl_pkt_enqueue(struct tcp_slow_context *ctx, __u32 local_ip,
+static int ctl_pkt_enqueue(struct tcp_slow_context *ctx, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags, __u16 wnd)
 {
@@ -76,9 +76,9 @@ static int ctrl_pkt_enqueue(struct tcp_slow_context *ctx, __u32 local_ip,
   if (sig_qe == NULL)
     return -1;
 
-  ctrl_pkt_fill(&pkt_qe->data.ctrl_pkt.pkt, local_ip, local_port, remote_ip,
+  ctl_pkt_fill(&pkt_qe->data.ctl_pkt.pkt, local_ip, local_port, remote_ip,
       remote_port, seq, ack, flags, wnd);
-  sig_qe->data.ctrl_sig.ready = 1;
+  sig_qe->data.ctl_sig.ready = 1;
 
   ret = queue_enqueue(ctx->slow_fast_pkt_q, TCP_QUEUE_CTRL_TX_PKT);
   if (ret != 0)
@@ -92,7 +92,7 @@ static int ctrl_pkt_enqueue(struct tcp_slow_context *ctx, __u32 local_ip,
   return 0;
 }
 
-static void ctrl_pkt_fill(struct tcp_pkt_inner *pkt, __u32 local_ip,
+static void ctl_pkt_fill(struct tcp_pkt_inner *pkt, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags, __u16 wnd)
 {

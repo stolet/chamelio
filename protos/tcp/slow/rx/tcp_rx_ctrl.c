@@ -48,7 +48,7 @@ int tcp_fast_poll(struct tcp_slow_context *ctx)
           break;
         }
 
-        ctrl_rx(ctx, &pkt_qe->data.ctrl_pkt.pkt);
+        ctrl_rx(ctx, &pkt_qe->data.ctl_pkt.pkt);
         queue_dequeue(ctx->fast_slow_pkt_q);
         break;
       default:

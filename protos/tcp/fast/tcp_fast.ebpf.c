@@ -508,10 +508,10 @@ static __always_inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
     return -1;
 
   /* Copy header to pkt queue */
-  ebpf_memcpy(&pkt_qe->data.ctrl_pkt.pkt, tcp_pkt, sizeof(struct tcp_pkt_inner));
+  ebpf_memcpy(&pkt_qe->data.ctl_pkt.pkt, tcp_pkt, sizeof(struct tcp_pkt_inner));
   
   /* Set ready field of signal entry */
-  sig_qe->data.ctrl_sig.ready = 1;
+  sig_qe->data.ctl_sig.ready = 1;
 
   /* Push packet to queue */
   ret = queue_enqueue(pkt_q, TCP_QUEUE_CTRL_RX_PKT);
@@ -889,7 +889,7 @@ static __always_inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx)
   ctl_pkt_qe = ebpf_queue_head(ctl_pkt_q, sizeof(struct tcp_queue_bump_entry));
   if (ctl_pkt_qe == NULL)
     return -1;
-  ctl_pkt = &ctl_pkt_qe->data.ctrl_pkt.pkt;
+  ctl_pkt = &ctl_pkt_qe->data.ctl_pkt.pkt;
   
   /* Copy control packet for transmission */
   hdrlen = f_beui16(ctl_pkt->ip.len);
@@ -908,7 +908,7 @@ static __always_inline int deq_handle_retransmit(struct cham_ebpf_ctx *ctx)
 {
   struct tcp_sock *sock;
   struct tcp_queue_bump_entry *qe;
-  struct tcp_queue_fast_sock *cmd;
+  struct tcp_queue_ctl_remit *cmd;
   struct cham_map *map;
   
   qe = (struct tcp_queue_bump_entry *) ctx->qe;

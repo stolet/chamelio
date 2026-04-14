@@ -308,19 +308,19 @@ struct tcp_queue_bump_cham_rx {
 } __attribute__((packed));
 
 /* Signal that a TCP control packet is ready in the paired packet queue */
-struct tcp_queue_ctrl_sig {
+struct tcp_queue_ctl_sig {
   /* Keep the signal entry non-empty */
   __u8 ready;
 } __attribute__((packed));
 
 /* Packet data for TCP control packets */
-struct tcp_queue_ctrl_pkt {
+struct tcp_queue_ctl_pkt {
   /* Packet to send or process in the slow path */
   struct tcp_pkt_inner pkt;
 } __attribute__((packed));
 
 /* Fast-path command that targets a socket */
-struct tcp_queue_fast_sock {
+struct tcp_queue_ctl_remit {
   /* Socket ID used by slow-path */
   __u32 sock_id;
 } __attribute__((packed));
@@ -380,9 +380,9 @@ struct tcp_queue_bump_entry {
     struct tcp_queue_bump_app_rx bump_app_rx;
     struct tcp_queue_bump_cham_tx bump_cham_tx;
     struct tcp_queue_bump_cham_rx bump_cham_rx;
-    struct tcp_queue_ctrl_sig ctrl_sig;
-    struct tcp_queue_ctrl_pkt ctrl_pkt;
-    struct tcp_queue_fast_sock fast_sock;
+    struct tcp_queue_ctl_sig ctl_sig;
+    struct tcp_queue_ctl_pkt ctl_pkt;
+    struct tcp_queue_ctl_remit fast_sock;
     /* Keeps queue entry the size of a cache line */
     __u8 raw[63];
   } __attribute__((packed)) data;
