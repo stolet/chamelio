@@ -7,6 +7,12 @@
 #define MAX_PATH 128
 #define CHAMELIO_MAX_GUESTS 4
 
+enum fp_proto_mode {
+  FP_PROTO_EBPF = 0,
+  FP_PROTO_TCP,
+  FP_PROTO_UDP,
+};
+
 struct configuration {
   /*** SHM configurations ***/
   /* Shared memory size for one guest */
@@ -35,6 +41,8 @@ struct configuration {
   __u32 fp_xsumoffloads;
   /* Enable combined infra + eBPF JIT */
   __u32 fp_jit_combined;
+  /* Use built-in fixed fast path for one protocol */
+  __u32 fp_proto_mode;
   /* Max number of fast-path cores */
   __u32 fp_cores_max;
   

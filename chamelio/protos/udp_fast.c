@@ -1,21 +1,19 @@
-#ifdef CHAM_NATIVE_FAST
-#include "native_fast.h"
-#else
-#include <linux/bpf.h>
-#include <bpf/bpf_helpers.h>
-#include <bpf/bpf_endian.h>
-#endif
+#include <string.h>
+#include <linux/types.h>
 
+#include <rte_ip4.h>
+
+#include "queue_fns.h"
+
+#ifndef __always_inline
+#define __always_inline inline __attribute__((always_inline))
+#endif
 #include "cham_fast.h"
 #include "udp_hdr.h"
 #include "ip_hdr.h"
 #include "udp.h"
 #include "udp_queue_types.h"
 #include "utils.h"
-
-#ifdef CHAM_NATIVE_FAST
-#define sched_head cham_native_sched_head
-#endif
 
 #define PORT_MAP 0
 #define SOCK_MAP 1
@@ -28,29 +26,8 @@ static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx);
 static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx);
 static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx);
 
-#ifndef CHAM_NATIVE_FAST
-/* Add these functions as helpers */
-static void * (*ebpf_queue_tail)(struct equeue *q, __u64 elsize) = (void *) 1001;
-static int (*queue_enqueue)(struct equeue *q, __u8 type) = (void *) 1002;
 
-static void * (*ebpf_memcpy)(void *dst, void *src, size_t len) = (void *) 1003;
-static void (*ebpf_print)(int a) = (void *) 1004;
-
-static __u16 (*ebpf_ipv4_checksum)(void *ip_hdr) = (void *) 1005;
-static __u16 (*ebpf_ipv4_udptcp_cksum)(void *ip_hdr, void *udp_hdr) = (void *) 1006;
-
-static struct cham_sched_entry * (*sched_head)(struct cham_scheduler *sched,
-    __u64 elsize) = (void *) 1007;
-static int (*sched_pop)(struct cham_scheduler *sched) = (void *) 1008;
-static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u64 priority,
-    __u32 avail) = (void *) 1009;
-
-static void * (*ebpf_map_get)(void *map_base, __u32 len) = (void *) 1010;
-static void * (*ebpf_map_lookup)(void *map_base, __u64 id, __u64 elsize) = (void *) 1011;
-#endif
-
-SEC("chamelio/event_rx")
-int event_rx(struct cham_ebpf_ctx *ctx)
+int udp_event_rx(struct cham_ebpf_ctx *ctx)
 {
   int ret;
   __u16 ip_hdrs_len, ip_total_len, udp_len, payload_len;
@@ -116,7 +93,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   payload_len = (__u16) (udp_len - sizeof(struct udp_hdr));
   payload = (void *) ((__u8 *) udp + sizeof(struct udp_hdr));
 
-  rx_base = ebpf_map_get(ctx->shm_base + sock->rx_off, sock->rx_len);
+  rx_base = (__u8 *) ctx->shm_base + sock->rx_off;
   free_bytes = sock->rx_len - sock->rx_avail;
   if (payload_len > free_bytes)
     return -1;
@@ -127,13 +104,13 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   if (tail + payload_len <= sock->rx_len)
   {
-    ebpf_memcpy(rx_base + tail, payload, payload_len);
+    memcpy(rx_base + tail, payload, payload_len);
   }
   else
   {
     part = sock->rx_len - tail;
-    ebpf_memcpy(rx_base + tail, payload, part);
-    ebpf_memcpy(rx_base, (__u8 *) payload + part, payload_len - part);
+    memcpy(rx_base + tail, payload, part);
+    memcpy(rx_base, (__u8 *) payload + part, payload_len - part);
   }
 
   /* Update number of available bytes */
@@ -141,7 +118,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   
   /* Send bump to application */
   q = &ctx->equeues[sock->app_bump_qid].eq;
-  qe = ebpf_queue_tail(q, sizeof(struct udp_queue_bump_entry));
+  qe = queue_tail(q);
   if (qe == NULL)
     return -1;
 
@@ -158,14 +135,12 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   return 0;
 }
 
-SEC("chamelio/event_tx")
-int event_tx(struct cham_ebpf_ctx *ctx)
+int udp_event_tx(struct cham_ebpf_ctx *ctx)
 {
   return -1;
 }
 
-SEC("chamelio/event_deq")
-int event_deq(struct cham_ebpf_ctx *ctx)
+int udp_event_deq(struct cham_ebpf_ctx *ctx)
 {
   int ret;
   
@@ -211,8 +186,8 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   bump_cham = &qe->data.bump_cham_tx;
 
   map = &ctx->maps[SOCK_MAP];
-  sock = ebpf_map_lookup(map->addr, 
-      bump_cham->sock_id, sizeof(struct udp_sock));
+  sock = (struct udp_sock *) ((__u8 *) map->addr +
+      (bump_cham->sock_id * sizeof(struct udp_sock)));
   if (sock == NULL)
     return -1;
 
@@ -223,7 +198,8 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     if (local_port == 0)
       return -1;
     map = &ctx->maps[PORT_MAP];
-    port = ebpf_map_lookup(map->addr, local_port, sizeof(struct udp_port));
+    port = (struct udp_port *) ((__u8 *) map->addr +
+        (local_port * sizeof(struct udp_port)));
     if (port == NULL)
       return -1;
 
@@ -272,13 +248,13 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   payload = ctx->pkt + pkt_hdrs_len;
   if (sock->tx_head + payload_len <= sock->tx_len) 
   {
-    ebpf_memcpy(payload, ctx->shm_base + sock->tx_off + sock->tx_head, payload_len);
+    memcpy(payload, ctx->shm_base + sock->tx_off + sock->tx_head, payload_len);
   } 
   else 
   {
     part = sock->tx_len - sock->tx_head;
-    ebpf_memcpy(payload, ctx->shm_base + sock->tx_off + sock->tx_head, part);
-    ebpf_memcpy(payload + part, ctx->shm_base + sock->tx_off, payload_len - part);
+    memcpy(payload, ctx->shm_base + sock->tx_off + sock->tx_head, part);
+    memcpy(payload + part, ctx->shm_base + sock->tx_off, payload_len - part);
   }
   
   /* Update socket */
@@ -290,8 +266,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   /* Send a bump to application */
   q = &ctx->equeues[sock->app_bump_qid].eq;
-  qe = (struct udp_queue_bump_entry *) ebpf_queue_tail(q, 
-      sizeof(struct udp_queue_bump_entry));
+  qe = (struct udp_queue_bump_entry *) queue_tail(q);
   if (qe == NULL)
     return -1;
 
@@ -321,7 +296,8 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   bump = &qe->data.bump_cham_rx;
 
   map = &ctx->maps[SOCK_MAP];
-  sock = ebpf_map_lookup(map->addr, bump->sock_id, sizeof(struct udp_sock));
+  sock = (struct udp_sock *) ((__u8 *) map->addr +
+      (bump->sock_id * sizeof(struct udp_sock)));
   if (sock == NULL)
     return -1;
   
@@ -342,14 +318,11 @@ static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
 
   map = &ctx->maps[PORT_MAP];
 
-#ifndef CHAM_NATIVE_FAST
-  /* Keep the verifier from over-optimizing the backing map access. */
-  (void) ebpf_map_get(map->addr, map->size);
-#endif
 
   for (i = MIN_PORT; i < MAX_SOCKETS; i++)
   {
-    port = ebpf_map_lookup(map->addr, i, sizeof(struct udp_port));
+    port = (struct udp_port *) ((__u8 *) map->addr +
+        (i * sizeof(struct udp_port)));
     if (port == NULL)
       return 0;
 
@@ -371,7 +344,8 @@ static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
     return NULL;
 
   map = &ctx->maps[PORT_MAP];
-  port = ebpf_map_lookup(map->addr, local_port, sizeof(struct udp_port));
+  port = (struct udp_port *) ((__u8 *) map->addr +
+      (local_port * sizeof(struct udp_port)));
   if (port == NULL || port->nsocks == 0)
     return NULL;
     
@@ -389,5 +363,6 @@ static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
   }
   
   map = &ctx->maps[SOCK_MAP];
-  return ebpf_map_lookup(map->addr, sock_id, sizeof(struct udp_sock));
+  return (struct udp_sock *) ((__u8 *) map->addr +
+      (sock_id * sizeof(struct udp_sock)));
 }

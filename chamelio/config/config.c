@@ -28,6 +28,7 @@ enum cfg_params {
   CP_FP_CORES_MAX,
   CP_FP_NO_XSUMOFFLOAD,
   CP_FP_JITCOMB,
+  CP_FP_PROTO,
   CP_PERF_ISO,
   CP_PERF_ISO_CAP,
   CP_PERF_ISO_BOOST,
@@ -84,6 +85,9 @@ static struct option opts[] = {
   { .name = "fp-jitcomb",
     .has_arg = no_argument,
     .val = CP_FP_JITCOMB },
+  { .name = "fp-proto",
+    .has_arg = required_argument,
+    .val = CP_FP_PROTO },
   { .name = "perf-iso",
     .has_arg = no_argument,
     .val = CP_PERF_ISO },
@@ -116,6 +120,7 @@ static int parse_arg_append(char *s, struct configuration *c);
 static int parse_cidr(char *s, __u32 *ip, __u8 *prefix);
 static int parse_route(char *s, struct configuration *c);
 static int parse_ipv4(const char *s, __u32 *ip);
+static int parse_fp_proto(const char *s, __u32 *mode);
 
 int config_parse(struct configuration *c, int argc, char **argv)
 {
@@ -224,6 +229,13 @@ int config_parse(struct configuration *c, int argc, char **argv)
       case CP_FP_JITCOMB:
         c->fp_jit_combined = 1;
         break;
+      case CP_FP_PROTO:
+        if (parse_fp_proto(optarg, &c->fp_proto_mode) != 0)
+        {
+          LOG_ERROR("fast-path protocol parsing failed");
+          goto failed;
+        }
+        break;
       case CP_PERF_ISO:
         c->perf_iso = 1;
         break;
@@ -264,6 +276,12 @@ int config_parse(struct configuration *c, int argc, char **argv)
     }
   }
 
+  if (c->fp_jit_combined && c->fp_proto_mode != FP_PROTO_EBPF)
+  {
+    LOG_ERROR("--fp-jitcomb and --fp-proto cannot be used together");
+    goto failed;
+  }
+
   return 0;
 
 failed:
@@ -283,6 +301,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->fp_cores_max = 1;
   c->fp_xsumoffloads = 1;
   c->fp_jit_combined = 0;
+  c->fp_proto_mode = FP_PROTO_EBPF;
   c->perf_iso = 0;
   c->perf_iso_cap = 1000;
   c->perf_iso_boost = 0.5;
@@ -332,6 +351,8 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: enabled]\n"
       "  --fp-jitcomb                            Enable combined infra+eBPF JIT"
           "[default: disabled]\n"
+      "  --fp-proto=ebpf|tcp|udp                 Select fast-path protocol mode"
+          "[default: ebpf]\n"
       "Performance isolation:\n"
       "  --perf-iso                              Enable performance isolation"
           "[default: disabled]\n"
@@ -517,4 +538,27 @@ int parse_ipv4(const char *s, __u32 *ip)
   
   *ip = htonl(*ip);
   return 0;
+}
+
+static int parse_fp_proto(const char *s, __u32 *mode)
+{
+  if (strcmp(s, "ebpf") == 0)
+  {
+    *mode = FP_PROTO_EBPF;
+    return 0;
+  }
+
+  if (strcmp(s, "tcp") == 0)
+  {
+    *mode = FP_PROTO_TCP;
+    return 0;
+  }
+
+  if (strcmp(s, "udp") == 0)
+  {
+    *mode = FP_PROTO_UDP;
+    return 0;
+  }
+
+  return -1;
 }

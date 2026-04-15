@@ -12,6 +12,7 @@ subdir('config')
 subdir('nic')
 subdir('netvirt')
 subdir('arp')
+subdir('protos')
 subdir('fast')
 subdir('control')
 

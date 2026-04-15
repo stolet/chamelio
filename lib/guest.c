@@ -79,7 +79,7 @@ close_sockfd:
   return NULL;
 }
 
-struct proto_lib *cham_new_proto_bare(struct guest_lib *g)
+struct proto_lib *cham_new_proto_bare(struct guest_lib *g, __u8 proto_type)
 {
   int ret;
   ssize_t sz, off;
@@ -92,7 +92,7 @@ struct proto_lib *cham_new_proto_bare(struct guest_lib *g)
   struct shm_handle *sh;
   __u8 resp_buf[sizeof(*res)];
   struct queue_new_proto_req req = {
-      .proto_type = 1,
+      .proto_type = proto_type,
   };
 
   /* Send request on kernel socket */
@@ -132,6 +132,12 @@ struct proto_lib *cham_new_proto_bare(struct guest_lib *g)
       return NULL;
     }
     off += sz;
+  }
+
+  if (res->success == 0)
+  {
+    LOG_ERROR("protocol registration rejected by Chamelio");
+    return NULL;
   }
 
   shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE,
@@ -208,7 +214,7 @@ struct proto_lib *cham_new_proto_bare(struct guest_lib *g)
   return p;
 }
 
-struct proto_lib *cham_new_proto_virt()
+struct proto_lib *cham_new_proto_virt(__u8 proto_type)
 {
   int ret;
   struct proto_lib *p;
@@ -236,7 +242,7 @@ struct proto_lib *cham_new_proto_virt()
   p->nqueues = 0;
   p->shm_base = vfio.shm_base;
   p->nmaps = 0;
-  p->n_fp_cores = 0;
+  p->n_fp_cores = (__u32) -1;
   p->shm_fd = vfio.dev;
   p->shm_off = vfio.shm_off;
 
@@ -296,7 +302,7 @@ struct proto_lib *cham_new_proto_virt()
     return NULL;
   }
   req = &qe->data.new_proto_req;
-  req->proto_type = 1;
+  req->proto_type = proto_type;
 
   ret = queue_enqueue(eq, QUEUE_NEW_PROTO_REQ);
   if (ret != 0)
@@ -306,8 +312,14 @@ struct proto_lib *cham_new_proto_virt()
   }
 
   /* Wait to get protocol response */
-  while (p->n_fp_cores != 0)
+  while (p->n_fp_cores == (__u32) -1)
     cham_poll_control(p);
+
+  if (p->shm_size == 0)
+  {
+    LOG_ERROR("protocol registration rejected by Chamelio");
+    return NULL;
+  }
 
   return p;
 }
@@ -621,6 +633,14 @@ int cham_poll_control(struct proto_lib *p)
 static int handle_proto_res(struct proto_lib *p, struct queue_entry *qe)
 {
   struct queue_new_proto_res *res = &qe->data.new_proto_res;
+
+  if (res->success == 0)
+  {
+    p->n_fp_cores = 0;
+    p->local_ip = 0;
+    p->shm_size = 0;
+    return -1;
+  }
 
   p->n_fp_cores = res->n_fp_cores;
   p->local_ip = res->local_ip;

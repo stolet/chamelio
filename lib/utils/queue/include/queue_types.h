@@ -13,6 +13,12 @@ struct ebpf_vm_c;
 typedef __u64 (*ebpf_jitted_fn)(void *mem, size_t mem_len);
 #endif
 
+enum cham_proto_type {
+  CHAM_PROTO_INVALID = 0,
+  CHAM_PROTO_TCP,
+  CHAM_PROTO_UDP,
+};
+
 /* Type of queue entries */
 enum queue_type {
   /* Signals that the queue is empty */
@@ -87,6 +93,8 @@ struct queue_new_proto_req {
 
 /* Response for registering new protocol */
 struct queue_new_proto_res {
+  /* Indicates whether protocol registration succeeded */
+  __u8 success;
   /* Number of fast-path cores */
   __u32 n_fp_cores;
   /* Local IP address */

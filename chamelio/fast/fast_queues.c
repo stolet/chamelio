@@ -16,6 +16,7 @@
 #include "infra.h"
 #include "ebpf.h"
 #include "log.h"
+#include "protos.h"
 
 static inline int queues_poll_guest(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf **mbs, int max,
@@ -145,8 +146,25 @@ static inline int queues_poll_guest_dequeue(struct fast_context *ctx,
   g->proto.ebpf_ctx.qid = qcur->id;
 
   /* Execute custom dequeue procedure */
-  exec_ret = ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx,
-      sizeof(struct cham_ebpf_ctx), &deq_ret);
+  switch (ctx->fp_proto_mode)
+  {
+    case FP_PROTO_EBPF:
+      exec_ret = ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx,
+          sizeof(struct cham_ebpf_ctx), &deq_ret);
+      break;
+    case FP_PROTO_TCP:
+      deq_ret = tcp_event_deq(&g->proto.ebpf_ctx);
+      exec_ret = 0;
+      break;
+    case FP_PROTO_UDP:
+      deq_ret = udp_event_deq(&g->proto.ebpf_ctx);
+      exec_ret = 0;
+      break;
+    default:
+      deq_ret = -1;
+      exec_ret = -1;
+      break;
+  }
   (*ndeq)++;
 
   if (deq_ret < 0 || exec_ret < 0)

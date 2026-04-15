@@ -77,7 +77,7 @@ static void test_connect_guest()
 static void test_new_proto(struct guest_lib *guest)
 {
   printf(ANSI_COLOR_BLUE "Testing cham_new_proto..." ANSI_COLOR_RESET "\n");
-  struct proto_lib *proto = cham_new_proto_bare(guest);
+  struct proto_lib *proto = cham_new_proto_bare(guest, CHAM_PROTO_TCP);
   TEST_ASSERT(proto != NULL, "proto is NULL");
   TEST_ASSERT(proto->shm_base != NULL, "shm_base is NULL");
   TEST_ASSERT(proto->shm_size == TEST_SHM_SIZE, "incorrect shm_size");

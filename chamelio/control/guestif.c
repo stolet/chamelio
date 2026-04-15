@@ -439,16 +439,45 @@ static inline void uxsocket_receive(struct control_context *ctx,
   /* Request complete */
   gev->req_rx = 0;
   p = &gev->guest->proto;
-  p->guest = gev->guest;
-  p->nqueues = 0;
-  p->nmaps = 0;
 
   /* Initialise response */
+  gev->proto_res.success = 0;
   gev->proto_res.n_fp_cores = ctx->config->fp_cores_max;
   gev->proto_res.shm_len = ctx->config->shm_len;
   gev->proto_res.local_ip = ctx->config->ip;
 
+  switch (gev->proto_req.proto_type)
+  {
+    case CHAM_PROTO_TCP:
+    case CHAM_PROTO_UDP:
+      break;
+    default:
+      goto send_proto_res;
+  }
+
+  switch (ctx->config->fp_proto_mode)
+  {
+    case FP_PROTO_EBPF:
+      break;
+    case FP_PROTO_TCP:
+      if (gev->proto_req.proto_type != CHAM_PROTO_TCP)
+        goto send_proto_res;
+      break;
+    case FP_PROTO_UDP:
+      if (gev->proto_req.proto_type != CHAM_PROTO_UDP)
+        goto send_proto_res;
+      break;
+    default:
+      goto send_proto_res;
+  }
+
+  p->guest = gev->guest;
+  p->nqueues = 0;
+  p->nmaps = 0;
+  gev->proto_res.success = 1;
+
   /* Send out response */
+send_proto_res:
   res_sz = sizeof(struct queue_new_proto_res);
   n = send(gev->fd, &gev->proto_res, res_sz, 0);
   if (n < 0) 

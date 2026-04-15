@@ -11,18 +11,63 @@ void control_guest_new_proto(struct control_context *ctx,
 {
   int ret;
   struct queue_entry *qe_res;
+  struct queue_new_proto_req *req;
   struct queue_new_proto_res *res;
   struct proto_control *p;
 
   p = &g->proto;
-  p->guest = g;
-  p->nqueues = 0;
-  p->nmaps = 0;
+  req = &qe_req->data.new_proto_req;
 
   /* Initialize response */
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
   res = &qe_res->data.new_proto_res;
+  res->success = 0;
+  res->n_fp_cores = 0;
+  res->shm_len = 0;
+  res->local_ip = 0;
+
+  switch (req->proto_type)
+  {
+    case CHAM_PROTO_TCP:
+    case CHAM_PROTO_UDP:
+      break;
+    default:
+      ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_PROTO_RES);
+      assert(ret == 0);
+      return;
+  }
+
+  switch (ctx->config->fp_proto_mode)
+  {
+    case FP_PROTO_EBPF:
+      break;
+    case FP_PROTO_TCP:
+      if (req->proto_type != CHAM_PROTO_TCP)
+      {
+        ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_PROTO_RES);
+        assert(ret == 0);
+        return;
+      }
+      break;
+    case FP_PROTO_UDP:
+      if (req->proto_type != CHAM_PROTO_UDP)
+      {
+        ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_PROTO_RES);
+        assert(ret == 0);
+        return;
+      }
+      break;
+    default:
+      ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_PROTO_RES);
+      assert(ret == 0);
+      return;
+  }
+
+  p->guest = g;
+  p->nqueues = 0;
+  p->nmaps = 0;
+  res->success = 1;
   res->n_fp_cores = ctx->config->fp_cores_max;
   res->shm_len = ctx->config->shm_len;
   res->local_ip = ctx->config->ip;

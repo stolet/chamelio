@@ -11,8 +11,9 @@
 #include "ebpf.h"
 #include "txcache.h"
 #include "ip_hdr.h"
+#include "protos.h"
 
-static inline void rx_poll_guest(struct guest_fast *g,
+static inline void rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
     struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget,
     int virt_gre);
 
@@ -60,7 +61,7 @@ int fast_rx_poll(struct fast_context *ctx)
     if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
       continue;
 
-    rx_poll_guest(g, mbs[i], pkt_off, tsc_start, charge_budget,
+    rx_poll_guest(ctx, g, mbs[i], pkt_off, tsc_start, charge_budget,
         ctx->virt_gre);
   }
 
@@ -71,16 +72,32 @@ int fast_rx_poll(struct fast_context *ctx)
   return nrx;
 }
 
-static inline void rx_poll_guest(struct guest_fast *g,
+static inline void rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
     struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget,
     int virt_gre)
 {
+  int exec_ret;
   int ret;
   __u64 tsc_spent;
 
   fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off, virt_gre);
-  ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx,
-      sizeof(struct cham_ebpf_ctx), &ret);
+  switch (ctx->fp_proto_mode)
+  {
+    case FP_PROTO_EBPF:
+      exec_ret = ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx,
+          sizeof(struct cham_ebpf_ctx), &ret);
+      (void) exec_ret;
+      break;
+    case FP_PROTO_TCP:
+      ret = tcp_event_rx(&g->proto.ebpf_ctx);
+      break;
+    case FP_PROTO_UDP:
+      ret = udp_event_rx(&g->proto.ebpf_ctx);
+      break;
+    default:
+      ret = -1;
+      break;
+  }
 
   if (charge_budget)
   {

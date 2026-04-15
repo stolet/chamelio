@@ -51,7 +51,7 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
       abort();
     }
 
-    p = cham_new_proto_bare(g);
+    p = cham_new_proto_bare(g, CHAM_PROTO_UDP);
     if (p == NULL)
     {
       LOG_ERROR("UDP slow-path failed to register protocol with Chamelio");
@@ -60,7 +60,7 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   }
   else
   {
-    p = cham_new_proto_virt();
+    p = cham_new_proto_virt(CHAM_PROTO_UDP);
     if (p == NULL)
     {
       LOG_ERROR("UDP slow-path failed to register protocol with Chamelio");

@@ -13,6 +13,7 @@
 #include "infra.h"
 #include "ebpf.h"
 #include "scheduler_fns.h"
+#include "protos.h"
 
 static inline int tx_poll_guest(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf **mbs, int max, int *ntx,
@@ -36,8 +37,18 @@ int fast_tx_poll(struct fast_context *ctx)
   for (i = 0; i < n_guests; i++)
   {
     g = &ctx->guests[i];
-    if (g->proto.event_tx_vm == NULL)
-      continue;
+    switch (ctx->fp_proto_mode)
+    {
+      case FP_PROTO_EBPF:
+        if (g->proto.event_tx_vm == NULL)
+          continue;
+        break;
+      case FP_PROTO_TCP:
+      case FP_PROTO_UDP:
+        break;
+      default:
+        continue;
+    }
       
     if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
       continue;
@@ -97,9 +108,19 @@ static inline int tx_poll_guest(struct fast_context *ctx,
   int ret;
   __u64 tsc_start = 0, tsc_spent;
 
-  /* Continue to next guest if ebpf code hasn't been uploaded yet */
-  if (g->proto.event_tx_vm == NULL)
-    return 0;
+  switch (ctx->fp_proto_mode)
+  {
+    case FP_PROTO_EBPF:
+      /* Continue to next guest if ebpf code hasn't been uploaded yet */
+      if (g->proto.event_tx_vm == NULL)
+        return 0;
+      break;
+    case FP_PROTO_TCP:
+    case FP_PROTO_UDP:
+      break;
+    default:
+      return 0;
+  }
 
   /* Continue to next guest if there is no pending scheduler work */
   if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
@@ -124,8 +145,25 @@ static inline int tx_poll_guest(struct fast_context *ctx,
     fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb, ctx->virt_gre);
   
     /* Execute custom protocol tx procedure */
-    exec_ret = ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx,
-        sizeof(struct cham_ebpf_ctx), &tx_ret);
+    switch (ctx->fp_proto_mode)
+    {
+      case FP_PROTO_EBPF:
+        exec_ret = ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx,
+            sizeof(struct cham_ebpf_ctx), &tx_ret);
+        break;
+      case FP_PROTO_TCP:
+        tx_ret = tcp_event_tx(&g->proto.ebpf_ctx);
+        exec_ret = 0;
+        break;
+      case FP_PROTO_UDP:
+        tx_ret = udp_event_tx(&g->proto.ebpf_ctx);
+        exec_ret = 0;
+        break;
+      default:
+        tx_ret = -1;
+        exec_ret = -1;
+        break;
+    }
 
     if (tx_ret < 0 || exec_ret < 0)
       break;

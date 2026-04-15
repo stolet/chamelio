@@ -21,6 +21,7 @@ deps = [
   dependency('chamelio_dep'),
   dependency('pkt_hdrs_dep'),
   dependency('arp_dep'),
+  dependency('fast_proto_dep'),
   dependency('udp_dep'),
   dependency('cham'),
 ]

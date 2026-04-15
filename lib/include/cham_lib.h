@@ -4,6 +4,7 @@
 #include <linux/types.h>
 
 #include "queue.h"
+#include "queue_types.h"
 #include "vfio.h"
 
 #define APP_SOCKET_PATH "/run/chamelio/app_socket"
@@ -108,9 +109,9 @@ int cham_init_ivshmem();
 /* Connects a guest with Chamelio */
 struct guest_lib * cham_connect_guest();
 /* Creates a new protocol and maps shared memory region on host */
-struct proto_lib *cham_new_proto_bare(struct guest_lib *g);
+struct proto_lib *cham_new_proto_bare(struct guest_lib *g, __u8 proto_type);
 /* Creates a new protocol and maps shared memory region in guest */
-struct proto_lib *cham_new_proto_virt();
+struct proto_lib *cham_new_proto_virt(__u8 proto_type);
 
 /* Creates a queue of the specified size in the shared memory of the protocol */
 struct proto_queue_lib * cham_new_queue(struct proto_lib *p, 

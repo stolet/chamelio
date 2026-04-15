@@ -128,7 +128,8 @@ int control_ebpf_init(struct control_context *ctx)
 {
   int ret;
 
-  if (!ctx->config->fp_jit_combined)
+  if (!ctx->config->fp_jit_combined ||
+      ctx->config->fp_proto_mode != FP_PROTO_EBPF)
     return 0;
 
   ret = load_comb_bytecode(ctx);
@@ -140,7 +141,8 @@ int control_ebpf_init(struct control_context *ctx)
 
 int control_ebpf_publish(struct control_context *ctx)
 {
-  if (!ctx->config->fp_jit_combined)
+  if (!ctx->config->fp_jit_combined ||
+      ctx->config->fp_proto_mode != FP_PROTO_EBPF)
     return 0;
 
   return publish_agg_vms(ctx, CHAMELIO_MAX_GUESTS);
@@ -206,6 +208,14 @@ void control_ebpf_upload(struct control_context *ctx,
   qe_res = queue_tail(g->cham_guest_q);
   assert(qe_res != NULL);
   res = (struct queue_up_ebpf_res *)&qe_res->data;
+
+  if (ctx->config->fp_proto_mode != FP_PROTO_EBPF)
+  {
+    res->success = 1;
+    ret = queue_enqueue(g->cham_guest_q, QUEUE_UPLOAD_EBPF_RES);
+    assert(ret == 0);
+    return;
+  }
 
   ebpf_bytecode = (__u8 *) g->shm_base + req->off;
   bpf_obj = bpf_object__open_mem(ebpf_bytecode, req->size, NULL);

@@ -163,11 +163,11 @@ static struct proto_lib *tcp_proto_open(const struct tcp_slow_context *ctx)
       abort();
     }
 
-    proto = cham_new_proto_bare(guest);
+    proto = cham_new_proto_bare(guest, CHAM_PROTO_TCP);
   }
   else
   {
-    proto = cham_new_proto_virt();
+    proto = cham_new_proto_virt(CHAM_PROTO_TCP);
   }
 
   if (proto == NULL)

@@ -78,6 +78,8 @@ struct fast_context {
   /* Hot config flags cached locally */
   /* Use combined LLVM IR when jitting */
   __u8 fp_jit_combined;
+  /* Use built-in fixed fast path for one protocol */
+  __u8 fp_proto_mode;
   /* Encapsulate packets with GRE */
   __u8 virt_gre;
   /* Enable per-packet budget accounting in fast-path */
