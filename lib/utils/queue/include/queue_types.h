@@ -107,6 +107,8 @@ struct queue_new_proto_res {
 struct queue_new_queue_req {
   /* Guest ID for this protocol */
   __u8 gid;
+  /* Protocol type */
+  __u8 proto_type;
   /* Queue ID */
   __u32 qid;
   /* Number of elements in the queue */
@@ -137,6 +139,8 @@ struct queue_new_queue_res {
 struct queue_new_map_req {
   /* Guest ID for this protocol */
   __u8 gid;
+  /* Protocol type */
+  __u8 proto_type;
   /* Map ID */
   __u32 mid;
   /* Number of elements in each map */
@@ -169,6 +173,8 @@ struct queue_enableq_req {
   __u16 qid;
   /* Guest ID */
   __u16 gid;
+  /* Protocol type */
+  __u8 proto_type;
   /* Queue offset in shared memory */
   __u64 off;
   /* Number of elements in queue */

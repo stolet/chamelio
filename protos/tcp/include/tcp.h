@@ -45,7 +45,6 @@ enum tcp_sock_state {
 
 #define TCP_SOCK_FLAG_SHUT_RD 0x1
 #define TCP_SOCK_FLAG_SHUT_WR 0x2
-#define TCP_SOCK_FLAG_SEND_ACK 0x4
 #define TCP_SOCK_FLAG_SEND_ECE 0x8
 #define TCP_SOCK_FLAG_ECN 0x10
 
@@ -125,10 +124,12 @@ struct tcp_sock {
   __u32 cc_drops;
   /* Congestion-control rate in kbps, 0 means unlimited */
   __u32 cc_rate;
-  /* TSC of the last RX packet processed by the fast path */
-  __u64 rx_last_tsc;
-  /* TSC of the last packet that advanced tx_seq */
-  __u64 ack_advance_last_tsc;
+  /* Most recent peer timestamp value to echo back */
+  __u32 ts_recent;
+  /* Smoothed RTT estimate in microseconds */
+  __u32 rtt_est;
+  /* Earliest TSC when the next paced data packet may be sent */
+  __u64 tx_ready_tsc;
   /* 1 while recovery limits new sends to the original flight */
   __u8 recovery_active;
   __u8 recovery_pad[3];
@@ -163,5 +164,43 @@ struct tcp_ctl_cfg {
   /* Packet queue used by slow-path to send control packets to fast-path */
   __u16 slow_fast_pkt_qid;
 } __attribute__((packed));
+
+static inline void tcp_sock_recovery_reset(struct tcp_sock *sock)
+{
+  sock->recovery_active = 0;
+  sock->recovery_end_seq = 0;
+}
+
+static inline void tcp_sock_recovery_enter(struct tcp_sock *sock)
+{
+  if (sock->recovery_active)
+    return;
+
+  sock->recovery_active = 1;
+  sock->recovery_end_seq = sock->tx_seq + sock->tx_pending;
+}
+
+static inline void tcp_sock_recovery_ack(struct tcp_sock *sock)
+{
+  if (sock->recovery_active &&
+      (__s32) (sock->tx_seq - sock->recovery_end_seq) >= 0)
+  {
+    tcp_sock_recovery_reset(sock);
+  }
+}
+
+static inline __u32 tcp_sock_recovery_avail(const struct tcp_sock *sock)
+{
+  __u32 seq;
+
+  if (!sock->recovery_active)
+    return -1U;
+
+  seq = sock->tx_seq + sock->tx_pending;
+  if ((__s32) (sock->recovery_end_seq - seq) <= 0)
+    return 0;
+
+  return sock->recovery_end_seq - seq;
+}
 
 #endif

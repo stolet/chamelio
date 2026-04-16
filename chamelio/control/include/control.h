@@ -42,6 +42,8 @@ struct proto_queue_control {
 struct proto_control {
   /* Guest that this protocol belongs to */
   struct guest_control *guest;
+  /* Protocol registered for this guest */
+  __u8 proto_type;
 
   /* Number of queues in shared memory */
   __u16 nqueues;

@@ -112,18 +112,26 @@ static inline void comb_sched_insert(struct cham_scheduler *sched, __u32 id)
 static inline int comb_sched_add(struct cham_scheduler *sched, __u32 id,
     __u64 priority, __u32 avail)
 {
+  __u32 total_avail;
   struct cham_sched_entry *entry;
 
   entry = &sched->entries[id];
   if (entry->id != SCHED_ID_INVALID)
   {
-    entry->avail += avail;
+    total_avail = entry->avail + avail;
     if (entry->priority == priority)
+    {
+      entry->avail = total_avail;
       return 0;
+    }
 
     if (comb_sched_remove(sched, id) != 0)
       return -1;
+    entry->id = id;
+    entry->next_entry = SCHED_ID_INVALID;
     entry->priority = priority;
+    entry->avail = total_avail;
+    entry->opaque = 0;
     comb_sched_insert(sched, id);
     return 0;
   }
@@ -213,6 +221,11 @@ static inline void *comb_map_lookup(void *map_base, __u64 id, __u64 elsize)
 static inline __u64 comb_rdtsc(void)
 {
   return clock_rdtsc();
+}
+
+static inline __u64 comb_now_us(void)
+{
+  return clock_tsc_to_us(clock_rdtsc());
 }
 
 static inline __u64 comb_rate_delay_tsc(__u32 bytes, __u32 rate_kbps)
@@ -330,6 +343,16 @@ DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_RDTSC, ext_rdtsc)
   (void) arg4;
   (void) arg5;
   return comb_rdtsc();
+}
+
+DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_NOW_US, ext_now_us)
+{
+  (void) arg1;
+  (void) arg2;
+  (void) arg3;
+  (void) arg4;
+  (void) arg5;
+  return comb_now_us();
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_RATE_DELAY_TSC, ext_rate_delay_tsc)

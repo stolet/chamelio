@@ -65,6 +65,8 @@ int tcp_sock_alloc(struct tcp_slow_context *ctx, __u64 opaque, __u8 app_id,
   sock->tx_rexmit_seq = 0;
   sock->tx_rexmit_end_seq = 0;
   sock->rx_dupack_cnt = 0;
+  sock->ts_recent = 0;
+  sock->rtt_est = 0;
 
   meta = &ctx->sock_meta[sock->id];
   meta->listener_id = ID_INVALID;
@@ -121,11 +123,6 @@ __u16 tcp_sock_rx_wnd(const struct tcp_sock *sock)
     wnd = 65535;
 
   return (__u16) wnd;
-}
-
-void tcp_sock_ack_progress(struct tcp_sock *sock)
-{
-  sock->ack_advance_last_tsc = clock_rdtsc();
 }
 
 void tcp_sock_close_final(struct tcp_slow_context *ctx, struct tcp_sock *sock)
@@ -243,7 +240,9 @@ static void sock_conn_reset(struct tcp_sock *sock)
   sock->tx_rexmit_seq = 0;
   sock->tx_rexmit_end_seq = 0;
   sock->rx_dupack_cnt = 0;
-  sock->ack_advance_last_tsc = 0;
+  sock->ts_recent = 0;
+  sock->rtt_est = 0;
+  sock->tx_ready_tsc = 0;
 }
 
 static void sock_autobind_drop(struct tcp_slow_context *ctx, struct tcp_sock *sock)

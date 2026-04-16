@@ -13,7 +13,7 @@
 
 static inline int tx_poll_slot(struct fast_context *ctx, int slot,
     struct rte_mbuf **mbs, int max, int *ntx, int charge_budget);
-static inline void rx_poll_slot(struct fast_context *ctx,
+static inline int rx_poll_slot(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf *mb, __u64 pkt_off,
     __u64 tsc_start, int charge_budget);
 static inline int deq_poll_slot(struct fast_context *ctx, int slot,
@@ -56,25 +56,40 @@ DEFINE_EVENT_STUB(tx, 2)
 DEFINE_EVENT_STUB(tx, 3)
 
 #define DEFINE_RX_SLOT(slot)                                                  \
-  static inline void rx_poll_slot_##slot(struct fast_context *ctx,            \
+  static inline int rx_poll_slot_##slot(struct fast_context *ctx,             \
       struct guest_fast *g, struct rte_mbuf *mb, __u64 pkt_off,               \
       __u64 tsc_start, int charge_budget)                                     \
   {                                                                           \
+    int ret;                                                                  \
+    int rx_ret;                                                               \
+    int mb_tx = 0;                                                            \
     __u64 tsc_spent;                                                          \
                                                                               \
     if (!g->proto.has_event_rx)                                               \
-      return;                                                                 \
+      return 0;                                                               \
                                                                               \
     fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off,                    \
         comb_virt_gre(ctx));                                                  \
-    (void) event_rx_slot_##slot(&g->proto.ebpf_ctx,                           \
+    rx_ret = (int) event_rx_slot_##slot(&g->proto.ebpf_ctx,                   \
         sizeof(struct cham_ebpf_ctx));                                        \
+    if (rx_ret > 0)                                                           \
+    {                                                                         \
+      ret = infra_tx(ctx, g, mb, rx_ret);                                     \
+      if (ret == 0)                                                           \
+      {                                                                       \
+        ctx->tx_mbs[ctx->tx_n] = mb;                                          \
+        ctx->tx_n++;                                                          \
+        mb_tx = 1;                                                            \
+      }                                                                       \
+    }                                                                         \
                                                                               \
     if (charge_budget)                                                        \
     {                                                                         \
       tsc_spent = clock_rdtsc() - tsc_start;                                  \
       __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);             \
     }                                                                         \
+                                                                              \
+    return mb_tx;                                                             \
   }
 
 #define DEFINE_TX_SLOT(slot)                                                  \
@@ -112,7 +127,7 @@ DEFINE_EVENT_STUB(tx, 3)
                                                                               \
       tx_ret = (int) event_tx_slot_##slot(&g->proto.ebpf_ctx,                 \
           sizeof(struct cham_ebpf_ctx));                                      \
-      if (tx_ret < 0)                                                         \
+      if (tx_ret <= 0)                                                        \
         break;                                                                \
                                                                               \
       ret = infra_tx(ctx, g, mb, tx_ret);                                     \
@@ -234,6 +249,7 @@ uint64_t fast_rx_poll_comb(void *mem, size_t mem_len)
   struct fast_context *ctx = mem;
   struct guest_fast *g;
   struct rte_mbuf *mbs[FAST_RX_BATCH_SIZE];
+  __u8 tx_idx[FAST_RX_BATCH_SIZE] = {0};
   __u64 tsc_start = 0, pkt_off;
   const int charge_budget = comb_perf_iso(ctx);
 
@@ -267,11 +283,17 @@ uint64_t fast_rx_poll_comb(void *mem, size_t mem_len)
     if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
       continue;
 
-    rx_poll_slot(ctx, g, mbs[i], pkt_off, tsc_start, charge_budget);
+    tx_idx[i] = (__u8) rx_poll_slot(ctx, g, mbs[i], pkt_off, tsc_start,
+        charge_budget);
   }
 
+  fast_txflush(ctx);
+
   for (i = 0; i < nrx; i++)
-    txcache_free(ctx, mbs[i]);
+  {
+    if (!tx_idx[i])
+      txcache_free(ctx, mbs[i]);
+  }
 
   return nrx;
 }
@@ -377,26 +399,22 @@ uint64_t fast_tx_poll_comb(void *mem, size_t mem_len)
   return ntx;
 }
 
-static inline void rx_poll_slot(struct fast_context *ctx,
+static inline int rx_poll_slot(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf *mb, __u64 pkt_off,
     __u64 tsc_start, int charge_budget)
 {
   switch (g->id)
   {
     case 0:
-      rx_poll_slot_0(ctx, g, mb, pkt_off, tsc_start, charge_budget);
-      break;
+      return rx_poll_slot_0(ctx, g, mb, pkt_off, tsc_start, charge_budget);
     case 1:
-      rx_poll_slot_1(ctx, g, mb, pkt_off, tsc_start, charge_budget);
-      break;
+      return rx_poll_slot_1(ctx, g, mb, pkt_off, tsc_start, charge_budget);
     case 2:
-      rx_poll_slot_2(ctx, g, mb, pkt_off, tsc_start, charge_budget);
-      break;
+      return rx_poll_slot_2(ctx, g, mb, pkt_off, tsc_start, charge_budget);
     case 3:
-      rx_poll_slot_3(ctx, g, mb, pkt_off, tsc_start, charge_budget);
-      break;
+      return rx_poll_slot_3(ctx, g, mb, pkt_off, tsc_start, charge_budget);
     default:
-      break;
+      return 0;
   }
 }
 

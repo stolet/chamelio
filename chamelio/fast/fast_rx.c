@@ -13,7 +13,7 @@
 #include "ip_hdr.h"
 #include "protos.h"
 
-static inline void rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
+static inline int rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
     struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget,
     int virt_gre);
 
@@ -21,6 +21,7 @@ int fast_rx_poll(struct fast_context *ctx)
 {
   int i, nrx;
   struct rte_mbuf *mbs[FAST_RX_BATCH_SIZE];
+  __u8 tx_idx[FAST_RX_BATCH_SIZE] = {0};
   struct guest_fast *g;
   __u64 tsc_start = 0, pkt_off;
   const int charge_budget = ctx->perf_iso;
@@ -61,23 +62,29 @@ int fast_rx_poll(struct fast_context *ctx)
     if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
       continue;
 
-    rx_poll_guest(ctx, g, mbs[i], pkt_off, tsc_start, charge_budget,
-        ctx->virt_gre);
+    tx_idx[i] = (__u8) rx_poll_guest(ctx, g, mbs[i], pkt_off, tsc_start,
+        charge_budget, ctx->virt_gre);
   }
+
+  fast_txflush(ctx);
 
   /* Reuse mbufs in txcache */
   for (i = 0; i < nrx; i++)
-    txcache_free(ctx, mbs[i]);
+  {
+    if (!tx_idx[i])
+      txcache_free(ctx, mbs[i]);
+  }
 
   return nrx;
 }
 
-static inline void rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
+static inline int rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
     struct rte_mbuf *mb, __u64 pkt_off, __u64 tsc_start, int charge_budget,
     int virt_gre)
 {
   int exec_ret;
-  int ret;
+  int ret, rx_ret;
+  int mb_tx = 0;
   __u64 tsc_spent;
 
   fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off, virt_gre);
@@ -85,18 +92,26 @@ static inline void rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
   {
     case FP_PROTO_EBPF:
       exec_ret = ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx,
-          sizeof(struct cham_ebpf_ctx), &ret);
+          sizeof(struct cham_ebpf_ctx), &rx_ret);
       (void) exec_ret;
       break;
-    case FP_PROTO_TCP:
-      ret = tcp_event_rx(&g->proto.ebpf_ctx);
-      break;
-    case FP_PROTO_UDP:
-      ret = udp_event_rx(&g->proto.ebpf_ctx);
+    case FP_PROTO_HAND:
+      rx_ret = proto_hand_event_rx(g->proto.proto_type, &g->proto.ebpf_ctx);
       break;
     default:
-      ret = -1;
+      rx_ret = -1;
       break;
+  }
+
+  if (rx_ret > 0)
+  {
+    ret = infra_tx(ctx, g, mb, rx_ret);
+    if (ret == 0)
+    {
+      ctx->tx_mbs[ctx->tx_n] = mb;
+      ctx->tx_n++;
+      mb_tx = 1;
+    }
   }
 
   if (charge_budget)
@@ -104,4 +119,6 @@ static inline void rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
     tsc_spent = clock_rdtsc() - tsc_start;
     __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
   }
+
+  return mb_tx;
 }

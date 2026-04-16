@@ -56,6 +56,7 @@ static inline __u16 ebpf_ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr);
 static inline void *ebpf_map_get(void *map_base, __u32 len);
 static inline void *ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize);
 static inline __u64 ebpf_rdtsc(void);
+static inline __u64 ebpf_now_us(void);
 static inline __u64 ebpf_rate_delay_tsc(__u32 bytes, __u32 rate_kbps);
 static inline struct cham_sched_entry *ebpf_sched_head(
     struct cham_scheduler *sched, __u64 elsize);
@@ -114,6 +115,8 @@ static const struct ebpf_helper_desc ebpf_helpers[] = {
       "queue_dequeue", queue_dequeue, 1 },
   { EBPF_HELPER_RDTSC,
       "ebpf_rdtsc", ebpf_rdtsc, 1 },
+  { EBPF_HELPER_NOW_US,
+      "ebpf_now_us", ebpf_now_us, 1 },
   { EBPF_HELPER_RATE_DELAY_TSC,
       "ebpf_rate_delay_tsc", ebpf_rate_delay_tsc, 1 },
   { EBPF_HELPER_SPIN_LOCK,
@@ -792,6 +795,11 @@ static inline void *ebpf_map_lookup(void *map_base, __u64 id, __u64 elsize)
 static inline __u64 ebpf_rdtsc(void)
 {
   return clock_rdtsc();
+}
+
+static inline __u64 ebpf_now_us(void)
+{
+  return clock_tsc_to_us(clock_rdtsc());
 }
 
 static inline __u64 ebpf_rate_delay_tsc(__u32 bytes, __u32 rate_kbps)

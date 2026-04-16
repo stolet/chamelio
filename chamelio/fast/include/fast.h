@@ -26,6 +26,8 @@
 #define TX_CACHE_SIZE 128
 
 struct proto_fast {
+  /* Registered protocol type for handwritten fast path */
+  __u8 proto_type;
   /* Number of enabled queues */
   __u16 ndqueues;
   /* Head of enabled queues */
@@ -78,7 +80,7 @@ struct fast_context {
   /* Hot config flags cached locally */
   /* Use combined LLVM IR when jitting */
   __u8 fp_jit_combined;
-  /* Use built-in fixed fast path for one protocol */
+  /* Select eBPF or handwritten fast-path mode */
   __u8 fp_proto_mode;
   /* Encapsulate packets with GRE */
   __u8 virt_gre;

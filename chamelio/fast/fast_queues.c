@@ -152,12 +152,8 @@ static inline int queues_poll_guest_dequeue(struct fast_context *ctx,
       exec_ret = ebpf_vm_exec(g->proto.event_deq_vm, &g->proto.ebpf_ctx,
           sizeof(struct cham_ebpf_ctx), &deq_ret);
       break;
-    case FP_PROTO_TCP:
-      deq_ret = tcp_event_deq(&g->proto.ebpf_ctx);
-      exec_ret = 0;
-      break;
-    case FP_PROTO_UDP:
-      deq_ret = udp_event_deq(&g->proto.ebpf_ctx);
+    case FP_PROTO_HAND:
+      deq_ret = proto_hand_event_deq(g->proto.proto_type, &g->proto.ebpf_ctx);
       exec_ret = 0;
       break;
     default:

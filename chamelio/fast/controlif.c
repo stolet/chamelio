@@ -113,6 +113,7 @@ static inline void handle_new_guest(struct fast_context *ctx,
   
   /* TODO: Have a separate message to initialise protocol */
   g->proto.ndqueues = 0;
+  g->proto.proto_type = CHAM_PROTO_INVALID;
   g->proto.dqueues_head = PROTOQ_ID_INVALID;
   g->proto.dqueues_tail = PROTOQ_ID_INVALID;
   g->proto.has_event_rx = 0;
@@ -152,6 +153,7 @@ static inline void handle_new_queue(struct fast_context *ctx,
 
   g = &ctx->guests[req->gid];
   p = &g->proto;
+  p->proto_type = req->proto_type;
   q = &p->ebpf_ctx.equeues[req->qid];
   q->id = req->qid;
 
@@ -179,6 +181,7 @@ static inline void handle_new_map(struct fast_context *ctx,
 
   g = &ctx->guests[req->gid];
   p = &g->proto;
+  p->proto_type = req->proto_type;
   m = &p->ebpf_ctx.maps[p->ebpf_ctx.nmaps];
   p->ebpf_ctx.nmaps++;
 
@@ -201,6 +204,7 @@ static inline void handle_enableq(struct fast_context *ctx,
   req = &qe->data.enableq_req;
   g = &ctx->guests[req->gid];
   p = &g->proto;
+  p->proto_type = req->proto_type;
   
   /* Get uninitialised queue from protocol list */
   q = &p->dqueues[req->qid];

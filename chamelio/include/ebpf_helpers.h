@@ -21,6 +21,7 @@ enum ebpf_helper_id
   EBPF_HELPER_SPIN_LOCK = 1016,
   EBPF_HELPER_SPIN_UNLOCK = 1017,
   EBPF_HELPER_SCHED_REMOVE = 1018,
+  EBPF_HELPER_NOW_US = 1019,
 };
 
 #define EBPF_EXT_HELPER_QUEUE_TAIL "_bpf_helper_ext_1001"
@@ -36,5 +37,6 @@ enum ebpf_helper_id
 #define EBPF_EXT_HELPER_RDTSC "_bpf_helper_ext_1014"
 #define EBPF_EXT_HELPER_RATE_DELAY_TSC "_bpf_helper_ext_1015"
 #define EBPF_EXT_HELPER_SCHED_REMOVE "_bpf_helper_ext_1018"
+#define EBPF_EXT_HELPER_NOW_US "_bpf_helper_ext_1019"
 
 #endif

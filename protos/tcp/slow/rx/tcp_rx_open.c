@@ -97,6 +97,7 @@ int tcp_rx_listen_syn(struct tcp_slow_context *ctx, struct tcp_sock *listen_sock
   sock->tx_pending = 1;
   sock->rx_seq = rx->seq + 1;
   sock->tx_remote_avail = rx->wnd;
+  sock->ts_recent = rx->ts_valid ? rx->ts_val : 0;
   sock->state = TCP_SOCK_STATE_SYN_RECV;
   tcp_sock_meta(ctx, sock)->listener_id = listen_sock->id;
   if (tcp_cc_ecn_enabled(ctx) &&
@@ -155,7 +156,6 @@ static void sock_active_established(struct tcp_slow_context *ctx,
   sock->tx_remote_avail = rx->wnd;
   sock->tx_pending -= 1;
   sock->state = TCP_SOCK_STATE_ESTABLISHED;
-  tcp_sock_ack_progress(sock);
   tcp_sock_cc_init(ctx, sock);
 }
 
@@ -169,7 +169,6 @@ static int sock_passive_established(struct tcp_slow_context *ctx,
   sock->tx_pending -= 1;
   sock->tx_seq += 1;
   sock->state = TCP_SOCK_STATE_ACCEPT_PENDING;
-  tcp_sock_ack_progress(sock);
 
   listener_id = tcp_sock_meta(ctx, sock)->listener_id;
   if (tcp_listener_ready_push(ctx, listener_id, sock->id) != 0)

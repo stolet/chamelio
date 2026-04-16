@@ -18,7 +18,7 @@ enum cfg_params {
   CP_CC,
   CP_CC_CONTROL_GRANULARITY,
   CP_CC_CONTROL_INTERVAL,
-  CP_CC_REXMIT_INTS,
+  CP_CC_REMIT_INTS,
   CP_CC_DCTCP_WEIGHT,
   CP_CC_DCTCP_INIT,
   CP_CC_DCTCP_STEP,
@@ -59,9 +59,9 @@ static struct option opts[] = {
   { .name = "cc-control-interval",
     .has_arg = required_argument,
     .val = CP_CC_CONTROL_INTERVAL },
-  { .name = "cc-rexmit-ints",
+  { .name = "cc-remit-ints",
     .has_arg = required_argument,
-    .val = CP_CC_REXMIT_INTS },
+    .val = CP_CC_REMIT_INTS },
   { .name = "cc-dctcp-weight",
     .has_arg = required_argument,
     .val = CP_CC_DCTCP_WEIGHT },
@@ -148,8 +148,8 @@ int tcp_config_parse(struct tcp_configuration *c, int argc, char **argv)
         if (parse_u32(optarg, &c->cc_control_interval) != 0)
           goto failed;
         break;
-      case CP_CC_REXMIT_INTS:
-        if (parse_u32(optarg, &c->cc_rexmit_ints) != 0)
+      case CP_CC_REMIT_INTS:
+        if (parse_u32(optarg, &c->cc_remit_ints) != 0)
           goto failed;
         break;
       case CP_CC_DCTCP_WEIGHT: {
@@ -218,7 +218,7 @@ static int config_defaults(struct tcp_configuration *c)
   c->cc_algorithm = TCP_CC_ALGO_CONST_RATE;
   c->cc_control_granularity = 50;
   c->cc_control_interval = 2;
-  c->cc_rexmit_ints = 4;
+  c->cc_remit_ints = 4;
   c->cc_dctcp_weight = UINT_MAX / 16;
   c->cc_dctcp_init = 10000;
   c->cc_dctcp_step = 10000;
@@ -327,7 +327,7 @@ static void print_usage(struct tcp_configuration *c, char *progname)
           " [default: %u]\n"
       "  --cc-control-interval=RTTS           Control interval in RTTs"
           " [default: %u]\n"
-      "  --cc-rexmit-ints=INTERVALS           Control intervals without ACKs"
+      "  --cc-remit-ints=INTERVALS            Control intervals without ACKs"
           " before retransmit [default: %u]\n"
       "  --cc-dctcp-weight=WEIGHT             DCTCP EWMA weight in [0, 1]"
           " [default: %f]\n"
@@ -348,7 +348,7 @@ static void print_usage(struct tcp_configuration *c, char *progname)
       c->ctlq_len,
       c->cc_algorithm == TCP_CC_ALGO_DCTCP_RATE ? "dctcp-rate" : "const-rate",
       c->cc_rtt_init, c->cc_control_granularity, c->cc_control_interval,
-      c->cc_rexmit_ints, (double) c->cc_dctcp_weight / UINT_MAX,
+      c->cc_remit_ints, (double) c->cc_dctcp_weight / UINT_MAX,
       c->cc_dctcp_init, c->cc_dctcp_step, c->cc_dctcp_min,
       c->cc_dctcp_minpkts, c->cc_const_rate);
 }

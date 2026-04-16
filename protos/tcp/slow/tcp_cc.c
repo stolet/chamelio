@@ -32,7 +32,8 @@ static void cc_sock_reset(struct tcp_sock *sock, struct tcp_sock_meta_slow *meta
 static __u32 cc_init_rate(const struct tcp_slow_context *ctx,
     struct tcp_sock_meta_slow *meta);
 static void sock_on_const_rate(struct tcp_slow_context *ctx,
-    struct tcp_sock *sock, struct tcp_sock_meta_slow *meta);
+    struct tcp_sock *sock, struct tcp_sock_meta_slow *meta,
+    const struct tcp_cc_stats *stats);
 static void sock_on_tx_stall(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     struct tcp_sock_meta_slow *meta, const struct tcp_cc_stats *stats,
     __u64 now_tsc);
@@ -125,7 +126,7 @@ void tcp_sock_cc_init(struct tcp_slow_context *ctx, struct tcp_sock *sock)
   meta = tcp_sock_meta(ctx, sock);
   cc_sock_reset(sock, meta);
   meta->cc_tsc = clock_rdtsc();
-  meta->cc_rtt = ctx->config.cc_rtt_init;
+  meta->cc_rtt = sock->rtt_est != 0 ? sock->rtt_est : ctx->config.cc_rtt_init;
   sock->cc_rate = cc_init_rate(ctx, meta);
 }
 
@@ -144,7 +145,10 @@ static void cc_stats_read(const struct tcp_slow_context *ctx,
   stats->acks = sock->cc_acks - meta->cc_last_acks;
   stats->ackb = sock->cc_ackb - meta->cc_last_ackb;
   stats->ecnb = sock->cc_ecnb - meta->cc_last_ecnb;
-  stats->rtt = meta->cc_rtt != 0 ? meta->cc_rtt : ctx->config.cc_rtt_init;
+  if (sock->rtt_est != 0)
+    stats->rtt = sock->rtt_est;
+  else
+    stats->rtt = meta->cc_rtt != 0 ? meta->cc_rtt : ctx->config.cc_rtt_init;
   stats->tx_pending = sock->tx_pending != 0;
 }
 
@@ -175,9 +179,8 @@ static void cc_sock_reset(struct tcp_sock *sock, struct tcp_sock_meta_slow *meta
   sock->cc_ecnb = 0;
   sock->cc_drops = 0;
   sock->cc_rate = 0;
-  sock->rx_last_tsc = 0;
-  sock->recovery_active = 0;
-  sock->recovery_end_seq = 0;
+  sock->tx_ready_tsc = 0;
+  tcp_sock_recovery_reset(sock);
 
   meta->cc_tsc = 0;
   meta->cc_rtt = 0;
@@ -213,10 +216,10 @@ static __u32 cc_init_rate(const struct tcp_slow_context *ctx,
 }
 
 static void sock_on_const_rate(struct tcp_slow_context *ctx, struct tcp_sock *sock,
-    struct tcp_sock_meta_slow *meta)
+    struct tcp_sock_meta_slow *meta, const struct tcp_cc_stats *stats)
 {
   sock->cc_rate = ctx->config.cc_const_rate;
-  meta->cc_rtt = ctx->config.cc_rtt_init;
+  meta->cc_rtt = cc_rtt(ctx, stats);
   meta->cc_rexmits = 0;
 }
 
@@ -225,8 +228,6 @@ static void sock_on_tx_stall(struct tcp_slow_context *ctx, struct tcp_sock *sock
     __u64 now_tsc)
 {
   __u32 rtt;
-  __u64 ack_silence_us;
-  __u64 rexmit_wait_us;
 
   if (sock->tx_rexmit_seq != sock->tx_rexmit_end_seq)
   {
@@ -235,18 +236,13 @@ static void sock_on_tx_stall(struct tcp_slow_context *ctx, struct tcp_sock *sock
   }
 
   rtt = cc_rtt(ctx, stats);
-  rexmit_wait_us = (__u64) rtt * ctx->config.cc_control_interval *
-      ctx->config.cc_rexmit_ints;
-  ack_silence_us = sock->ack_advance_last_tsc == 0 ? ~(__u64) 0 :
-      clock_us_since_tsc(sock->ack_advance_last_tsc);
-
-  if (stats->tx_pending && ack_silence_us >= rexmit_wait_us)
+  if (stats->tx_pending && stats->ackb == 0)
   {
     if (meta->cnt_tx_pending++ == 0)
     {
       meta->ts_tx_pending = now_tsc;
     }
-    else if (meta->cnt_tx_pending >= ctx->config.cc_rexmit_ints &&
+    else if (meta->cnt_tx_pending >= ctx->config.cc_remit_ints &&
         clock_us_since_tsc(meta->ts_tx_pending) >= (__u64) 2 * rtt)
     {
       if (tcp_tx_retransmit(ctx, sock) == 0)
@@ -271,7 +267,7 @@ static void sock_on_cc_tick(struct tcp_slow_context *ctx, struct tcp_sock *sock,
   switch (ctx->config.cc_algorithm)
   {
     case TCP_CC_ALGO_CONST_RATE:
-      sock_on_const_rate(ctx, sock, meta);
+      sock_on_const_rate(ctx, sock, meta, stats);
       break;
     case TCP_CC_ALGO_DCTCP_RATE:
       sock_on_dctcp_tick(ctx, sock, meta, stats, elapsed_us);
@@ -344,10 +340,6 @@ static void sock_on_dctcp_tick(struct tcp_slow_context *ctx,
   rate = sock->cc_rate;
   act_rate = dctcp_act_rate(ackb, elapsed_us);
   meta->dctcp_act_rate = (7 * meta->dctcp_act_rate + act_rate) / 8;
-  if (act_rate < meta->dctcp_act_rate)
-    act_rate = meta->dctcp_act_rate;
-  if (rate > ((__u64) act_rate * 12) / 10)
-    rate = ((__u64) act_rate * 12) / 10;
 
   if (meta->dctcp_slowstart)
   {

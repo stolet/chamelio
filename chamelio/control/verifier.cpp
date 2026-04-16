@@ -275,6 +275,21 @@ extern "C"
                 .context_descriptor = nullptr,
                 .unsupported = false,
             };
+        case 1019:
+            return EbpfHelperPrototype{
+                .name = "ebpf_now_us",
+                .return_type = EBPF_RETURN_TYPE_INTEGER,
+                .argument_type = {
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                },
+                .reallocate_packet = false,
+                .context_descriptor = nullptr,
+                .unsupported = false,
+            };
         case 1016:
             return EbpfHelperPrototype{
                 .name = "ebpf_spin_lock",
@@ -353,6 +368,7 @@ extern "C"
             case 1016:
             case 1017:
             case 1018:
+            case 1019:
                 return true;
             default:
                 return false;

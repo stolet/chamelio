@@ -1,13 +1,16 @@
 #include "tcp_internal.h"
 #include "queue_fns.h"
 #include "tcp_hdr.h"
+#include "clock.h"
 
 /*** Ctrl TX Helpers **********************************************************/
 
-static int ctl_pkt_enqueue(struct tcp_slow_context *ctx, __u32 local_ip,
+static int ctl_pkt_enqueue(struct tcp_slow_context *ctx, const struct tcp_sock *sock,
+    __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags, __u16 wnd);
-static void ctl_pkt_fill(struct tcp_pkt_inner *pkt, __u32 local_ip,
+static void ctl_pkt_fill(struct tcp_queue_ctl_pkt *pkt, const struct tcp_sock *sock,
+    __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags, __u16 wnd);
 
@@ -15,7 +18,7 @@ static void ctl_pkt_fill(struct tcp_pkt_inner *pkt, __u32 local_ip,
 
 int tcp_ctl_tx(struct tcp_slow_context *ctx, struct tcp_sock *sock, __u16 flags)
 {
-  return ctl_pkt_enqueue(ctx, sock->local_ip, sock->local_port, sock->remote_ip,
+  return ctl_pkt_enqueue(ctx, sock, sock->local_ip, sock->local_port, sock->remote_ip,
       sock->remote_port, sock->tx_seq, sock->rx_seq, flags,
       tcp_sock_rx_wnd(sock));
 }
@@ -29,7 +32,7 @@ int tcp_ctl_tx_resend(struct tcp_slow_context *ctx, struct tcp_sock *sock,
   if ((flags & (TAS_TCP_SYN | TAS_TCP_FIN)) != 0)
     seq--;
 
-  return ctl_pkt_enqueue(ctx, sock->local_ip, sock->local_port, sock->remote_ip,
+  return ctl_pkt_enqueue(ctx, sock, sock->local_ip, sock->local_port, sock->remote_ip,
       sock->remote_port, seq, sock->rx_seq, flags, tcp_sock_rx_wnd(sock));
 }
 
@@ -37,7 +40,7 @@ int tcp_ctl_tx_reply(struct tcp_slow_context *ctx, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags)
 {
-  return ctl_pkt_enqueue(ctx, local_ip, local_port, remote_ip, remote_port,
+  return ctl_pkt_enqueue(ctx, NULL, local_ip, local_port, remote_ip, remote_port,
       seq, ack, flags, 0);
 }
 
@@ -60,7 +63,8 @@ int tcp_tx_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock)
 
 /*** Ctrl TX Helpers **********************************************************/
 
-static int ctl_pkt_enqueue(struct tcp_slow_context *ctx, __u32 local_ip,
+static int ctl_pkt_enqueue(struct tcp_slow_context *ctx, const struct tcp_sock *sock,
+    __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags, __u16 wnd)
 {
@@ -76,7 +80,7 @@ static int ctl_pkt_enqueue(struct tcp_slow_context *ctx, __u32 local_ip,
   if (sig_qe == NULL)
     return -1;
 
-  ctl_pkt_fill(&pkt_qe->data.ctl_pkt.pkt, local_ip, local_port, remote_ip,
+  ctl_pkt_fill(&pkt_qe->data.ctl_pkt, sock, local_ip, local_port, remote_ip,
       remote_port, seq, ack, flags, wnd);
   sig_qe->data.ctl_sig.ready = 1;
 
@@ -92,27 +96,41 @@ static int ctl_pkt_enqueue(struct tcp_slow_context *ctx, __u32 local_ip,
   return 0;
 }
 
-static void ctl_pkt_fill(struct tcp_pkt_inner *pkt, __u32 local_ip,
+static void ctl_pkt_fill(struct tcp_queue_ctl_pkt *pkt,
+    const struct tcp_sock *sock, __u32 local_ip,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags, __u16 wnd)
 {
-  IPH_VHL_SET(&pkt->ip, 4, 5);
-  pkt->ip._tos = 0;
-  pkt->ip.len = t_beui16(sizeof(*pkt));
-  pkt->ip.id = t_beui16(3);
-  pkt->ip.offset = t_beui16(0);
-  pkt->ip.ttl = 0xff;
-  pkt->ip.proto = IP_PROTO_TCP;
-  pkt->ip.src = t_beui32(local_ip);
-  pkt->ip.dst = t_beui32(remote_ip);
-  pkt->ip.chksum = 0;
+  __u32 now_us;
 
-  pkt->tcp.src = t_beui16(local_port);
-  pkt->tcp.dest = t_beui16(remote_port);
-  pkt->tcp.seqno = t_beui32(seq);
-  pkt->tcp.ackno = t_beui32(ack);
-  TCPH_HDRLEN_FLAGS_SET(&pkt->tcp, TCP_HLEN / 4, flags);
-  pkt->tcp.wnd = t_beui16(wnd);
-  pkt->tcp.chksum = 0;
-  pkt->tcp.urgp = t_beui16(0);
+  IPH_VHL_SET(&pkt->pkt.ip, 4, 5);
+  pkt->pkt.ip._tos = 0;
+  pkt->pkt.ip.len = t_beui16(sizeof(pkt->pkt) + (sock != NULL ? TCP_TS_OPT_LEN : 0));
+  pkt->pkt.ip.id = t_beui16(3);
+  pkt->pkt.ip.offset = t_beui16(0);
+  pkt->pkt.ip.ttl = 0xff;
+  pkt->pkt.ip.proto = IP_PROTO_TCP;
+  pkt->pkt.ip.src = t_beui32(local_ip);
+  pkt->pkt.ip.dst = t_beui32(remote_ip);
+  pkt->pkt.ip.chksum = 0;
+
+  pkt->pkt.tcp.src = t_beui16(local_port);
+  pkt->pkt.tcp.dest = t_beui16(remote_port);
+  pkt->pkt.tcp.seqno = t_beui32(seq);
+  pkt->pkt.tcp.ackno = t_beui32(ack);
+  TCPH_HDRLEN_FLAGS_SET(&pkt->pkt.tcp,
+      (TCP_HLEN + (sock != NULL ? TCP_TS_OPT_LEN : 0)) / 4, flags);
+  pkt->pkt.tcp.wnd = t_beui16(wnd);
+  pkt->pkt.tcp.chksum = 0;
+  pkt->pkt.tcp.urgp = t_beui16(0);
+  if (sock == NULL)
+    return;
+
+  now_us = (__u32) (clock_now_ns() / 1000);
+  pkt->ts_opt.nop0 = TCP_OPT_NO_OP;
+  pkt->ts_opt.nop1 = TCP_OPT_NO_OP;
+  pkt->ts_opt.ts.kind = TCP_OPT_TIMESTAMP;
+  pkt->ts_opt.ts.length = sizeof(pkt->ts_opt.ts);
+  pkt->ts_opt.ts.ts_val = t_beui32(now_us);
+  pkt->ts_opt.ts.ts_ecr = t_beui32(sock->ts_recent);
 }

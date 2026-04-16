@@ -43,8 +43,9 @@ int fast_tx_poll(struct fast_context *ctx)
         if (g->proto.event_tx_vm == NULL)
           continue;
         break;
-      case FP_PROTO_TCP:
-      case FP_PROTO_UDP:
+      case FP_PROTO_HAND:
+        if (g->proto.proto_type == CHAM_PROTO_INVALID)
+          continue;
         break;
       default:
         continue;
@@ -115,8 +116,9 @@ static inline int tx_poll_guest(struct fast_context *ctx,
       if (g->proto.event_tx_vm == NULL)
         return 0;
       break;
-    case FP_PROTO_TCP:
-    case FP_PROTO_UDP:
+    case FP_PROTO_HAND:
+      if (g->proto.proto_type == CHAM_PROTO_INVALID)
+        return 0;
       break;
     default:
       return 0;
@@ -151,12 +153,8 @@ static inline int tx_poll_guest(struct fast_context *ctx,
         exec_ret = ebpf_vm_exec(g->proto.event_tx_vm, &g->proto.ebpf_ctx,
             sizeof(struct cham_ebpf_ctx), &tx_ret);
         break;
-      case FP_PROTO_TCP:
-        tx_ret = tcp_event_tx(&g->proto.ebpf_ctx);
-        exec_ret = 0;
-        break;
-      case FP_PROTO_UDP:
-        tx_ret = udp_event_tx(&g->proto.ebpf_ctx);
+      case FP_PROTO_HAND:
+        tx_ret = proto_hand_event_tx(g->proto.proto_type, &g->proto.ebpf_ctx);
         exec_ret = 0;
         break;
       default:
@@ -165,7 +163,7 @@ static inline int tx_poll_guest(struct fast_context *ctx,
         break;
     }
 
-    if (tx_ret < 0 || exec_ret < 0)
+    if (tx_ret <= 0 || exec_ret < 0)
       break;
 
     /* Add destination MAC address */

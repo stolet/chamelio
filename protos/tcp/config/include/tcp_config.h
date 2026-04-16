@@ -33,7 +33,7 @@ struct tcp_configuration {
   /* Control interval in multiples of RTT */
   __u32 cc_control_interval;
   /* Number of control intervals without ACKs before retransmission */
-  __u32 cc_rexmit_ints;
+  __u32 cc_remit_ints;
   /* DCTCP EWMA weight scaled by UINT_MAX */
   __u32 cc_dctcp_weight;
   /* Initial DCTCP rate in kbps */

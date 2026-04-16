@@ -351,7 +351,7 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: enabled]\n"
       "  --fp-jitcomb                            Enable combined infra+eBPF JIT"
           "[default: disabled]\n"
-      "  --fp-proto=ebpf|tcp|udp                 Select fast-path protocol mode"
+      "  --fp-proto=ebpf|hand                    Select fast-path protocol mode"
           "[default: ebpf]\n"
       "Performance isolation:\n"
       "  --perf-iso                              Enable performance isolation"
@@ -548,15 +548,9 @@ static int parse_fp_proto(const char *s, __u32 *mode)
     return 0;
   }
 
-  if (strcmp(s, "tcp") == 0)
+  if (strcmp(s, "hand") == 0)
   {
-    *mode = FP_PROTO_TCP;
-    return 0;
-  }
-
-  if (strcmp(s, "udp") == 0)
-  {
-    *mode = FP_PROTO_UDP;
+    *mode = FP_PROTO_HAND;
     return 0;
   }
 

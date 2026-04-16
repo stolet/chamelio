@@ -19,6 +19,7 @@
 
 /* Length of the TCP header, excluding options. */
 #define TCP_HLEN 20
+#define TCP_TS_OPT_LEN 12
 
 #define TCPH_RAW(phdr) ((__u16) __builtin_bswap16((phdr)->_hdrlen_rsvd_flags))
 #define TCPH_HDRLEN(phdr) (TCPH_RAW(phdr) >> 12)
@@ -76,6 +77,12 @@ struct tcp_timestamp_opt {
   __u8 length;
   beui32_t ts_val;
   beui32_t ts_ecr;
+} __attribute__((packed));
+
+struct tcp_timestamp_opt_pad {
+  __u8 nop0;
+  __u8 nop1;
+  struct tcp_timestamp_opt ts;
 } __attribute__((packed));
 
 struct tcp_pkt {

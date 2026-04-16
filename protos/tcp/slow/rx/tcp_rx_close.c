@@ -33,7 +33,6 @@ int tcp_rx_fin_wait1(struct tcp_slow_context *ctx, struct tcp_sock *sock,
   if ((rx->flags & TAS_TCP_ACK) != 0 && rx->ack == sock->tx_seq)
   {
     tcp_timeout_cancel(ctx, sock);
-    tcp_sock_ack_progress(sock);
     tcp_sock_close_final(ctx, sock);
     return 0;
   }

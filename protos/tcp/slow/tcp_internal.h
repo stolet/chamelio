@@ -24,10 +24,13 @@ struct tcp_rx_ctl {
   __u32 remote_ip;
   __u32 seq;
   __u32 ack;
+  __u32 ts_val;
+  __u32 ts_ecr;
   __u16 local_port;
   __u16 remote_port;
   __u16 wnd;
   __u16 flags;
+  __u8 ts_valid;
 };
 
 /*** Inline Helpers ***********************************************************/
@@ -121,7 +124,6 @@ int tcp_sock_new_res_fill(struct tcp_sock *sock,
 int tcp_sock_accept_res_fill(struct tcp_sock *listen_sock,
     struct tcp_sock *sock, struct tcp_queue_accept_res *res);
 __u16 tcp_sock_rx_wnd(const struct tcp_sock *sock);
-void tcp_sock_ack_progress(struct tcp_sock *sock);
 void tcp_sock_close_final(struct tcp_slow_context *ctx, struct tcp_sock *sock);
 void tcp_sock_connect_fail(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     int err);

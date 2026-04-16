@@ -4,12 +4,14 @@
 #include "tcp_hdr.h"
 #include "log.h"
 #include "utils_sync.h"
+#include "clock.h"
 
 /*** RX Helpers ***************************************************************/
 
 static int ctl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt);
 static void ctl_rx_parse(const struct tcp_pkt_inner *pkt,
     struct tcp_rx_ctl *rx);
+static void sock_ts_rx(struct tcp_sock *sock, const struct tcp_rx_ctl *rx);
 static int sock_ctl_rx(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     const struct tcp_rx_ctl *rx);
 
@@ -77,6 +79,7 @@ static int ctl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt)
   if (sock != NULL)
   {
     util_spin_lock(&sock->lock);
+    sock_ts_rx(sock, &rx);
     sock_ctl_rx(ctx, sock, &rx);
     util_spin_unlock(&sock->lock);
     return 0;
@@ -99,11 +102,14 @@ static int ctl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt)
 
 static void ctl_rx_parse(const struct tcp_pkt_inner *pkt, struct tcp_rx_ctl *rx)
 {
+  const struct tcp_timestamp_opt_pad *ts_opt;
   const struct ip_hdr *ip;
   const struct tcp_hdr *tcp;
+  __u32 hdrlen;
 
   ip = &pkt->ip;
   tcp = &pkt->tcp;
+  hdrlen = TCPH_HDRLEN(tcp) * 4;
   rx->local_ip = f_beui32(ip->dst);
   rx->remote_ip = f_beui32(ip->src);
   rx->seq = f_beui32(tcp->seqno);
@@ -112,6 +118,44 @@ static void ctl_rx_parse(const struct tcp_pkt_inner *pkt, struct tcp_rx_ctl *rx)
   rx->remote_port = f_beui16(tcp->src);
   rx->wnd = f_beui16(tcp->wnd);
   rx->flags = TCPH_FLAGS(tcp);
+  rx->ts_valid = 0;
+  if (hdrlen < TCP_HLEN + TCP_TS_OPT_LEN)
+    return;
+
+  ts_opt = (const struct tcp_timestamp_opt_pad *) ((__u8 *) tcp + TCP_HLEN);
+  if (ts_opt->nop0 != TCP_OPT_NO_OP || ts_opt->nop1 != TCP_OPT_NO_OP ||
+      ts_opt->ts.kind != TCP_OPT_TIMESTAMP ||
+      ts_opt->ts.length != sizeof(ts_opt->ts))
+  {
+    return;
+  }
+
+  rx->ts_valid = 1;
+  rx->ts_val = f_beui32(ts_opt->ts.ts_val);
+  rx->ts_ecr = f_beui32(ts_opt->ts.ts_ecr);
+}
+
+static void sock_ts_rx(struct tcp_sock *sock, const struct tcp_rx_ctl *rx)
+{
+  __u32 now_us;
+  __u32 rtt;
+
+  if (!rx->ts_valid)
+    return;
+
+  sock->ts_recent = rx->ts_val;
+  if (rx->ts_ecr == 0)
+    return;
+
+  now_us = (__u32) (clock_now_ns() / 1000);
+  rtt = now_us - rx->ts_ecr;
+  if (rtt == 0)
+    return;
+
+  if (sock->rtt_est != 0)
+    sock->rtt_est = (7 * sock->rtt_est + rtt) / 8;
+  else
+    sock->rtt_est = rtt;
 }
 
 static int sock_ctl_rx(struct tcp_slow_context *ctx, struct tcp_sock *sock,

@@ -5,9 +5,6 @@
 
 #include "queue_fns.h"
 
-#ifndef __always_inline
-#define __always_inline inline __attribute__((always_inline))
-#endif
 #include "cham_fast.h"
 #include "udp_hdr.h"
 #include "ip_hdr.h"
@@ -20,11 +17,11 @@
 #define REUPORT_MAP 2
 #define UDP_MAX_PAYLOAD (FAST_L3_PKT_ROOM - sizeof(struct udp_pkt_inner))
 
-static __always_inline struct udp_sock * udp_sock_find(struct cham_ebpf_ctx *ctx,
+static inline struct udp_sock * udp_sock_find(struct cham_ebpf_ctx *ctx,
     __u16 local_port);
-static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx);
-static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx);
-static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx);
+static inline __u16 find_free_port(struct cham_ebpf_ctx *ctx);
+static inline int handle_bump_rx(struct cham_ebpf_ctx *ctx);
+static inline int handle_bump_tx(struct cham_ebpf_ctx *ctx);
 
 
 int udp_event_rx(struct cham_ebpf_ctx *ctx)
@@ -160,7 +157,7 @@ int udp_event_deq(struct cham_ebpf_ctx *ctx)
   return ret;
 }
 
-static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
+static inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 {
   int ret;
   void *payload;
@@ -281,7 +278,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   return pkt_hdrs_len + payload_len;
 }
  
-static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
+static inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
 {
   __u32 new_head;
   struct udp_sock *sock;
@@ -310,7 +307,7 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   return 0;
 }
 
-static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
+static inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
 {
   __u16 i;
   struct udp_port *port;
@@ -333,7 +330,7 @@ static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
   return 0;
 }
 
-static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
+static inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
     __u16 local_port)
 {
   struct udp_port *port;

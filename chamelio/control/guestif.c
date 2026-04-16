@@ -458,20 +458,14 @@ static inline void uxsocket_receive(struct control_context *ctx,
   switch (ctx->config->fp_proto_mode)
   {
     case FP_PROTO_EBPF:
-      break;
-    case FP_PROTO_TCP:
-      if (gev->proto_req.proto_type != CHAM_PROTO_TCP)
-        goto send_proto_res;
-      break;
-    case FP_PROTO_UDP:
-      if (gev->proto_req.proto_type != CHAM_PROTO_UDP)
-        goto send_proto_res;
+    case FP_PROTO_HAND:
       break;
     default:
       goto send_proto_res;
   }
 
   p->guest = gev->guest;
+  p->proto_type = gev->proto_req.proto_type;
   p->nqueues = 0;
   p->nmaps = 0;
   gev->proto_res.success = 1;

@@ -317,6 +317,8 @@ struct tcp_queue_ctl_sig {
 struct tcp_queue_ctl_pkt {
   /* Packet to send or process in the slow path */
   struct tcp_pkt_inner pkt;
+  /* Fixed timestamp option block carried after the TCP header */
+  struct tcp_timestamp_opt_pad ts_opt;
 } __attribute__((packed));
 
 /* Fast-path command that targets a socket */

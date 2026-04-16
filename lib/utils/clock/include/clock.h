@@ -13,6 +13,8 @@ __u64 clock_us_since_tsc(__u64 tsc_then);
 __u64 clock_tsc_after_us(__u64 us);
 /* Converts microseconds to cycles */
 __u64 clock_us_to_tsc(__u64 us);
+/* Converts a TSC reading to microseconds */
+__u64 clock_tsc_to_us(__u64 tsc);
 /* Current time in nanoseconds */
 __u64 clock_now_ns(void);
 

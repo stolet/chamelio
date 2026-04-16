@@ -9,8 +9,7 @@
 
 enum fp_proto_mode {
   FP_PROTO_EBPF = 0,
-  FP_PROTO_TCP,
-  FP_PROTO_UDP,
+  FP_PROTO_HAND,
 };
 
 struct configuration {
@@ -41,7 +40,7 @@ struct configuration {
   __u32 fp_xsumoffloads;
   /* Enable combined infra + eBPF JIT */
   __u32 fp_jit_combined;
-  /* Use built-in fixed fast path for one protocol */
+  /* Select eBPF or handwritten fast-path mode */
   __u32 fp_proto_mode;
   /* Max number of fast-path cores */
   __u32 fp_cores_max;

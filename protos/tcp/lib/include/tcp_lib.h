@@ -9,6 +9,7 @@
 /* TODO: Fix this because it's duplicated */
 #define MAX_SOCKETS 8192
 #define SOCK_INACTIVE (-1U)
+#define TCP_BUMP_NONE (-1)
 
 #define TCP_WAIT_NONBLOCK (1U << 0)
 
@@ -112,6 +113,14 @@ struct tcp_socket_lib {
     __u8 state;
     /* 1 if SO_REUSEPORT was enabled */
     __u8 reuseport;
+    /* Socket is linked on the context pending bump list */
+    __u8 bump_pending;
+    /* Next socket on the context pending bump list */
+    int bump_next;
+    /* TX bytes copied into the ring but not yet bumped to the fast-path */
+    __u32 tx_bump_pending;
+    /* RX bytes consumed by the app but not yet bumped to the fast-path */
+    __u32 rx_bump_pending;
 };
 
 struct tcp_context_lib {
@@ -127,6 +136,9 @@ struct tcp_context_lib {
   __u16 ncores;
   struct equeue **app_fast_qs;
   struct dqueue **fast_app_qs;
+  /* Head and tail of sockets with pending bumps to flush */
+  int bump_head;
+  int bump_tail;
 };
 
 struct tcp_lib {

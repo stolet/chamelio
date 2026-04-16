@@ -65,6 +65,20 @@ __u64 clock_us_to_tsc(__u64 us)
   return us * tsc_per_us;
 }
 
+__u64 clock_tsc_to_us(__u64 tsc)
+{
+  double us;
+
+  if (tsc_per_us == 0.0)
+    return 0;
+
+  us = (double) tsc / tsc_per_us;
+  if (us < 0.0)
+    us = 0.0;
+
+  return (__u64) (us + 0.5);
+}
+
 __u64 clock_now_ns(void)
 {
   struct timespec ts;

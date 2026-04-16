@@ -24,17 +24,25 @@ void sched_init(struct cham_scheduler *sched)
 int sched_add(struct cham_scheduler *sched, __u32 id, __u64 priority,
     __u32 avail)
 {
+  __u32 total_avail;
   struct cham_sched_entry *entry;
 
   entry = &sched->entries[id];
   if (entry->id != SCHED_ID_INVALID)
   {
-    entry->avail += avail;
+    total_avail = entry->avail + avail;
     if (entry->priority == priority)
+    {
+      entry->avail = total_avail;
       return 0;
+    }
 
     sched_remove(sched, id);
+    entry->id = id;
+    entry->next_entry = SCHED_ID_INVALID;
     entry->priority = priority;
+    entry->avail = total_avail;
+    entry->opaque = 0;
     sched_insert(sched, id);
     return 0;
   }

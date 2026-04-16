@@ -42,6 +42,11 @@ static __always_inline __u64 ebpf_rdtsc(void)
   return clock_rdtsc();
 }
 
+static __always_inline __u64 ebpf_now_us(void)
+{
+  return clock_tsc_to_us(clock_rdtsc());
+}
+
 static __always_inline __u64 ebpf_rate_delay_tsc(__u32 bytes, __u32 rate_kbps)
 {
   __u64 cycles_per_us;

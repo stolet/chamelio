@@ -41,22 +41,7 @@ void control_guest_new_proto(struct control_context *ctx,
   switch (ctx->config->fp_proto_mode)
   {
     case FP_PROTO_EBPF:
-      break;
-    case FP_PROTO_TCP:
-      if (req->proto_type != CHAM_PROTO_TCP)
-      {
-        ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_PROTO_RES);
-        assert(ret == 0);
-        return;
-      }
-      break;
-    case FP_PROTO_UDP:
-      if (req->proto_type != CHAM_PROTO_UDP)
-      {
-        ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_PROTO_RES);
-        assert(ret == 0);
-        return;
-      }
+    case FP_PROTO_HAND:
       break;
     default:
       ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_PROTO_RES);
@@ -65,6 +50,7 @@ void control_guest_new_proto(struct control_context *ctx,
   }
 
   p->guest = g;
+  p->proto_type = req->proto_type;
   p->nqueues = 0;
   p->nmaps = 0;
   res->success = 1;
@@ -131,6 +117,7 @@ void control_guest_new_queue(struct control_context *ctx,
     assert(qe_req != NULL);
     req_fast = &qe_req->data.new_queue_req;
     req_fast->gid = g->id;
+    req_fast->proto_type = g->proto.proto_type;
     req_fast->qid = g->proto.queues[nqueues].id;
     req_fast->nelems = g->proto.queues[nqueues].nelems;
     req_fast->elsize = g->proto.queues[nqueues].elsize;
@@ -201,6 +188,7 @@ void control_guest_new_map(struct control_context *ctx,
     assert(qe_req != NULL);
     c_req = &qe_req->data.new_map_req;
     c_req->gid = g->id;
+    c_req->proto_type = g->proto.proto_type;
     c_req->mid = res->id;
     c_req->elsize = g_req->elsize;
     c_req->nelems = g_req->nelems;
@@ -244,6 +232,7 @@ void control_guest_enableq(struct control_context *ctx,
   pq = &g->proto.queues[req->qid];
   req_fast = (struct queue_enableq_req *)&qe->data;
   req_fast->gid = g->id;
+  req_fast->proto_type = g->proto.proto_type;
   req_fast->qid = req->qid;
   req_fast->off = pq->off;
   req_fast->nelems = pq->nelems;
