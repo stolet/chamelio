@@ -627,7 +627,8 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   // rpc header is set
   hdr.service.x = htons(service);
   hdr.len.x = htons(n);
-  hdr.rid.x = htonl(__sync_fetch_and_add(&rpc->next_rid, 1));
+  c->last_sent_rid = __sync_fetch_and_add(&rpc->next_rid, 1);
+  hdr.rid.x = htonl(c->last_sent_rid);
   hdr.type = 0; // request
 
   // tail pos. of tx ring
@@ -837,6 +838,9 @@ int rpc_handle_call(struct rpc_worker_lib *w,
   hdr.len.x = ntohs(hdr.len.x);
   hdr.rid.x = ntohl(hdr.rid.x);
 
+  // store metadata so the application can read it immediately after this call
+  w->last_rid = hdr.rid.x;
+
   // len of payload
   n = hdr.len.x - sizeof(struct rpc_hdr);
 
@@ -934,6 +938,9 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
   hdr.service.x = ntohs(hdr.service.x);
   hdr.len.x = ntohs(hdr.len.x);
   hdr.rid.x = ntohl(hdr.rid.x);
+
+  // store the RID so the application can verify it immediately after this call
+  c->last_recv_rid = hdr.rid.x;
 
   // payload load calculation
   n = hdr.len.x - sizeof(struct rpc_hdr);
