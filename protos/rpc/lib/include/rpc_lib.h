@@ -82,7 +82,7 @@ struct rpc_worker_lib
   void *tx_buf;
   /* Pointer to the worker state in shared memory */
   void *shm_worker;
-  
+
   /* RID of the last request read by rpc_handle_call */
   __u32 last_rid;
 };
@@ -137,11 +137,6 @@ struct rpc_client_lib
   /* Result from bind. Default is -1 and is set
       to 1 on success and 0 on failure */
   int bind_success;
-
-  /* RID of the last request sent by rpc_call */
-  __u32 last_sent_rid;
-  /* RID of the last response received by rpc_response */
-  __u32 last_recv_rid;
 };
 
 /* RPC server that registers different services */
