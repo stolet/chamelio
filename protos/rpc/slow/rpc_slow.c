@@ -252,20 +252,6 @@ int main(int argc, char **argv)
   }
 }
 
-static __u16 find_free_port(struct rpc_slow_context *ctx)
-{
-  __u16 i;
-  struct rpc_port_entry *ports = ctx->proto->shm_base + ctx->port_map->off;
-
-  for (i = MIN_PORT; i <= MAX_PORT; i++)
-  {
-    if (ports[i].server_id == (__u32)INVALID_ID &&
-        ports[i].client_id == (__u32)INVALID_ID)
-      return i;
-  }
-  return 0;
-}
-
 int handle_new_client_req(struct rpc_slow_context *ctx,
                           struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
@@ -306,22 +292,7 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
   cl->opaque = req->opaque;
   cl->local_ip = req->local_ip;
 
-  if (req->local_port == 0)
-  {
-    cl->local_port = find_free_port(ctx);
-    if (cl->local_port == 0)
-    {
-      LOG_ERROR("no free port available for new client");
-      res->success = 0;
-      ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_CLIENT_RES);
-      if (ret != 0)
-      {
-        LOG_ERROR("failed to enqueue rpc new client response");
-      }
-      return -1;
-    }
-  }
-  else
+  if (req->local_port != 0)
   {
     port = &pt_cl_map[req->local_port];
     if (port->client_id != (__u32)INVALID_ID || port->server_id != (__u32)INVALID_ID)

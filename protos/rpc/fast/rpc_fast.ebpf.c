@@ -317,20 +317,20 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   return 0;
 }
 
-// static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
-// {
-//   __u16 i;
-//   struct rpc_port_entry *ports;
+static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
+{
+  __u16 i;
+  struct rpc_port_entry *ports;
 
-//   ports = ctx->maps[PORT_MAP].addr;
-//   for (i = MIN_PORT; i < MAX_PORT; i++)
-//   {
-//     if (ports[i].server_id == (__u32)INVALID_ID &&
-//         ports[i].client_id == (__u32)INVALID_ID)
-//       return i;
-//   }
-//   return 0;
-// }
+  ports = ctx->maps[PORT_MAP].addr;
+  for (i = MIN_PORT; i < MAX_PORT; i++)
+  {
+    if (ports[i].server_id == (__u32)INVALID_ID &&
+        ports[i].client_id == (__u32)INVALID_ID)
+      return i;
+  }
+  return 0;
+}
 
 static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 {
@@ -388,16 +388,16 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     client_map = ctx->maps[CLIENT_MAP].addr;
     client = &client_map[bump_cham->sock_id];
 
-    // // Set port if local_port == 0
-    // if (client->local_port == 0)
-    // {
-    //   free_port = find_free_port(ctx);
-    //   if (free_port == 0)
-    //     return -1;
-    //   ports = ctx->maps[PORT_MAP].addr;
-    //   ports[free_port].client_id = client->id;
-    //   client->local_port = free_port;
-    // }
+    // Set port if local_port == 0
+    if (client->local_port == 0)
+    {
+      free_port = find_free_port(ctx);
+      if (free_port == 0)
+        return -1;
+      ports = ctx->maps[PORT_MAP].addr;
+      ports[free_port].client_id = client->id;
+      client->local_port = free_port;
+    }
 
     p->ip.src = t_beui32(client->local_ip);
     p->udp.src = t_beui16(client->local_port);
