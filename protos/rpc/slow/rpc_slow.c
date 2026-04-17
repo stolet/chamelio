@@ -32,8 +32,6 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
 int handle_new_service_req(struct rpc_slow_context *ctx,
                            struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
 
-static __u16 find_free_port(struct rpc_slow_context *ctx);
-
 int init_rpc_slow_context(struct rpc_slow_context *ctx);
 
 int poll_apps(struct rpc_slow_context *ctx);
