@@ -30,10 +30,9 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
                           struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
 
 int handle_new_service_req(struct rpc_slow_context *ctx,
-                       struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
+                           struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe);
 
-// int handle_bind_rpc(struct rpc_slow_context *ctx,
-//                     struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req);
+static __u16 find_free_port(struct rpc_slow_context *ctx);
 
 int init_rpc_slow_context(struct rpc_slow_context *ctx);
 
@@ -119,7 +118,7 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
     abort();
   }
   ctx->port_map = pt_map;
-  
+
   ctx->clients_map = clients_map;
   ctx->servers_map = servers_map;
   // ctx->port_server_map = pt_to_ser_map;
@@ -253,7 +252,20 @@ int main(int argc, char **argv)
   }
 }
 
-// TODO: remove the abundant structs later on which are not used in this protocol
+static __u16 find_free_port(struct rpc_slow_context *ctx)
+{
+  __u16 i;
+  struct rpc_port_entry *ports = ctx->proto->shm_base + ctx->port_map->off;
+
+  for (i = MIN_PORT; i <= MAX_PORT; i++)
+  {
+    if (ports[i].server_id == (__u32)INVALID_ID &&
+        ports[i].client_id == (__u32)INVALID_ID)
+      return i;
+  }
+  return 0;
+}
+
 int handle_new_client_req(struct rpc_slow_context *ctx,
                           struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
@@ -293,15 +305,26 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
   cl->app_bump_qid = actx->app_bump_qs[0]->id;
   cl->opaque = req->opaque;
   cl->local_ip = req->local_ip;
-  cl->local_port = req->local_port;
 
-  // bind the port to the client id in the port to client map
-  
-  // port=0: auto-assign in fast path; for multicore clients
-  if (req->local_port != 0)
+  if (req->local_port == 0)
+  {
+    cl->local_port = find_free_port(ctx);
+    if (cl->local_port == 0)
+    {
+      LOG_ERROR("no free port available for new client");
+      res->success = 0;
+      ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_CLIENT_RES);
+      if (ret != 0)
+      {
+        LOG_ERROR("failed to enqueue rpc new client response");
+      }
+      return -1;
+    }
+  }
+  else
   {
     port = &pt_cl_map[req->local_port];
-    if (port->client_id != INVALID_ID || port->server_id != INVALID_ID)
+    if (port->client_id != (__u32)INVALID_ID || port->server_id != (__u32)INVALID_ID)
     {
       LOG_ERROR("port already bound to another client or server");
       res->success = 0;
@@ -309,13 +332,15 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
       if (ret != 0)
       {
         LOG_ERROR("failed to enqueue rpc new client response");
-        return -1;
       }
       return -1;
     }
-    port->client_id = res->client_id;
+    cl->local_port = req->local_port;
   }
-  
+
+  port = &pt_cl_map[cl->local_port];
+  port->client_id = res->client_id;
+
   // Create queue for RX buffer
   protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
   if (protoq == NULL)
@@ -389,7 +414,7 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   res->opaque = req->opaque;
   res->core = 0;
   res->server_id = ctx->n_servers;
-  
+
   sv = &server_map[res->server_id];
   memset(sv, 0, sizeof(struct rpc_server));
 
@@ -398,12 +423,12 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   sv->local_port = req->local_port;
   sv->n_workers = 0;
 
-  //initialize workers IDs table to invalid id
+  // initialize workers IDs table to invalid id
   for (int i = 0; i < MAX_WORKERS; i++)
   {
     sv->workers[i] = INVALID_ID;
   }
-  //initialize service table to 0
+  // initialize service table to 0
   for (int i = 0; i < MAX_SERVICE_NUMBER; i++)
   {
     sv->service_table[i] = 0;
@@ -439,7 +464,7 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
 }
 
 int handle_new_worker_req(struct rpc_slow_context *ctx,
-                                 struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
+                          struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
   int ret;
   struct rpc_worker *worker;
@@ -529,7 +554,7 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
 }
 
 int handle_new_service_req(struct rpc_slow_context *ctx,
-                       struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
+                           struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
   int ret;
   struct rpc_queue_service_req *req;
@@ -549,8 +574,8 @@ int handle_new_service_req(struct rpc_slow_context *ctx,
   res->opaque = req->opaque;
 
   server = &s[req->server_id];
-  
-  //check the table if the service alreayd exists and return failure if so
+
+  // check the table if the service alreayd exists and return failure if so
   if (server->service_table[req->service_id])
   {
     LOG_ERROR("service ID %d already registered for server ID %d", req->service_id, server->id);
@@ -563,7 +588,7 @@ int handle_new_service_req(struct rpc_slow_context *ctx,
     }
     return -1;
   }
-  //register service in the server's service table
+  // register service in the server's service table
   server->service_table[req->service_id] = 1;
   res->success = 1;
 
