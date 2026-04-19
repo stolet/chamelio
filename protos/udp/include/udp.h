@@ -5,6 +5,8 @@
 
 #include "utils.h"
 
+#define UDP_APP_SOCKET_PATH "/run/chamelio/udp_app_socket"
+
 /* TODO: Pass MAX_APPS and MAX_CTXS as a parameter to UDP slow-path */
 /* Max number of applications that can register with slow-path */
 #define MAX_APPS 8

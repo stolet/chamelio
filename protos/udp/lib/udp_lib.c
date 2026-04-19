@@ -18,6 +18,7 @@
 #include "udp_queue_types.h"
 #include "log.h"
 #include "uxsocket.h"
+#include "internal.h"
 
 #define LIB_BATCH_SIZE 16
 
@@ -68,7 +69,7 @@ int udp_connect_slow()
 
   s_un.sun_family = AF_UNIX;
   ret = snprintf(s_un.sun_path, sizeof(s_un.sun_path), 
-      "%s", APP_SOCKET_PATH);
+      "%s", UDP_APP_SOCKET_PATH);
   if (ret < 0 || ret >= sizeof(s_un.sun_path)) 
   {
     LOG_ERROR("could not copy unix socket path");
@@ -77,7 +78,7 @@ int udp_connect_slow()
 
   if (connect(sock_fd, (struct sockaddr *)&s_un, sizeof(s_un)) < 0) 
   {
-    LOG_ERROR("cannot connect to slow-path, %s", APP_SOCKET_PATH);
+    LOG_ERROR("cannot connect to slow-path, %s", UDP_APP_SOCKET_PATH);
     perror("");
     goto close_sockfd;
   }

@@ -14,6 +14,7 @@
 #include "udp_slow.h"
 #include "queue_fns.h"
 #include "uxsocket.h"
+#include "internal.h"
 
 #define EP_LISTEN_APP 1
 #define EP_APP 2
@@ -117,7 +118,7 @@ static int uxsocket_init_fd(struct udp_slow_context *ctx)
 
   memset(&saun, 0, sizeof(saun));
   saun.sun_family = AF_UNIX;
-  memcpy(saun.sun_path, APP_SOCKET_PATH, sizeof(APP_SOCKET_PATH));
+  memcpy(saun.sun_path, UDP_APP_SOCKET_PATH, sizeof(UDP_APP_SOCKET_PATH));
   unlink(saun.sun_path);
 
   ret = bind(fd, (struct sockaddr *) &saun, sizeof(saun));
@@ -257,7 +258,7 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
   struct dqueue *dq;
   struct proto_queue_lib *q;
   struct udp_app_context_slow *actx;
-
+  
   struct iovec iov = {
     .iov_base = &aev->app_req,
     .iov_len = sizeof(aev->app_req) - aev->req_rx,

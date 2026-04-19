@@ -7,8 +7,6 @@
 #include "queue_types.h"
 #include "vfio.h"
 
-#define APP_SOCKET_PATH "/run/chamelio/app_socket"
-
 /* This socket is only used by apps running on the
    bare machine to connect to Chamelio. They are 
    treated as a new guest and also assigned a new

@@ -13,6 +13,7 @@
 #include "tcp_slow.h"
 #include "queue_fns.h"
 #include "uxsocket.h"
+#include "internal.h"
 
 /*** Enums ********************************************************************/
 
@@ -146,7 +147,7 @@ static int tcp_appif_listen_open(struct tcp_slow_context *ctx)
 
   memset(&saun, 0, sizeof(saun));
   saun.sun_family = AF_UNIX;
-  memcpy(saun.sun_path, APP_SOCKET_PATH, sizeof(APP_SOCKET_PATH));
+  memcpy(saun.sun_path, TCP_APP_SOCKET_PATH, sizeof(TCP_APP_SOCKET_PATH));
   unlink(saun.sun_path);
 
   if (bind(fd, (struct sockaddr *) &saun, sizeof(saun)) != 0)

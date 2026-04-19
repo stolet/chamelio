@@ -11,6 +11,7 @@
 #include "udp.h"
 #include "udp_queue_types.h"
 #include "utils.h"
+#include "log.h"
 
 #define PORT_MAP 0
 #define SOCK_MAP 1
