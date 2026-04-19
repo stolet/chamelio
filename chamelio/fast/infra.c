@@ -248,7 +248,8 @@ static inline void process_tx_gre(struct fast_context *ctx,
   pkt->gre.proto = t_beui16(GRE_PROTO_IP);
   pkt->gre.key = t_beui32(g->gre_key);
 
-  mb->pkt_len = mb->data_len = pkt_len + sizeof(struct eth_hdr) + sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
+  mb->pkt_len = mb->data_len = pkt_len + sizeof(struct eth_hdr) + 
+      sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
   /* Enable checksum offload */
   // mb->l2_len = 0;
   // mb->l3_len = sizeof(struct ip_hdr);

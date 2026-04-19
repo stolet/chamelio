@@ -29,7 +29,8 @@ static int app_accept_err(struct tcp_app_context_slow *actx,
 
 /*** Socket Helpers ***********************************************************/
 
-static int sock_autobind(struct tcp_slow_context *ctx, struct tcp_sock *sock);
+static int sock_autobind_port(struct tcp_slow_context *ctx, struct tcp_sock *sock);
+static int sock_autobind_ip(struct tcp_slow_context *ctx, struct tcp_sock *sock);
 static int sock_connect_start(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     __u32 remote_ip, __u16 remote_port);
 static void sock_accept_own(struct tcp_slow_context *ctx, struct tcp_sock *sock,
@@ -200,7 +201,8 @@ static int app_setopt(struct tcp_slow_context *ctx,
 static int app_bind(struct tcp_slow_context *ctx,
     struct tcp_app_context_slow *actx, struct tcp_queue_entry *qe)
 {
-  int ret;
+  int port_autobind, ip_autobind;
+  __u8 is_port_valid;
   struct tcp_queue_entry *qe_res;
   struct tcp_queue_bind_req *req;
   struct tcp_queue_bind_res *res;
@@ -218,20 +220,25 @@ static int app_bind(struct tcp_slow_context *ctx,
   res->success = 0;
   res->opaque = req->opaque;
 
-  if (req->sock_id < ctx->n_socks && req->local_port >= MIN_PORT &&
-      req->local_port <= MAX_PORT)
+  is_port_valid = (req->local_port >= MIN_PORT && req->local_port <= MAX_PORT)
+      || (req->local_port == 0);
+  if (req->sock_id < ctx->n_socks && is_port_valid)
   {
     sock = &tcp_sock_map(ctx)[req->sock_id];
+    
+    port_autobind = 0;
     if (sock->local_port == 0)
+      port_autobind = sock_autobind_port(ctx, sock);
+
+    ip_autobind = 0;
+    if (sock->local_ip == 0)
+      ip_autobind = sock_autobind_ip(ctx, sock);
+      
+    if (port_autobind == 0 && ip_autobind == 0)
     {
-      ret = tcp_bound_insert(ctx, req->local_port, req->sock_id,
-          sock->reuport);
-      if (ret == 0)
-      {
-        sock->local_ip = req->local_ip;
-        sock->local_port = req->local_port;
-        res->success = 1;
-      }
+      sock->local_ip = req->local_ip;
+      sock->local_port = req->local_port;
+      res->success = 1;
     }
   }
 
@@ -247,6 +254,7 @@ static int app_bind(struct tcp_slow_context *ctx,
 static int app_connect(struct tcp_slow_context *ctx,
     struct tcp_app_context_slow *actx, struct tcp_queue_entry *qe)
 {
+  int ret;
   struct tcp_queue_connect_req *req;
   struct tcp_sock *sock;
 
@@ -264,10 +272,24 @@ static int app_connect(struct tcp_slow_context *ctx,
     return -1;
   }
 
-  if (sock->local_port == 0 && sock_autobind(ctx, sock) != 0)
+  if (sock->local_port == 0)
   {
-    tcp_app_connect_res(actx, sock->opaque, EADDRINUSE, sock);
-    return -1;
+    ret = sock_autobind_port(ctx, sock);
+    if (ret != 0)
+    {
+      tcp_app_connect_res(actx, sock->opaque, EADDRINUSE, sock);
+      return -1;
+    }
+  }
+  
+  if (sock->local_ip == 0)
+  {
+    ret = sock_autobind_ip(ctx, sock);
+    if (ret != 0)
+    {
+      tcp_app_connect_res(actx, sock->opaque, EADDRINUSE, sock);
+      return -1;
+    }
   }
 
   return sock_connect_start(ctx, sock, req->remote_ip, req->remote_port);
@@ -411,7 +433,7 @@ static int app_accept_err(struct tcp_app_context_slow *actx,
 
 /*** Socket Helpers ***********************************************************/
 
-static int sock_autobind(struct tcp_slow_context *ctx, struct tcp_sock *sock)
+static int sock_autobind_port(struct tcp_slow_context *ctx, struct tcp_sock *sock)
 {
   __u16 port;
 
@@ -422,8 +444,13 @@ static int sock_autobind(struct tcp_slow_context *ctx, struct tcp_sock *sock)
     return -1;
 
   tcp_sock_meta(ctx, sock)->auto_bound = 1;
-  sock->local_ip = ctx->proto->local_ip;
   sock->local_port = port;
+  return 0;
+}
+
+static int sock_autobind_ip(struct tcp_slow_context *ctx, struct tcp_sock *sock)
+{
+  sock->local_ip = ctx->proto->local_ip;
   return 0;
 }
 
