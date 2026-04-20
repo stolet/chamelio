@@ -48,6 +48,10 @@ int control_context_init(struct control_context *ctl_ctx,
   ctl_ctx->f_ctxs = NULL;
   ctl_ctx->fast_batch_last = NULL;
   ctl_ctx->fast_stats_tsc = 0;
+#if CHAM_CTL_BUDGET_STATS
+  memset(&ctl_ctx->budg_stats, 0, sizeof(ctl_ctx->budg_stats));
+  memset(&ctl_ctx->budg_last, 0, sizeof(ctl_ctx->budg_last));
+#endif
 
   if (control_ebpf_init(ctl_ctx) != 0)
   {
@@ -151,8 +155,7 @@ int control_context_init(struct control_context *ctl_ctx,
   if (config->perf_iso)
   {
     ctl_ctx->ts_refresh = clock_rdtsc();
-    ctl_ctx->budget_cap = clock_us_to_tsc(config->perf_iso_cap) *
-        config->perf_iso_boost;
+    ctl_ctx->budget_cap = clock_us_to_tsc(config->perf_iso_cap);
   }
   ctl_ctx->fast_stats_tsc = clock_rdtsc();
 
@@ -213,6 +216,14 @@ static inline void log_fast_batch_stats(struct control_context *ctx)
   __u64 rx_calls;
   __u64 queue_calls;
   __u64 tx_calls;
+#if CHAM_CTL_BUDGET_STATS
+  __u8 gid;
+  __u64 budg_nr;
+  __u64 avg_gap;
+  __u64 avg_core;
+  __u64 avg_guest;
+  struct ctl_budg_stats budg_cur;
+#endif
   struct fast_context *f_ctx;
   struct fast_batch_counters cur;
   struct fast_batch_counters *prev;
@@ -227,6 +238,21 @@ static inline void log_fast_batch_stats(struct control_context *ctx)
     return;
   }
   ctx->fast_stats_tsc = now_tsc;
+
+#if CHAM_CTL_BUDGET_STATS
+  budg_nr = 0;
+  if (ctx->config->perf_iso)
+  {
+    budg_cur = ctx->budg_stats;
+    budg_nr = budg_cur.nr - ctx->budg_last.nr;
+    avg_gap = budg_nr == 0 ? 0 : (budg_cur.cyc - ctx->budg_last.cyc) / budg_nr;
+    LOG_INFO("budg refresh_avg=%llu cyc [%llu us] nr=%llu",
+        (unsigned long long) avg_gap,
+        (unsigned long long) clock_tsc_to_us(avg_gap),
+        (unsigned long long) budg_nr);
+    ctx->budg_last = budg_cur;
+  }
+#endif
 
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
@@ -248,6 +274,27 @@ static inline void log_fast_batch_stats(struct control_context *ctx)
         queue_calls == 0 ? 0.0 :
             (double) (cur.queue_items - prev->queue_items) / queue_calls,
         tx_calls == 0 ? 0.0 : (double) (cur.tx_items - prev->tx_items) / tx_calls);
+
+#if CHAM_CTL_BUDGET_STATS
+    if (ctx->config->perf_iso)
+    {
+      avg_core = budg_nr == 0 ? 0 : (cur.budg_cyc - prev->budg_cyc) / budg_nr;
+      LOG_INFO("budg core=%u avg=%llu cyc [%llu us]",
+          i,
+          (unsigned long long) avg_core,
+          (unsigned long long) clock_tsc_to_us(avg_core));
+
+      for (gid = 0; gid < ctx->n_guests; gid++)
+      {
+        avg_guest = budg_nr == 0 ? 0 :
+            (cur.guest_budg_cyc[gid] - prev->guest_budg_cyc[gid]) / budg_nr;
+        LOG_INFO("budg core=%u gid=%u avg=%llu cyc [%llu us]",
+            i, gid,
+            (unsigned long long) avg_guest,
+            (unsigned long long) clock_tsc_to_us(avg_guest));
+      }
+    }
+#endif
 
     *prev = cur;
   }

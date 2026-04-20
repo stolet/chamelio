@@ -284,7 +284,7 @@ static int uxsocket_accept(struct control_context *ctx)
   /* Allocate control path struct for guest */
   g = &ctx->guests[ctx->n_guests];
   g->id = ctx->n_guests;
-  g->budget = ctx->config->perf_iso_cap;
+  g->budget = ctx->config->perf_iso ? (__s64) ctx->budget_cap : INT64_MAX;
   g->shm_fd = sfd;
   g->shm_base = shm_base;
 

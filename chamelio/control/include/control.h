@@ -84,6 +84,13 @@ struct guest_control {
   struct proto_control proto;
 } __attribute__((aligned(CHAM_CACHE_LINE_SIZE)));
 
+#if CHAM_CTL_BUDGET_STATS
+struct ctl_budg_stats {
+  __u64 nr;
+  __u64 cyc;
+};
+#endif
+
 struct control_context {
   /* Configuration parameters */
   struct configuration *config;
@@ -120,6 +127,12 @@ struct control_context {
   struct fast_batch_counters *fast_batch_last;
   /* Last time fast-path batch stats were logged */
   __u64 fast_stats_tsc;
+#if CHAM_CTL_BUDGET_STATS
+  /* Cumulative budget refresh stats */
+  struct ctl_budg_stats budg_stats;
+  /* Last sampled budget refresh stats */
+  struct ctl_budg_stats budg_last;
+#endif
   
   /* File descriptor for internal shared memory */
   int shm_fd_internal;

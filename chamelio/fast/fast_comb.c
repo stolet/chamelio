@@ -87,6 +87,7 @@ DEFINE_EVENT_STUB(tx, 3)
     {                                                                         \
       tsc_spent = clock_rdtsc() - tsc_start;                                  \
       __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);             \
+      fast_budg_add(ctx, g->id, tsc_spent);                                   \
     }                                                                         \
                                                                               \
     return mb_tx;                                                             \
@@ -146,6 +147,7 @@ DEFINE_EVENT_STUB(tx, 3)
     {                                                                         \
       tsc_spent = clock_rdtsc() - tsc_start;                                  \
       __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);             \
+      fast_budg_add(ctx, g->id, tsc_spent);                                   \
     }                                                                         \
                                                                               \
     if (tx_ret < 0)                                                           \
@@ -230,6 +232,7 @@ DEFINE_EVENT_STUB(tx, 3)
     {                                                                         \
       tsc_spent = clock_rdtsc() - tsc_start;                                  \
       __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);             \
+      fast_budg_add(ctx, g->id, tsc_spent);                                   \
     }                                                                         \
                                                                               \
     return did_work;                                                          \
