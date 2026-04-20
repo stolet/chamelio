@@ -29,10 +29,17 @@ static inline void dqueue_rotate_head(struct guest_fast *g,
 
 int fast_queues_poll(struct fast_context *ctx)
 {
-  int i, max, ret, ndeq, ntx;
+  int i, gid, max, prev_ndeq, ret, ndeq, ntx, last_queues_guest;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
+  __u8 start_guest = ctx->next_queues_guest;
   const int charge_budget = ctx->perf_iso;
+
+  if (ctx->n_guests == 0)
+    return 0;
+
+  if (start_guest >= ctx->n_guests)
+    start_guest = 0;
 
   max = FAST_DEQ_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
@@ -49,6 +56,7 @@ int fast_queues_poll(struct fast_context *ctx)
 
   ntx = 0;
   ndeq = 0;
+  last_queues_guest = -1;
   for (i = 0; i < ctx->n_guests && ndeq < max; i++)
   {
     /* Prefetch next mbuf two cachelines */
@@ -58,7 +66,9 @@ int fast_queues_poll(struct fast_context *ctx)
       rte_prefetch0(rte_pktmbuf_mtod(mbs[ndeq + 1], __u8 *) + 64);
     }
 
-    g = &ctx->guests[i];
+    gid = (start_guest + i) % ctx->n_guests;
+    g = &ctx->guests[gid];
+    prev_ndeq = ndeq;
     ret = queues_poll_guest(ctx, g, mbs, max, &ntx, &ndeq, charge_budget);
 
     if (ret != 0)
@@ -66,7 +76,13 @@ int fast_queues_poll(struct fast_context *ctx)
       LOG_ERROR("failed to dequeue queue for proto=%d", g->id);
       return -1;
     }
+
+    if (ndeq > prev_ndeq)
+      last_queues_guest = gid;
   }
+
+  if (last_queues_guest >= 0)
+    ctx->next_queues_guest = (last_queues_guest + 1) % ctx->n_guests;
   
   fast_txflush(ctx);
   txcache_unalloc(ctx, max - ntx);

@@ -89,6 +89,10 @@ struct fast_context {
   
   /* Number of guests registered so far in this fast-path */
   __u8 n_guests;
+  /* First guest to poll in the tx phase */
+  __u8 next_tx_guest;
+  /* First guest to poll in the queue phase */
+  __u8 next_queues_guest;
   /* List of guests registered so far in this fast-path */
   struct guest_fast guests[CHAMELIO_MAX_GUESTS];
 

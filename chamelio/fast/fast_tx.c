@@ -22,15 +22,19 @@ static inline int tx_poll_guest(struct fast_context *ctx,
 int fast_tx_poll(struct fast_context *ctx)
 {
   int max, ret;
-  int i, ntx, has_tx_work;
+  int i, gid, ntx, has_tx_work, last_tx_guest;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
+  __u8 start_guest = ctx->next_tx_guest;
   const int charge_budget = ctx->perf_iso;
   
   /* Return if no guests have registered */
   if (n_guests == 0)
     return 0;
+
+  if (start_guest >= n_guests)
+    start_guest = 0;
 
   /* Skip tx path if no guest has both a tx ebpf vm and pending scheduler work. */
   has_tx_work = 0;
@@ -78,6 +82,7 @@ int fast_tx_poll(struct fast_context *ctx)
   rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *) + 64);
 
   ntx = 0;
+  last_tx_guest = -1;
   for (i = 0; i < n_guests && ntx < max; i++)
   {
     /* Prefetch next mbuf two cachelines */
@@ -87,11 +92,15 @@ int fast_tx_poll(struct fast_context *ctx)
       rte_prefetch0(rte_pktmbuf_mtod(mbs[ntx + 1], __u8 *) + 64);
     }
 
-    g = &ctx->guests[i];
+    gid = (start_guest + i) % n_guests;
+    g = &ctx->guests[gid];
     ret = tx_poll_guest(ctx, g, mbs, max, &ntx, charge_budget);
-
-    (void) ret;
+    if (ret > 0)
+      last_tx_guest = gid;
   }
+
+  if (last_tx_guest >= 0)
+    ctx->next_tx_guest = (last_tx_guest + 1) % n_guests;
 
   /* Flush TX and roll back unused mbufs in the cache */
   fast_txflush(ctx);
@@ -107,6 +116,7 @@ static inline int tx_poll_guest(struct fast_context *ctx,
   int exec_ret;
   int tx_ret;
   int ret;
+  int did_work;
   __u64 tsc_start = 0, tsc_spent;
 
   switch (ctx->fp_proto_mode)
@@ -135,6 +145,7 @@ static inline int tx_poll_guest(struct fast_context *ctx,
   if (charge_budget)
     tsc_start = clock_rdtsc();
   tx_ret = 0;
+  did_work = 0;
   while (*ntx < max)
   {
     if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
@@ -166,6 +177,8 @@ static inline int tx_poll_guest(struct fast_context *ctx,
     if (tx_ret <= 0 || exec_ret < 0)
       break;
 
+    did_work = 1;
+
     /* Add destination MAC address */
     ret = infra_tx(ctx, g, mb, tx_ret);
 
@@ -188,5 +201,5 @@ static inline int tx_poll_guest(struct fast_context *ctx,
   if (tx_ret < 0)
     return -1;
 
-  return 0;
+  return did_work;
 }

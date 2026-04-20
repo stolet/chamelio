@@ -96,6 +96,7 @@ DEFINE_EVENT_STUB(tx, 3)
   static inline int tx_poll_slot_##slot(struct fast_context *ctx,             \
       struct rte_mbuf **mbs, int max, int *ntx, int charge_budget)            \
   {                                                                           \
+    int did_work;                                                             \
     int tx_ret;                                                               \
     int ret;                                                                  \
     __u64 tsc_start = 0, tsc_spent;                                           \
@@ -112,6 +113,7 @@ DEFINE_EVENT_STUB(tx, 3)
                                                                               \
     if (charge_budget)                                                        \
       tsc_start = clock_rdtsc();                                              \
+    did_work = 0;                                                             \
     tx_ret = 0;                                                               \
     while (*ntx < max)                                                        \
     {                                                                         \
@@ -129,6 +131,7 @@ DEFINE_EVENT_STUB(tx, 3)
           sizeof(struct cham_ebpf_ctx));                                      \
       if (tx_ret <= 0)                                                        \
         break;                                                                \
+      did_work = 1;                                                           \
                                                                               \
       ret = infra_tx(ctx, g, mb, tx_ret);                                     \
       if (ret == 0)                                                           \
@@ -148,7 +151,7 @@ DEFINE_EVENT_STUB(tx, 3)
     if (tx_ret < 0)                                                           \
       return -1;                                                              \
                                                                               \
-    return 0;                                                                 \
+    return did_work;                                                          \
   }
 
 #define DEFINE_DEQ_SLOT(slot)                                                 \
@@ -157,6 +160,7 @@ DEFINE_EVENT_STUB(tx, 3)
       int charge_budget)                                                      \
   {                                                                           \
     int deq_ret;                                                              \
+    int did_work;                                                             \
     int ret;                                                                  \
     int j;                                                                    \
     struct guest_fast *g = &ctx->guests[slot];                                \
@@ -175,6 +179,7 @@ DEFINE_EVENT_STUB(tx, 3)
                                                                               \
     if (charge_budget)                                                        \
       tsc_start = clock_rdtsc();                                              \
+    did_work = 0;                                                             \
     for (j = 0; j < g->proto.ndqueues && *ndeq < max; j++)                    \
     {                                                                         \
       qcur = &g->proto.dqueues[g->proto.dqueues_head];                        \
@@ -197,6 +202,7 @@ DEFINE_EVENT_STUB(tx, 3)
         deq_ret = (int) event_deq_slot_##slot(&g->proto.ebpf_ctx,             \
             sizeof(struct cham_ebpf_ctx));                                    \
         (*ndeq)++;                                                            \
+        did_work = 1;                                                         \
                                                                               \
         if (deq_ret < 0)                                                      \
           return -1;                                                          \
@@ -226,7 +232,7 @@ DEFINE_EVENT_STUB(tx, 3)
       __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);             \
     }                                                                         \
                                                                               \
-    return 0;                                                                 \
+    return did_work;                                                          \
   }
 
 DEFINE_RX_SLOT(0)
@@ -300,12 +306,19 @@ uint64_t fast_rx_poll_comb(void *mem, size_t mem_len)
 
 uint64_t fast_queues_poll_comb(void *mem, size_t mem_len)
 {
-  int i, max, ret, ndeq, ntx;
+  int i, gid, max, ret, ndeq, ntx, last_queues_guest;
   struct fast_context *ctx = mem;
   struct rte_mbuf **mbs;
+  __u8 start_guest = ctx->next_queues_guest;
   const int charge_budget = comb_perf_iso(ctx);
 
   (void) mem_len;
+  if (ctx->n_guests == 0)
+    return 0;
+
+  if (start_guest >= ctx->n_guests)
+    start_guest = 0;
+
   max = FAST_DEQ_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
     max = TXBUF_SIZE - ctx->tx_n;
@@ -319,6 +332,7 @@ uint64_t fast_queues_poll_comb(void *mem, size_t mem_len)
 
   ntx = 0;
   ndeq = 0;
+  last_queues_guest = -1;
   for (i = 0; i < ctx->n_guests && ndeq < max; i++)
   {
     if (ndeq + 1 < max)
@@ -327,10 +341,16 @@ uint64_t fast_queues_poll_comb(void *mem, size_t mem_len)
       rte_prefetch0(rte_pktmbuf_mtod(mbs[ndeq + 1], __u8 *) + 64);
     }
 
-    ret = deq_poll_slot(ctx, i, mbs, max, &ntx, &ndeq, charge_budget);
-    if (ret != 0)
+    gid = (start_guest + i) % ctx->n_guests;
+    ret = deq_poll_slot(ctx, gid, mbs, max, &ntx, &ndeq, charge_budget);
+    if (ret < 0)
       return (uint64_t) -1;
+    if (ret > 0)
+      last_queues_guest = gid;
   }
+
+  if (last_queues_guest >= 0)
+    ctx->next_queues_guest = (last_queues_guest + 1) % ctx->n_guests;
 
   txcache_unalloc(ctx, max - ntx);
   return ndeq;
@@ -339,16 +359,20 @@ uint64_t fast_queues_poll_comb(void *mem, size_t mem_len)
 uint64_t fast_tx_poll_comb(void *mem, size_t mem_len)
 {
   int max, ret;
-  int i, ntx, has_tx_work;
+  int i, gid, ntx, has_tx_work, last_tx_guest;
   struct fast_context *ctx = mem;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
+  __u8 start_guest = ctx->next_tx_guest;
   const int charge_budget = comb_perf_iso(ctx);
 
   (void) mem_len;
   if (n_guests == 0)
     return 0;
+
+  if (start_guest >= n_guests)
+    start_guest = 0;
 
   has_tx_work = 0;
   for (i = 0; i < n_guests; i++)
@@ -382,6 +406,7 @@ uint64_t fast_tx_poll_comb(void *mem, size_t mem_len)
   rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *) + 64);
 
   ntx = 0;
+  last_tx_guest = -1;
   for (i = 0; i < n_guests && ntx < max; i++)
   {
     if (ntx + 1 < max)
@@ -390,10 +415,16 @@ uint64_t fast_tx_poll_comb(void *mem, size_t mem_len)
       rte_prefetch0(rte_pktmbuf_mtod(mbs[ntx + 1], __u8 *) + 64);
     }
 
-    ret = tx_poll_slot(ctx, i, mbs, max, &ntx, charge_budget);
-    if (ret != 0)
+    gid = (start_guest + i) % n_guests;
+    ret = tx_poll_slot(ctx, gid, mbs, max, &ntx, charge_budget);
+    if (ret < 0)
       return (uint64_t) -1;
+    if (ret > 0)
+      last_tx_guest = gid;
   }
+
+  if (last_tx_guest >= 0)
+    ctx->next_tx_guest = (last_tx_guest + 1) % n_guests;
 
   txcache_unalloc(ctx, max - ntx);
   return ntx;
