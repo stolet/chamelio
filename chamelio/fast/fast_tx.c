@@ -114,6 +114,7 @@ static inline int tx_poll_guest(struct fast_context *ctx,
     int charge_budget)
 {
   int exec_ret;
+  int ntx_start;
   int tx_ret;
   int ret;
   int did_work;
@@ -144,6 +145,7 @@ static inline int tx_poll_guest(struct fast_context *ctx,
 
   if (charge_budget)
     tsc_start = clock_rdtsc();
+  ntx_start = *ntx;
   tx_ret = 0;
   did_work = 0;
   while (*ntx < max)
@@ -177,8 +179,6 @@ static inline int tx_poll_guest(struct fast_context *ctx,
     if (tx_ret <= 0 || exec_ret < 0)
       break;
 
-    did_work = 1;
-
     /* Add destination MAC address */
     ret = infra_tx(ctx, g, mb, tx_ret);
 
@@ -189,10 +189,11 @@ static inline int tx_poll_guest(struct fast_context *ctx,
       ctx->tx_mbs[ctx->tx_n] = mb;
       ctx->tx_n++;
       (*ntx)++;
+      did_work = 1;
     }
   }
 
-  if (charge_budget)
+  if (charge_budget && *ntx > ntx_start)
   {
     tsc_spent = clock_rdtsc() - tsc_start;
     __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);

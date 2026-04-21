@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "config.h"
+#include "cham_fast.h"
 #include "ebpf.h"
 #include "queue.h"
 #include "arp.h"
@@ -58,10 +59,14 @@ struct proto_control {
 #define CHAM_CACHE_LINE_SIZE 64
 #endif
 
+struct guest_budget_control {
+  __s64 val;
+  char __pad[CHAM_CACHE_LINE_SIZE - sizeof(__s64)];
+} __attribute__((aligned(CHAM_CACHE_LINE_SIZE)));
+
 struct guest_control {
-  /* Isolate to own cache line because this is shared with fast-path */
-  __s64 budget;
-  char __budget_pad[CHAM_CACHE_LINE_SIZE - sizeof(__s64)];
+  /* One budget counter per fast-path core shared with that core */
+  struct guest_budget_control budgets[MAX_FP_CORES];
 
   /* ID of registered guest */
   __u8 id;

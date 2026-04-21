@@ -60,6 +60,7 @@ DEFINE_EVENT_STUB(tx, 3)
       struct guest_fast *g, struct rte_mbuf *mb, __u64 pkt_off,               \
       __u64 tsc_start, int charge_budget)                                     \
   {                                                                           \
+    int did_work = 0;                                                         \
     int ret;                                                                  \
     int rx_ret;                                                               \
     int mb_tx = 0;                                                            \
@@ -72,6 +73,8 @@ DEFINE_EVENT_STUB(tx, 3)
         comb_virt_gre(ctx));                                                  \
     rx_ret = (int) event_rx_slot_##slot(&g->proto.ebpf_ctx,                   \
         sizeof(struct cham_ebpf_ctx));                                        \
+    if (rx_ret >= 0)                                                          \
+      did_work = 1;                                                           \
     if (rx_ret > 0)                                                           \
     {                                                                         \
       ret = infra_tx(ctx, g, mb, rx_ret);                                     \
@@ -83,7 +86,7 @@ DEFINE_EVENT_STUB(tx, 3)
       }                                                                       \
     }                                                                         \
                                                                               \
-    if (charge_budget)                                                        \
+    if (charge_budget && did_work)                                            \
     {                                                                         \
       tsc_spent = clock_rdtsc() - tsc_start;                                  \
       __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);             \
@@ -98,6 +101,7 @@ DEFINE_EVENT_STUB(tx, 3)
       struct rte_mbuf **mbs, int max, int *ntx, int charge_budget)            \
   {                                                                           \
     int did_work;                                                             \
+    int ntx_start;                                                            \
     int tx_ret;                                                               \
     int ret;                                                                  \
     __u64 tsc_start = 0, tsc_spent;                                           \
@@ -114,6 +118,7 @@ DEFINE_EVENT_STUB(tx, 3)
                                                                               \
     if (charge_budget)                                                        \
       tsc_start = clock_rdtsc();                                              \
+    ntx_start = *ntx;                                                         \
     did_work = 0;                                                             \
     tx_ret = 0;                                                               \
     while (*ntx < max)                                                        \
@@ -132,18 +137,17 @@ DEFINE_EVENT_STUB(tx, 3)
           sizeof(struct cham_ebpf_ctx));                                      \
       if (tx_ret <= 0)                                                        \
         break;                                                                \
-      did_work = 1;                                                           \
-                                                                              \
       ret = infra_tx(ctx, g, mb, tx_ret);                                     \
       if (ret == 0)                                                           \
       {                                                                       \
         ctx->tx_mbs[ctx->tx_n] = mb;                                          \
         ctx->tx_n++;                                                          \
         (*ntx)++;                                                             \
+        did_work = 1;                                                         \
       }                                                                       \
     }                                                                         \
                                                                               \
-    if (charge_budget)                                                        \
+    if (charge_budget && *ntx > ntx_start)                                    \
     {                                                                         \
       tsc_spent = clock_rdtsc() - tsc_start;                                  \
       __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);             \
@@ -163,6 +167,7 @@ DEFINE_EVENT_STUB(tx, 3)
   {                                                                           \
     int deq_ret;                                                              \
     int did_work;                                                             \
+    int ndeq_start;                                                           \
     int ret;                                                                  \
     int j;                                                                    \
     struct guest_fast *g = &ctx->guests[slot];                                \
@@ -182,6 +187,7 @@ DEFINE_EVENT_STUB(tx, 3)
     if (charge_budget)                                                        \
       tsc_start = clock_rdtsc();                                              \
     did_work = 0;                                                             \
+    ndeq_start = *ndeq;                                                       \
     for (j = 0; j < g->proto.ndqueues && *ndeq < max; j++)                    \
     {                                                                         \
       qcur = &g->proto.dqueues[g->proto.dqueues_head];                        \
@@ -228,7 +234,7 @@ DEFINE_EVENT_STUB(tx, 3)
       dqueue_rotate_head(g, qcur);                                            \
     }                                                                         \
                                                                               \
-    if (charge_budget)                                                        \
+    if (charge_budget && *ndeq > ndeq_start)                                  \
     {                                                                         \
       tsc_spent = clock_rdtsc() - tsc_start;                                  \
       __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);             \

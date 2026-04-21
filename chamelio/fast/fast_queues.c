@@ -95,6 +95,7 @@ static inline int queues_poll_guest(struct fast_context *ctx,
     int *ntx, int *ndeq, int charge_budget)
 {
   int j;
+  int ndeq_start;
   int ret;
   struct cham_dqueue *qcur;
   struct queue_entry *qe;
@@ -110,6 +111,7 @@ static inline int queues_poll_guest(struct fast_context *ctx,
 
   if (charge_budget)
     tsc_start = clock_rdtsc();
+  ndeq_start = *ndeq;
     
   for (j = 0; j < g->proto.ndqueues && *ndeq < max; j++)
   {
@@ -137,7 +139,7 @@ static inline int queues_poll_guest(struct fast_context *ctx,
   }
 
   /* Subtract from guest's budget */
-  if (charge_budget)
+  if (charge_budget && *ndeq > ndeq_start)
   {
     tsc_spent = clock_rdtsc() - tsc_start;
     __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);

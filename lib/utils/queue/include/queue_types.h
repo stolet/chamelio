@@ -73,7 +73,7 @@ enum queue_type {
 struct queue_new_guest_req {
   /* Guest ID */
   __u8 id;
-  /* Pointer to guest budget counter shared with control */
+  /* Pointer to guest/core budget counter shared with control */
   __s64 *budget;
   /* Base pointer to shared memory region for this guest */
   void *shm_base;

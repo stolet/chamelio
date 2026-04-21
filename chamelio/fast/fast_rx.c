@@ -85,20 +85,26 @@ static inline int rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
   int exec_ret;
   int ret, rx_ret;
   int mb_tx = 0;
+  int did_work;
   __u64 tsc_spent;
 
+  did_work = 0;
   fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off, virt_gre);
   switch (ctx->fp_proto_mode)
   {
     case FP_PROTO_EBPF:
       exec_ret = ebpf_vm_exec(g->proto.event_rx_vm, &g->proto.ebpf_ctx,
           sizeof(struct cham_ebpf_ctx), &rx_ret);
-      (void) exec_ret;
+      if (exec_ret >= 0 && rx_ret >= 0)
+        did_work = 1;
       break;
     case FP_PROTO_HAND:
       rx_ret = proto_hand_event_rx(g->proto.proto_type, &g->proto.ebpf_ctx);
+      if (rx_ret >= 0)
+        did_work = 1;
       break;
     default:
+      exec_ret = -1;
       rx_ret = -1;
       break;
   }
@@ -114,7 +120,7 @@ static inline int rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
     }
   }
 
-  if (charge_budget)
+  if (charge_budget && did_work)
   {
     tsc_spent = clock_rdtsc() - tsc_start;
     __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);

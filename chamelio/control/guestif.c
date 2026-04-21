@@ -242,9 +242,21 @@ static inline int uxsocket_accept(struct control_context *ctx)
   /* Allocate control path struct for guest */
   g = &ctx->guests[ctx->n_guests];
   g->id = ctx->n_guests;
-  g->budget = ctx->config->perf_iso ? (__s64) ctx->budget_cap : INT64_MAX;
   g->shm_fd = sfd;
   g->shm_base = shm_base;
+  for (i = 0; i < (int) ctx->config->fp_cores_max; i++)
+  {
+    __u64 share = 0;
+
+    if (ctx->config->perf_iso)
+    {
+      share = ctx->budget_cap / ctx->config->fp_cores_max;
+      if ((__u32) i < ctx->budget_cap % ctx->config->fp_cores_max)
+        share++;
+    }
+
+    g->budgets[i].val = ctx->config->perf_iso ? (__s64) share : INT64_MAX;
+  }
 
   alloc = shmalloc_init(shm_base, ctx->config->shm_len);
   if (alloc == NULL)
@@ -326,7 +338,7 @@ static inline int uxsocket_accept(struct control_context *ctx)
 
     new_guest_req = &qe_new_guest->data.new_guest_req;
     new_guest_req->id = g->id;
-    new_guest_req->budget = &g->budget;
+    new_guest_req->budget = &g->budgets[i].val;
     new_guest_req->shm_base = shm_base;
     new_guest_req->shm_len = ctx->config->shm_len;
     if (ctx->config->virt_gre)
