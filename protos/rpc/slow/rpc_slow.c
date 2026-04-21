@@ -251,7 +251,8 @@ int main(int argc, char **argv)
 }
 
 int handle_new_client_req(struct rpc_slow_context *ctx,
-                          struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
+                          struct rpc_app_context_slow *actx, 
+                          struct rpc_queue_entry *qe_req)
 {
   int ret;
   struct rpc_client *cl;
