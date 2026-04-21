@@ -31,6 +31,7 @@ enum cfg_params {
   CP_FP_PROTO,
   CP_PERF_ISO,
   CP_PERF_ISO_CAP,
+  CP_PERF_ISO_MAX_INS,
   CP_PERF_ISO_BOOST,
   CP_VIRT_GRE,
   CP_VIRT_PATH,
@@ -94,6 +95,9 @@ static struct option opts[] = {
   { .name = "perf-iso-cap",
     .has_arg = required_argument,
     .val = CP_PERF_ISO_CAP },
+  { .name = "perf-iso-max-ins",
+    .has_arg = required_argument,
+    .val = CP_PERF_ISO_MAX_INS },
   { .name = "perf-iso-boost",
     .has_arg = required_argument,
     .val = CP_PERF_ISO_BOOST },
@@ -245,6 +249,12 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
+      case CP_PERF_ISO_MAX_INS:
+        if (parse_int32(optarg, &c->perf_iso_max_ins) != 0) {
+          LOG_ERROR("performance isolation max loop instructions parsing failed");
+          goto failed;
+        }
+        break;
       case CP_PERF_ISO_BOOST:
         if (parse_double(optarg, &c->perf_iso_boost) != 0) {
           LOG_ERROR("performance isolation boost parsing failed");
@@ -304,6 +314,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->fp_proto_mode = FP_PROTO_EBPF;
   c->perf_iso = 0;
   c->perf_iso_cap = 1000;
+  c->perf_iso_max_ins = UINT_MAX;
   c->perf_iso_boost = 0.5;
   c->virt_gre = 0;
   strcpy(c->virt_path, "net_virt.csv");
@@ -358,6 +369,8 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: disabled]\n"
       "  --perf-iso-cap                          Per guest budget cap in microseconds"
           "[default: %u]\n"
+      "  --perf-iso-max-ins                      Max instructions in longest loop"
+          "[default: %u]\n"
       "  --perf-iso-boost                        Budget boost multiplier"
           "[default: %f]\n"
       "Virtualization:\n"
@@ -379,7 +392,7 @@ static void print_usage(struct configuration *c, char *progname)
       c->cham_queue_len, c->agt_queue_len, c->control_txq_len,
       c->control_txq_pkt_len,
       c->fp_cores_max,
-      c->perf_iso_cap, c->perf_iso_boost, c->virt_path);
+      c->perf_iso_cap, c->perf_iso_max_ins, c->perf_iso_boost, c->virt_path);
 }
 
 static int parse_string(const char *s, char *str)

@@ -289,8 +289,8 @@ uint64_t fast_rx_poll_comb(void *mem, size_t mem_len)
     if (g == NULL)
       continue;
 
-    if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
-      continue;
+    // if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+    //   continue;
 
     tx_idx[i] = (__u8) rx_poll_slot(ctx, g, mbs[i], pkt_off, tsc_start,
         charge_budget);

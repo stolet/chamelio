@@ -59,8 +59,8 @@ int fast_rx_poll(struct fast_context *ctx)
       continue;
 
     /* Drop if this guest is out of budget */
-    if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
-      continue;
+    // if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
+    //   continue;
 
     tx_idx[i] = (__u8) rx_poll_guest(ctx, g, mbs[i], pkt_off, tsc_start,
         charge_budget, ctx->virt_gre);

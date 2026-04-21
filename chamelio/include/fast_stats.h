@@ -5,7 +5,7 @@
 #include <linux/types.h>
 
 #ifndef CHAM_CTL_BUDGET_STATS
-#define CHAM_CTL_BUDGET_STATS 1
+#define CHAM_CTL_BUDGET_STATS 0
 #endif
 
 struct fast_context;

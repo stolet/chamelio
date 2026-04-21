@@ -342,7 +342,8 @@ static struct ebpf_vm_c *verify_and_jit(
 
   insns = bpf_program__insns(prog);
   ret = verifier_analyze(insns, bpf_program__insn_cnt(prog),
-      ctx->config->shm_len, (char *)prog_name);
+      ctx->config->shm_len, ctx->config->perf_iso_max_ins,
+      (char *)prog_name);
   if (ret != 0)
   {
     LOG_ERROR("failed to verify %s", prog_name);
@@ -374,7 +375,8 @@ static int verify_and_emit(struct control_context *ctx,
 
   insns = bpf_program__insns(prog);
   ret = verifier_analyze(insns, bpf_program__insn_cnt(prog),
-      ctx->config->shm_len, (char *) prog_name);
+      ctx->config->shm_len, ctx->config->perf_iso_max_ins,
+      (char *) prog_name);
   if (ret != 0)
   {
     LOG_ERROR("failed to verify %s", prog_name);

@@ -336,7 +336,7 @@ extern "C"
                 .unsupported = false,
             };
         default:
-            std::cerr << "could not find helper id=" << id << "\n";
+            LOG_ERROR("could not find helper id=%d", id);
             EbpfHelperPrototype unknown{};
             unknown.name = "unknown_helper";
             unknown.return_type = EBPF_RETURN_TYPE_UNSUPPORTED;
@@ -375,8 +375,8 @@ extern "C"
         }
     }
 
-    int verifier_analyze(const void *ebpf_instr, size_t instr_cnt, 
-            __u64 shm_len, char *name)
+    int verifier_analyze(const void *ebpf_instr, size_t instr_cnt,
+            __u64 shm_len, __u32 perf_iso_max_ins, char *name)
     {
         Program prog;
         RawProgram raw_prog;
@@ -417,9 +417,9 @@ extern "C"
 
         /* Unmarshal ebpf instructions into a Prevail instruction sequence */
         instr_or_err = unmarshal(raw_prog, options);
-        if (auto error = std::get_if<string>(&instr_or_err)) 
+        if (std::get_if<string>(&instr_or_err)) 
         {
-            std::cerr << "unmarshaling error: " << *error << "\n";
+            LOG_ERROR("unmarshaling error");
             return -1;
         }
         
@@ -436,6 +436,14 @@ extern "C"
             return -1;
         }
 
+        if (res.max_loop_count >= 0 &&
+            (__u32) res.max_loop_count > perf_iso_max_ins)
+        {
+            LOG_ERROR("program %s exceeds instruction limit max_loop_count=%llu limit=%u",
+                name, (unsigned long long) res.max_loop_count, perf_iso_max_ins);
+            return -1;
+        }
+        LOG_DEBUG("max_loop_count=%d", res.max_loop_count);
 
         return 0;
     }

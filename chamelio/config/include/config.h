@@ -50,6 +50,8 @@ struct configuration {
   __u32 perf_iso;
   /* Maximum budget cap per guest in microseconds */
   __u32 perf_iso_cap;
+  /* Maximum accepted instruction count in the longest loop */
+  __u32 perf_iso_max_ins;
   /* Boost multiplier for budget */
   double perf_iso_boost;
 
