@@ -14,7 +14,7 @@
 #define SOCK_INACTIVE (-1U)
 /* Invalid server ID */
 #define INVALID_ID -1
-/* Max concurrent in-flight requests per server */
+/* Max concurrent in-flight requests per worker */
 #define MAX_PENDING_RPC 256
 
 // enum rpc_entity_type
@@ -37,6 +37,22 @@ struct rpc_context_lib
   __u16 ncores;
   struct equeue **app_fast_qs;
   struct dqueue **fast_app_qs;
+};
+
+struct client_request
+{
+  __u8 state;    // indicates if the request slot is in use or not
+  __u32 rid;
+};
+
+//TODO: see if service is really required
+struct worker_request
+{
+  __u8 state;    // indicates if the request slot is in use or not
+  __u32 rid;
+  __u8 service;
+  __u32 ip;
+  __u16 port;
 };
 
 /* Worker that handles RPC requests */
@@ -83,8 +99,9 @@ struct rpc_worker_lib
   /* Pointer to the worker state in shared memory */
   void *shm_worker;
 
+  struct worker_request pending_calls[MAX_PENDING_RPC];
   /* RID of the last request read by rpc_handle_call */
-  __u32 last_rid;
+  // __u32 last_rid;
 };
 
 /* RPC client that makes calls */
@@ -137,6 +154,8 @@ struct rpc_client_lib
   /* Result from bind. Default is -1 and is set
       to 1 on success and 0 on failure */
   int bind_success;
+  /* Pending call RIDs for this client */
+  struct client_request pending_calls[MAX_PENDING_RPC];
 };
 
 /* RPC server that registers different services */
@@ -213,10 +232,9 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
              __u16 service, void *buf, size_t len);
 /* Sends an RPC response for a call that was handled */
 int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
-               __u32 ip, __u16 port,
                __u32 rid, void *buf, size_t len);
-/* Parses the top request in worker queue */
-int rpc_handle_call(struct rpc_worker_lib *w,
+/* Parses the top request in worker queue and returns the RID for the request */
+int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
                     void *buf, size_t len);
 /* Parses the response from a worker */
 int rpc_response(struct rpc_client_lib *c, void *buf, size_t len);
