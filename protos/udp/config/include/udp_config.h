@@ -3,6 +3,8 @@
 
 #include <linux/types.h>
 
+#define UDP_EBPF_PATH_LEN 64
+
 struct udp_configuration {
   /* Protocol is running in a VM */
   __u32 virt;
@@ -18,6 +20,8 @@ struct udp_configuration {
   __u32 bumpq_len;
   /* Number of elements in the control queues */
   __u32 ctlq_len;
+  /* eBPF bytecode path selected for the fast-path */
+  char ebpf_path[UDP_EBPF_PATH_LEN];
 };
 
 int udp_config_parse(struct udp_configuration *c, int argc, char **argv);

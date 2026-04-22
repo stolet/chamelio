@@ -20,6 +20,7 @@
 #define PORT_MAP 0
 #define SOCK_MAP 1
 #define REUPORT_MAP 2
+#define CFG_MAP 3
 #define UDP_MAX_PAYLOAD (FAST_L3_PKT_ROOM - sizeof(struct udp_pkt_inner))
 
 static __always_inline struct udp_sock * udp_sock_find(struct cham_ebpf_ctx *ctx,
@@ -69,7 +70,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   __u32 part;
 
   sock = NULL;
-  
+
   /* Parse IP header */
   if (ctx->pkt + sizeof(struct ip_hdr) > ctx->pkt_end)
     return -1;
@@ -98,16 +99,16 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   udp = (struct udp_hdr *) ((__u8 *) ip + ip_hdrs_len);
   udp_len = f_beui16(udp->len);
-  
+
   if (udp_len < sizeof(struct udp_hdr))
     return -1;
-  
+
   if (ip_total_len < ip_hdrs_len + udp_len)
     return -1;
 
   /* Lookup socket */
   sock = udp_sock_find(ctx, f_beui16(udp->dst));
-  
+
   /* Socket doesn't exist so drop it */
   if (sock == NULL)
     return -1;
@@ -120,7 +121,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   free_bytes = sock->rx_len - sock->rx_avail;
   if (payload_len > free_bytes)
     return -1;
-  
+
   tail = sock->rx_head + sock->rx_avail;
   if (tail >= sock->rx_len)
     tail -= sock->rx_len;
@@ -138,7 +139,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   /* Update number of available bytes */
   sock->rx_avail += payload_len;
-  
+
   /* Send bump to application */
   q = &ctx->equeues[sock->app_bump_qid].eq;
   qe = ebpf_queue_tail(q, sizeof(struct udp_queue_bump_entry));
@@ -168,7 +169,7 @@ SEC("chamelio/event_deq")
 int event_deq(struct cham_ebpf_ctx *ctx)
 {
   int ret;
-  
+
   if ((__u8 *) ctx->qe + sizeof(*ctx->qe) > (__u8 *) ctx->shm_end)
     return -1;
 
@@ -211,7 +212,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   bump_cham = &qe->data.bump_cham_tx;
 
   map = &ctx->maps[SOCK_MAP];
-  sock = ebpf_map_lookup(map->addr, 
+  sock = ebpf_map_lookup(map->addr,
       bump_cham->sock_id, sizeof(struct udp_sock));
   if (sock == NULL)
     return -1;
@@ -270,17 +271,17 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   /* Copy data to packet */
   payload = ctx->pkt + pkt_hdrs_len;
-  if (sock->tx_head + payload_len <= sock->tx_len) 
+  if (sock->tx_head + payload_len <= sock->tx_len)
   {
     ebpf_memcpy(payload, ctx->shm_base + sock->tx_off + sock->tx_head, payload_len);
-  } 
-  else 
+  }
+  else
   {
     part = sock->tx_len - sock->tx_head;
     ebpf_memcpy(payload, ctx->shm_base + sock->tx_off + sock->tx_head, part);
     ebpf_memcpy(payload + part, ctx->shm_base + sock->tx_off, payload_len - part);
   }
-  
+
   /* Update socket */
   new_head = sock->tx_head + payload_len;
   if (new_head >= sock->tx_len)
@@ -290,7 +291,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   /* Send a bump to application */
   q = &ctx->equeues[sock->app_bump_qid].eq;
-  qe = (struct udp_queue_bump_entry *) ebpf_queue_tail(q, 
+  qe = (struct udp_queue_bump_entry *) ebpf_queue_tail(q,
       sizeof(struct udp_queue_bump_entry));
   if (qe == NULL)
     return -1;
@@ -305,7 +306,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   return pkt_hdrs_len + payload_len;
 }
- 
+
 static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
 {
   __u32 new_head;
@@ -324,7 +325,7 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   sock = ebpf_map_lookup(map->addr, bump->sock_id, sizeof(struct udp_sock));
   if (sock == NULL)
     return -1;
-  
+
   new_head = sock->rx_head + bump->rx_head;
   if (new_head >= sock->rx_len)
     new_head -= sock->rx_len;
@@ -336,25 +337,43 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
 
 static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
 {
-  __u16 i;
+  __u16 i, nr, next_port;
+  struct udp_cfg *cfg;
   struct udp_port *port;
   struct cham_map *map;
 
-  map = &ctx->maps[PORT_MAP];
+  map = &ctx->maps[CFG_MAP];
+  cfg = ebpf_map_lookup(map->addr, 0, sizeof(struct udp_cfg));
+  if (cfg == NULL)
+    return 0;
+
+  next_port = cfg->next_port;
+  if (next_port < MIN_PORT || next_port > MAX_PORT)
+    next_port = MIN_PORT;
 
 #ifndef CHAM_NATIVE_FAST
   /* Keep the verifier from over-optimizing the backing map access. */
   (void) ebpf_map_get(map->addr, map->size);
 #endif
 
-  for (i = MIN_PORT; i < MAX_SOCKETS; i++)
+  map = &ctx->maps[PORT_MAP];
+  for (i = 0; i < UDP_PORT_SCAN_MAX; i++)
   {
-    port = ebpf_map_lookup(map->addr, i, sizeof(struct udp_port));
+    nr = next_port + i;
+    if (nr > MAX_PORT)
+      nr = MIN_PORT + nr - MAX_PORT - 1;
+
+    port = ebpf_map_lookup(map->addr, nr, sizeof(struct udp_port));
     if (port == NULL)
       return 0;
 
     if (port->nsocks == 0)
-      return i;
+    {
+      cfg->next_port = nr + 1;
+      if (cfg->next_port > MAX_PORT)
+        cfg->next_port = MIN_PORT;
+      return nr;
+    }
   }
 
   return 0;
@@ -374,8 +393,8 @@ static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
   port = ebpf_map_lookup(map->addr, local_port, sizeof(struct udp_port));
   if (port == NULL || port->nsocks == 0)
     return NULL;
-    
-  /* Hash src port to one of the sockets if reusable port */  
+
+  /* Hash src port to one of the sockets if reusable port */
   if (port->nsocks < 2)
   {
     sock_id = port->sids[0];
@@ -387,7 +406,7 @@ static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
     sock_id = port->sids[port->next_sock];
     port->next_sock = (port->next_sock + 1) % port->nsocks;
   }
-  
+
   map = &ctx->maps[SOCK_MAP];
   return ebpf_map_lookup(map->addr, sock_id, sizeof(struct udp_sock));
 }

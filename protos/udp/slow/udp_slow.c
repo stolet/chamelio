@@ -39,7 +39,8 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   __u8 *ebpf_bytecode;
   struct guest_lib *g;
   struct proto_lib *p;
-  struct proto_map_lib *port_map, *socks_map;
+  struct proto_map_lib *cfg_map, *port_map, *socks_map;
+  struct udp_cfg *cfg;
   struct udp_port *ports;
 
   if (!ctx->config.virt)
@@ -68,10 +69,10 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
     }
   }
   
-  fd = open(UDP_EBPF_BYTECODE, O_RDWR);
+  fd = open(ctx->config.ebpf_path, O_RDWR);
   if (fd < 0)
   {
-    LOG_ERROR("Failed to open UDP eBPF bytecode");
+    LOG_ERROR("Failed to open UDP eBPF bytecode at %s", ctx->config.ebpf_path);
     abort();
   }
   fstat(fd, &statbuf);
@@ -116,6 +117,14 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   }
   ctx->socks_map = socks_map;
 
+  cfg_map = cham_new_map(p, 1, sizeof(struct udp_cfg));
+  if (cfg_map == NULL)
+  {
+    LOG_ERROR("failed to create UDP config map");
+    abort();
+  }
+  ctx->cfg_map = cfg_map;
+
   /* Initialize entries in port_map */
   ports = p->shm_base + port_map->off;
   for (i = 0; i < MAX_SOCKETS; i++)
@@ -123,6 +132,9 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
     ports[i].nsocks = 0;
     ports[i].next_sock = 0;
   }
+
+  cfg = p->shm_base + cfg_map->off;
+  cfg->next_port = MIN_PORT;
 
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;

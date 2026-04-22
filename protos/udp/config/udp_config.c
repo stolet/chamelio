@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "udp_config.h"
+#include "udp.h"
 
 enum cfg_params {
   CP_VIRT,
@@ -14,6 +15,7 @@ enum cfg_params {
   CP_APPQ_LEN,
   CP_BUMPQ_LEN,
   CP_CTLQ_LEN,
+  CP_BLOCK,
 };
 
 static struct option opts[] = {
@@ -35,10 +37,14 @@ static struct option opts[] = {
   { .name = "ctlq-len",
     .has_arg = required_argument,
     .val = CP_CTLQ_LEN },
+  { .name = "block",
+    .has_arg = required_argument,
+    .val = CP_BLOCK },
 };
 
 static int config_defaults(struct udp_configuration *c);
 static int parse_u32(const char *s, __u32 *val);
+static int parse_block(const char *s, char *ebpf_path, size_t ebpf_path_len);
 static void print_usage(struct udp_configuration *c, char *progname);
 
 int udp_config_parse(struct udp_configuration *c, int argc, char **argv)
@@ -80,6 +86,10 @@ int udp_config_parse(struct udp_configuration *c, int argc, char **argv)
         if (parse_u32(optarg, &c->ctlq_len) != 0)
           goto failed;
         break;
+      case CP_BLOCK:
+        if (parse_block(optarg, c->ebpf_path, sizeof(c->ebpf_path)) != 0)
+          goto failed;
+        break;
       case -1:
         done = 1;
         break;
@@ -106,6 +116,7 @@ static int config_defaults(struct udp_configuration *c)
   c->appq_len = 128;
   c->bumpq_len = 65536;
   c->ctlq_len = 1024;
+  strcpy(c->ebpf_path, UDP_EBPF_BYTECODE);
   return 0;
 }
 
@@ -127,6 +138,35 @@ static int parse_u32(const char *s, __u32 *val)
   return 0;
 }
 
+static int parse_block(const char *s, char *ebpf_path, size_t ebpf_path_len)
+{
+  const char *path;
+
+  if (strcmp(s, "64") == 0)
+    path = UDP_EBPF_BYTECODE_64;
+  else if (strcmp(s, "128") == 0)
+    path = UDP_EBPF_BYTECODE_128;
+  else if (strcmp(s, "256") == 0)
+    path = UDP_EBPF_BYTECODE_256;
+  else if (strcmp(s, "512") == 0)
+    path = UDP_EBPF_BYTECODE_512;
+  else if (strcmp(s, "1024") == 0)
+    path = UDP_EBPF_BYTECODE_1024;
+  else
+  {
+    fprintf(stderr, "invalid --block value: %s\n", s);
+    return -1;
+  }
+
+  if (snprintf(ebpf_path, ebpf_path_len, "%s", path) >= ebpf_path_len)
+  {
+    fprintf(stderr, "eBPF path too long: %s\n", path);
+    return -1;
+  }
+
+  return 0;
+}
+
 static void print_usage(struct udp_configuration *c, char *progname)
 {
   fprintf(stderr, "Usage: %s [OPTION]...\n"
@@ -140,8 +180,11 @@ static void print_usage(struct udp_configuration *c, char *progname)
           " [default: %u]\n"
       "  --bumpq-len=NELEMS                     Bump queue length in elements"
           " [default: %u]\n"
-      "  --ctlq-len=NELEMS                     Control queue length in elements"
+      "  --ctlq-len=NELEMS                      Control queue length in elements"
           " [default: %u]\n"
+      "  --block=NR                             Select block-sized UDP fast path"
+          " (64, 128, 256, 512, 1024)"
+          " [default: none]\n"
       "\n"
       "Virtualization:\n"
       "  --virt                              Enable virtualization features"

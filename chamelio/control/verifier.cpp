@@ -398,7 +398,8 @@ extern "C"
         options.allow_division_by_zero = true;
         options.strict = false;
         options.big_endian = std::endian::native == std::endian::big;
-        options.cfg_opts.check_for_termination = false;
+        /* TODO: Use check for temination == true */
+        options.cfg_opts.check_for_termination = true;
         options.verbosity_opts.simplify = true;
         options.verbosity_opts.print_line_info = true;
         options.verbosity_opts.dump_btf_types_json = true;
@@ -436,14 +437,13 @@ extern "C"
             return -1;
         }
 
-        if (res.max_loop_count >= 0 &&
-            (__u32) res.max_loop_count > perf_iso_max_ins)
+        if (res.worst_instr_count > perf_iso_max_ins)
         {
-            LOG_ERROR("program %s exceeds instruction limit max_loop_count=%llu limit=%u",
-                name, (unsigned long long) res.max_loop_count, perf_iso_max_ins);
+            LOG_ERROR("exceeded instruction limit max_loop_count=%llu limit=%u", 
+                res.worst_instr_count, perf_iso_max_ins);
             return -1;
         }
-        LOG_DEBUG("max_loop_count=%d", res.max_loop_count);
+        LOG_DEBUG("max_loop_count=%d max_instrs=%d", res.max_loop_count, res.worst_instr_count);
 
         return 0;
     }

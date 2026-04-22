@@ -18,10 +18,22 @@ foreach d : ebpf_incs
   ecc_inc_args += ['-a=-I' + d]
 endforeach
 
-ebpf_obj = custom_target(
-  'udp_fast_ebpf',
-  input: 'udp_fast.ebpf.c',
-  output: 'udp_fast_ebpf.o',
-  command: [ ecc, '@INPUT@', '--output-path', meson.current_build_dir(),] + ecc_inc_args,
-  build_by_default: true
-)
+ebpf_srcs = [
+  'udp_fast.ebpf.c',
+  'udp_fast_64.ebpf.c',
+  'udp_fast_128.ebpf.c',
+  'udp_fast_256.ebpf.c',
+  'udp_fast_512.ebpf.c',
+  'udp_fast_1024.ebpf.c',
+]
+
+foreach ebpf_src : ebpf_srcs
+  ebpf_name = ebpf_src.split('.')[0]
+  custom_target(
+    ebpf_name + '_ebpf',
+    input: ebpf_src,
+    output: ebpf_name + '_ebpf.o',
+    command: [ ecc, '@INPUT@', '--output-path', meson.current_build_dir(),] + ecc_inc_args,
+    build_by_default: true
+  )
+endforeach

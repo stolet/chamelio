@@ -1,4 +1,4 @@
-config_inc = include_directories('include')
+config_inc = include_directories('include', '../include')
 
 config_srcs = files('udp_config.c')
 

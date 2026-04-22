@@ -61,6 +61,8 @@ struct udp_slow_context {
   struct proto_map_lib *socks_map;
   /* Maps a port to a socket */
   struct proto_map_lib *port_map;
+  /* UDP fast-path configuration */
+  struct proto_map_lib *cfg_map;
 };
 
 #endif

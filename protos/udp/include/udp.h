@@ -23,12 +23,19 @@
 /* Max number of sockets that can bind to reusable port */
 #define MAX_REUSOCK_PORT MAX_CTXS
 STATIC_ASSERT(MAX_REUSOCK_PORT % 2 == 0, max_reusock_port);
+/* Max number of ports to probe for an ephemeral bind in fast-path */
+#define UDP_PORT_SCAN_MAX 8
 /* Max number of scheduler entries */
 #define MAX_SCHED MAX_SOCKETS
 /* Used to signal that a socket entry is invalid/empty */
 #define ID_INVALID (-1U)
 /* Location where ebpf bytecode is located */
 #define UDP_EBPF_BYTECODE "protos/udp/fast/udp_fast.bpf.o"
+#define UDP_EBPF_BYTECODE_64 "protos/udp/fast/udp_fast_64.bpf.o"
+#define UDP_EBPF_BYTECODE_128 "protos/udp/fast/udp_fast_128.bpf.o"
+#define UDP_EBPF_BYTECODE_256 "protos/udp/fast/udp_fast_256.bpf.o"
+#define UDP_EBPF_BYTECODE_512 "protos/udp/fast/udp_fast_512.bpf.o"
+#define UDP_EBPF_BYTECODE_1024 "protos/udp/fast/udp_fast_1024.bpf.o"
 
 /* Entry for the socket map */
 struct udp_sock {
@@ -77,6 +84,12 @@ struct udp_port {
   __u32 next_sock;
   /* Socket IDs */
   __u32 sids[MAX_REUSOCK_PORT];
+} __attribute__((packed));
+
+struct udp_cfg {
+  /* Next ephemeral port candidate for fast-path allocation */
+  __u16 next_port;
+  __u16 __pad;
 } __attribute__((packed));
 
 #endif
