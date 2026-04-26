@@ -20,7 +20,7 @@
 #define PORT_MAP 0
 #define SOCK_MAP 1
 #define REUPORT_MAP 2
-#define CFG_MAP 3
+#define CFG_MAP 2
 #define UDP_MAX_PAYLOAD (FAST_L3_PKT_ROOM - sizeof(struct udp_pkt_inner))
 
 static __always_inline struct udp_sock * udp_sock_find(struct cham_ebpf_ctx *ctx,

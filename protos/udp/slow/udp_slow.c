@@ -30,7 +30,8 @@ int handle_bind(struct udp_slow_context *ctx,
     struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req);
 int handle_sock_setopt(struct udp_slow_context *ctx, 
     struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req);
-    
+static __u16 find_free_port(struct udp_slow_context *ctx);
+   
 int init_udp_slow_context(struct udp_slow_context *ctx)
 {
   int fd, ret, i;
@@ -353,6 +354,7 @@ int handle_bind(struct udp_slow_context *ctx,
     struct udp_app_context_slow *actx, struct udp_queue_entry *qe_req)
 {
   int ret;
+  __u16 local_port;
   struct udp_port *port_map, *port;
   struct udp_queue_entry *qe_res;
   struct udp_queue_bind_req *req;
@@ -367,10 +369,15 @@ int handle_bind(struct udp_slow_context *ctx,
   }
   
   req = &qe_req->data.bind_req;
-
+  socks_map = ctx->proto->shm_base + ctx->socks_map->off;
+  sock = &socks_map[req->sock_id];
+  local_port = req->local_port;
+  if (sock->local_port != 0)
+    local_port = sock->local_port;
+  
   /* Return error if port is invalid */
   res = &qe_res->data.bind_res;
-  if (req->local_port > MAX_SOCKETS)
+  if (local_port > MAX_PORT)
   {
     LOG_ERROR("port is invalid");
     res->success = 0;
@@ -381,11 +388,25 @@ int handle_bind(struct udp_slow_context *ctx,
     return -1;
   }
   
+  /* Choose a port if port is 0 */
+  if (local_port == 0)
+  {
+    local_port = find_free_port(ctx);
+    if (local_port == 0)
+    {
+      LOG_ERROR("failed to find free UDP port");
+      res->success = 0;
+      res->opaque = req->opaque;
+      ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_BIND_RES);
+      if (ret != 0)
+        LOG_ERROR("failed to enqueue UDP queue bind response");
+      return -1;
+    }
+  }
+  
   /* Return error if another socket is already using this port */
-  socks_map = ctx->proto->shm_base + ctx->socks_map->off;
-  sock = &socks_map[req->sock_id];
   port_map = ctx->proto->shm_base + ctx->port_map->off;
-  port = &port_map[req->local_port];
+  port = &port_map[local_port];
   if (port->nsocks != 0 && !sock->reuport)
   {
     LOG_ERROR("socket with this port already in use");
@@ -397,10 +418,8 @@ int handle_bind(struct udp_slow_context *ctx,
     return -1;
   }
 
-  socks_map = ctx->proto->shm_base + ctx->socks_map->off;
-  sock = &socks_map[req->sock_id];
   sock->local_ip = req->local_ip;
-  sock->local_port = req->local_port;
+  sock->local_port = local_port;
 
   port->sids[port->nsocks] = req->sock_id;
   port->nsocks++;
@@ -448,4 +467,37 @@ int main(int argc, char **argv)
     appif_poll(&ctx);
     poll_apps(&ctx);
   }
+}
+
+static __u16 find_free_port(struct udp_slow_context *ctx)
+{
+  __u16 i, nr, next_port;
+  struct udp_cfg *cfg;
+  struct udp_port *port;
+
+  cfg = ctx->proto->shm_base + ctx->cfg_map->off;
+  if (cfg == NULL)
+    return 0;
+
+  next_port = cfg->next_port;
+  if (next_port < MIN_PORT || next_port > MAX_PORT)
+    next_port = MIN_PORT;
+
+  port = ctx->proto->shm_base + ctx->port_map->off;
+  for (i = 0; i < UDP_PORT_SCAN_MAX; i++)
+  {
+    nr = next_port + i;
+    if (nr > MAX_PORT)
+      nr = MIN_PORT + nr - MAX_PORT - 1;
+
+    if (port[nr].nsocks == 0)
+    {
+      cfg->next_port = nr + 1;
+      if (cfg->next_port > MAX_PORT)
+        cfg->next_port = MIN_PORT;
+      return nr;
+    }
+  }
+
+  return 0;
 }
