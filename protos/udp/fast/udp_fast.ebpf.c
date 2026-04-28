@@ -159,8 +159,8 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   return 0;
 }
 
-SEC("chamelio/event_tx")
-int event_tx(struct cham_ebpf_ctx *ctx)
+SEC("chamelio/event_sched")
+int event_sched(struct cham_ebpf_ctx *ctx)
 {
   return -1;
 }

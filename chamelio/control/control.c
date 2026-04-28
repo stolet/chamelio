@@ -44,7 +44,7 @@ int control_context_init(struct control_context *ctl_ctx,
   memset(ctl_ctx->guest_bc, 0, sizeof(ctl_ctx->guest_bc));
   ctl_ctx->agg_rx_vm = NULL;
   ctl_ctx->agg_deq_vm = NULL;
-  ctl_ctx->agg_tx_vm = NULL;
+  ctl_ctx->agg_sched_vm = NULL;
   ctl_ctx->f_ctxs = NULL;
   ctl_ctx->fast_batch_last = NULL;
   ctl_ctx->fast_stats_tsc = 0;
@@ -215,7 +215,7 @@ static inline void log_fast_batch_stats(struct control_context *ctx)
   __u64 now_tsc;
   __u64 rx_calls;
   __u64 queue_calls;
-  __u64 tx_calls;
+  __u64 sched_calls;
 #if CHAM_CTL_BUDGET_STATS
   __u8 gid;
   __u64 budg_nr;
@@ -265,15 +265,16 @@ static inline void log_fast_batch_stats(struct control_context *ctx)
     prev = &ctx->fast_batch_last[i];
     rx_calls = cur.rx_calls - prev->rx_calls;
     queue_calls = cur.queue_calls - prev->queue_calls;
-    tx_calls = cur.tx_calls - prev->tx_calls;
+    sched_calls = cur.sched_calls - prev->sched_calls;
 
     LOG_INFO("fast_batch core=%u fast_rx_poll_avg=%.2f fast_queues_poll_avg=%.2f "
-        "fast_tx_poll_avg=%.2f",
+        "fast_sched_poll_avg=%.2f",
         i,
         rx_calls == 0 ? 0.0 : (double) (cur.rx_items - prev->rx_items) / rx_calls,
         queue_calls == 0 ? 0.0 :
             (double) (cur.queue_items - prev->queue_items) / queue_calls,
-        tx_calls == 0 ? 0.0 : (double) (cur.tx_items - prev->tx_items) / tx_calls);
+        sched_calls == 0 ? 0.0 :
+            (double) (cur.sched_items - prev->sched_items) / sched_calls);
 
 #if CHAM_CTL_BUDGET_STATS
     if (ctx->config->perf_iso)

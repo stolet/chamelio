@@ -23,7 +23,7 @@
 
 /* Combined infra + ebpf entry symbols in the bytecode. */
 #define COMB_RX_ENTRY "fast_rx_poll_comb"
-#define COMB_TX_ENTRY "fast_tx_poll_comb"
+#define COMB_SCHED_ENTRY "fast_sched_poll_comb"
 #define COMB_DEQ_ENTRY "fast_queues_poll_comb"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
@@ -40,7 +40,7 @@ static struct ebpf_vm_c *build_agg_vm(struct control_context *ctx,
     const struct comb_bc_blob *slot_bc);
 static int rebuild_agg_vms(struct control_context *ctx, __u16 gid,
     const struct comb_bc_blob *rx_bc, const struct comb_bc_blob *deq_bc,
-    const struct comb_bc_blob *tx_bc);
+    const struct comb_bc_blob *sched_bc);
 static struct comb_bc_blob *guest_bc_slot(struct control_context *ctx,
     __u16 gid, int event_idx);
 static int publish_agg_vms(struct control_context *ctx, __u16 gid);
@@ -83,7 +83,7 @@ struct ebpf_prog_desc
 enum agg_event {
   AGG_EVENT_RX = 0,
   AGG_EVENT_DEQ,
-  AGG_EVENT_TX,
+  AGG_EVENT_SCHED,
 };
 
 static const struct ebpf_helper_desc ebpf_helpers[] = {
@@ -196,13 +196,13 @@ void control_ebpf_upload(struct control_context *ctx,
   struct bpf_object *bpf_obj = NULL;
   struct comb_bc_blob rx_bc = { 0 };
   struct comb_bc_blob deq_bc = { 0 };
-  struct comb_bc_blob tx_bc = { 0 };
+  struct comb_bc_blob sched_bc = { 0 };
   struct ebpf_vm_c *event_rx_vm = NULL;
-  struct ebpf_vm_c *event_tx_vm = NULL;
+  struct ebpf_vm_c *event_sched_vm = NULL;
   struct ebpf_vm_c *event_deq_vm = NULL;
   struct ebpf_prog_desc progs[] = {
       { "event_rx", COMB_RX_ENTRY, &event_rx_vm },
-      { "event_tx", COMB_TX_ENTRY, &event_tx_vm },
+      { "event_sched", COMB_SCHED_ENTRY, &event_sched_vm },
       { "event_deq", COMB_DEQ_ENTRY, &event_deq_vm },
   };
 
@@ -244,13 +244,13 @@ void control_ebpf_upload(struct control_context *ctx,
         verify_and_emit(ctx, bpf_obj, "event_deq", slot_sym, &deq_bc) != 0)
       goto out;
 
-    LOG_DEBUG("verify and emi event_tx");
-    ret = snprintf(slot_sym, sizeof(slot_sym), "event_tx_slot_%u", g->id);
+    LOG_DEBUG("verify and emi event_sched");
+    ret = snprintf(slot_sym, sizeof(slot_sym), "event_sched_slot_%u", g->id);
     if (ret < 0 || ret >= (int) sizeof(slot_sym) ||
-        verify_and_emit(ctx, bpf_obj, "event_tx", slot_sym, &tx_bc) != 0)
+        verify_and_emit(ctx, bpf_obj, "event_sched", slot_sym, &sched_bc) != 0)
       goto out;
 
-    if (rebuild_agg_vms(ctx, g->id, &rx_bc, &deq_bc, &tx_bc) != 0)
+    if (rebuild_agg_vms(ctx, g->id, &rx_bc, &deq_bc, &sched_bc) != 0)
       goto out;
 
     if (publish_agg_vms(ctx, g->id) != 0)
@@ -278,7 +278,7 @@ void control_ebpf_upload(struct control_context *ctx,
     f_req->size = req->size;
     f_req->off = req->off;
     f_req->event_rx_vm = event_rx_vm;
-    f_req->event_tx_vm = event_tx_vm;
+    f_req->event_sched_vm = event_sched_vm;
     f_req->event_deq_vm = event_deq_vm;
     ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_UPLOAD_EBPF_REQ);
     assert(ret == 0);
@@ -291,11 +291,11 @@ out:
   {
     comb_bc_free(&rx_bc);
     comb_bc_free(&deq_bc);
-    comb_bc_free(&tx_bc);
+    comb_bc_free(&sched_bc);
     if (event_rx_vm != NULL)
       ebpf_vm_destroy(event_rx_vm);
-    if (event_tx_vm != NULL)
-      ebpf_vm_destroy(event_tx_vm);
+    if (event_sched_vm != NULL)
+      ebpf_vm_destroy(event_sched_vm);
     if (event_deq_vm != NULL)
       ebpf_vm_destroy(event_deq_vm);
   }
@@ -585,8 +585,8 @@ static struct comb_bc_blob *guest_bc_slot(struct control_context *ctx,
       return &bc->rx;
     case AGG_EVENT_DEQ:
       return &bc->deq;
-    case AGG_EVENT_TX:
-      return &bc->tx;
+    case AGG_EVENT_SCHED:
+      return &bc->sched;
     default:
       return NULL;
   }
@@ -667,11 +667,11 @@ err:
 
 static int rebuild_agg_vms(struct control_context *ctx, __u16 gid,
     const struct comb_bc_blob *rx_bc, const struct comb_bc_blob *deq_bc,
-    const struct comb_bc_blob *tx_bc)
+    const struct comb_bc_blob *sched_bc)
 {
   struct ebpf_vm_c *rx_vm;
   struct ebpf_vm_c *deq_vm;
-  struct ebpf_vm_c *tx_vm;
+  struct ebpf_vm_c *sched_vm;
   struct comb_bc_blob *cur_bc;
 
   rx_vm = build_agg_vm(ctx, COMB_RX_ENTRY, AGG_EVENT_RX, gid, rx_bc);
@@ -685,8 +685,8 @@ static int rebuild_agg_vms(struct control_context *ctx, __u16 gid,
     return -1;
   }
 
-  tx_vm = build_agg_vm(ctx, COMB_TX_ENTRY, AGG_EVENT_TX, gid, tx_bc);
-  if (tx_vm == NULL)
+  sched_vm = build_agg_vm(ctx, COMB_SCHED_ENTRY, AGG_EVENT_SCHED, gid, sched_bc);
+  if (sched_vm == NULL)
   {
     ebpf_vm_destroy(rx_vm);
     ebpf_vm_destroy(deq_vm);
@@ -703,14 +703,14 @@ static int rebuild_agg_vms(struct control_context *ctx, __u16 gid,
     comb_bc_free(cur_bc);
     *cur_bc = *deq_bc;
 
-    cur_bc = guest_bc_slot(ctx, gid, AGG_EVENT_TX);
+    cur_bc = guest_bc_slot(ctx, gid, AGG_EVENT_SCHED);
     comb_bc_free(cur_bc);
-    *cur_bc = *tx_bc;
+    *cur_bc = *sched_bc;
   }
 
   ctx->agg_rx_vm = rx_vm;
   ctx->agg_deq_vm = deq_vm;
-  ctx->agg_tx_vm = tx_vm;
+  ctx->agg_sched_vm = sched_vm;
   return 0;
 }
 
@@ -722,10 +722,10 @@ static int publish_agg_vms(struct control_context *ctx, __u16 gid)
   struct queue_up_ebpf_req *req;
   ebpf_jitted_fn agg_rx_fn;
   ebpf_jitted_fn agg_deq_fn;
-  ebpf_jitted_fn agg_tx_fn;
+  ebpf_jitted_fn agg_sched_fn;
 
   if (ctx->agg_rx_vm == NULL || ctx->agg_deq_vm == NULL ||
-      ctx->agg_tx_vm == NULL)
+      ctx->agg_sched_vm == NULL)
   {
     LOG_ERROR("aggregate combined entries are not built");
     return -1;
@@ -733,8 +733,8 @@ static int publish_agg_vms(struct control_context *ctx, __u16 gid)
 
   agg_rx_fn = ebpf_vm_jitted_fn(ctx->agg_rx_vm);
   agg_deq_fn = ebpf_vm_jitted_fn(ctx->agg_deq_vm);
-  agg_tx_fn = ebpf_vm_jitted_fn(ctx->agg_tx_vm);
-  if (agg_rx_fn == NULL || agg_deq_fn == NULL || agg_tx_fn == NULL)
+  agg_sched_fn = ebpf_vm_jitted_fn(ctx->agg_sched_vm);
+  if (agg_rx_fn == NULL || agg_deq_fn == NULL || agg_sched_fn == NULL)
   {
     LOG_ERROR("aggregate combined entry is missing a function pointer");
     return -1;
@@ -754,7 +754,7 @@ static int publish_agg_vms(struct control_context *ctx, __u16 gid)
     req->gid = gid;
     req->agg_rx_fn = agg_rx_fn;
     req->agg_deq_fn = agg_deq_fn;
-    req->agg_tx_fn = agg_tx_fn;
+    req->agg_sched_fn = agg_sched_fn;
     ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_UPLOAD_EBPF_REQ);
     if (ret != 0)
     {

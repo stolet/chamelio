@@ -24,7 +24,7 @@ struct comb_bc_blob {
 struct guest_comb_bc {
   struct comb_bc_blob rx;
   struct comb_bc_blob deq;
-  struct comb_bc_blob tx;
+  struct comb_bc_blob sched;
 };
 
 struct proto_queue_control {
@@ -108,7 +108,7 @@ struct control_context {
   /* Aggregate combined JIT objects */
   struct ebpf_vm_c *agg_rx_vm;
   struct ebpf_vm_c *agg_deq_vm;
-  struct ebpf_vm_c *agg_tx_vm;
+  struct ebpf_vm_c *agg_sched_vm;
   /* NIC paremeters and configuration */
   struct nic_context *nic_ctx;
   /* Next fast-path core to poll */

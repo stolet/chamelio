@@ -305,8 +305,8 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   return ret;
 }
 
-SEC("chamelio/event_tx")
-int event_tx(struct cham_ebpf_ctx *ctx)
+SEC("chamelio/event_sched")
+int event_sched(struct cham_ebpf_ctx *ctx)
 {
   int ret;
   __u8 pktlen_valid, paylen_valid;

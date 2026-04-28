@@ -4,7 +4,7 @@ fast_srcs = files(
   'fast.c', 
   'fast_comb.c',
   'fast_rx.c',
-  'fast_tx.c',
+  'fast_sched.c',
   'fast_queues.c',
   'txcache.c',
   'controlif.c',

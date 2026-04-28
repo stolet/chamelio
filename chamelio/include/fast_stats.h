@@ -15,8 +15,8 @@ struct fast_batch_counters {
   __u64 rx_items;
   __u64 queue_calls;
   __u64 queue_items;
-  __u64 tx_calls;
-  __u64 tx_items;
+  __u64 sched_calls;
+  __u64 sched_items;
 #if CHAM_CTL_BUDGET_STATS
   __u64 budg_cyc;
   __u64 guest_budg_cyc[CHAMELIO_MAX_GUESTS];

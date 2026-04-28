@@ -11,7 +11,7 @@
 #include "queue_fns.h"
 #include "scheduler_fns.h"
 
-static inline int tx_poll_slot(struct fast_context *ctx, int slot,
+static inline int sched_poll_slot(struct fast_context *ctx, int slot,
     struct rte_mbuf **mbs, int max, int *ntx, int charge_budget);
 static inline int rx_poll_slot(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf *mb, __u64 pkt_off,
@@ -50,10 +50,10 @@ DEFINE_EVENT_STUB(deq, 0)
 DEFINE_EVENT_STUB(deq, 1)
 DEFINE_EVENT_STUB(deq, 2)
 DEFINE_EVENT_STUB(deq, 3)
-DEFINE_EVENT_STUB(tx, 0)
-DEFINE_EVENT_STUB(tx, 1)
-DEFINE_EVENT_STUB(tx, 2)
-DEFINE_EVENT_STUB(tx, 3)
+DEFINE_EVENT_STUB(sched, 0)
+DEFINE_EVENT_STUB(sched, 1)
+DEFINE_EVENT_STUB(sched, 2)
+DEFINE_EVENT_STUB(sched, 3)
 
 #define DEFINE_RX_SLOT(slot)                                                  \
   static inline int rx_poll_slot_##slot(struct fast_context *ctx,             \
@@ -96,18 +96,18 @@ DEFINE_EVENT_STUB(tx, 3)
     return mb_tx;                                                             \
   }
 
-#define DEFINE_TX_SLOT(slot)                                                  \
-  static inline int tx_poll_slot_##slot(struct fast_context *ctx,             \
+#define DEFINE_SCHED_SLOT(slot)                                               \
+  static inline int sched_poll_slot_##slot(struct fast_context *ctx,          \
       struct rte_mbuf **mbs, int max, int *ntx, int charge_budget)            \
   {                                                                           \
     int did_work;                                                             \
     int ntx_start;                                                            \
-    int tx_ret;                                                               \
+    int sched_ret;                                                            \
     int ret;                                                                  \
     __u64 tsc_start = 0, tsc_spent;                                           \
     struct guest_fast *g = &ctx->guests[slot];                                \
                                                                               \
-    if (!g->proto.has_event_tx)                                               \
+    if (!g->proto.has_event_sched)                                            \
       return 0;                                                               \
                                                                               \
     if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)                         \
@@ -120,7 +120,7 @@ DEFINE_EVENT_STUB(tx, 3)
       tsc_start = clock_rdtsc();                                              \
     ntx_start = *ntx;                                                         \
     did_work = 0;                                                             \
-    tx_ret = 0;                                                               \
+    sched_ret = 0;                                                            \
     while (*ntx < max)                                                        \
     {                                                                         \
       struct rte_mbuf *mb;                                                    \
@@ -133,11 +133,11 @@ DEFINE_EVENT_STUB(tx, 3)
       fast_ebpf_ctx_set_pkt_l2(&g->proto.ebpf_ctx, mb,                        \
           comb_virt_gre(ctx));                                                \
                                                                               \
-      tx_ret = (int) event_tx_slot_##slot(&g->proto.ebpf_ctx,                 \
+      sched_ret = (int) event_sched_slot_##slot(&g->proto.ebpf_ctx,           \
           sizeof(struct cham_ebpf_ctx));                                      \
-      if (tx_ret <= 0)                                                        \
+      if (sched_ret <= 0)                                                     \
         break;                                                                \
-      ret = infra_tx(ctx, g, mb, tx_ret);                                     \
+      ret = infra_tx(ctx, g, mb, sched_ret);                                  \
       if (ret == 0)                                                           \
       {                                                                       \
         ctx->tx_mbs[ctx->tx_n] = mb;                                          \
@@ -154,7 +154,7 @@ DEFINE_EVENT_STUB(tx, 3)
       fast_budg_add(ctx, g->id, tsc_spent);                                   \
     }                                                                         \
                                                                               \
-    if (tx_ret < 0)                                                           \
+    if (sched_ret < 0)                                                        \
       return -1;                                                              \
                                                                               \
     return did_work;                                                          \
@@ -248,10 +248,10 @@ DEFINE_RX_SLOT(0)
 DEFINE_RX_SLOT(1)
 DEFINE_RX_SLOT(2)
 DEFINE_RX_SLOT(3)
-DEFINE_TX_SLOT(0)
-DEFINE_TX_SLOT(1)
-DEFINE_TX_SLOT(2)
-DEFINE_TX_SLOT(3)
+DEFINE_SCHED_SLOT(0)
+DEFINE_SCHED_SLOT(1)
+DEFINE_SCHED_SLOT(2)
+DEFINE_SCHED_SLOT(3)
 DEFINE_DEQ_SLOT(0)
 DEFINE_DEQ_SLOT(1)
 DEFINE_DEQ_SLOT(2)
@@ -365,15 +365,15 @@ uint64_t fast_queues_poll_comb(void *mem, size_t mem_len)
   return ndeq;
 }
 
-uint64_t fast_tx_poll_comb(void *mem, size_t mem_len)
+uint64_t fast_sched_poll_comb(void *mem, size_t mem_len)
 {
   int max, ret;
-  int i, gid, ntx, has_tx_work, last_tx_guest;
+  int i, gid, ntx, has_sched_work, last_sched_guest;
   struct fast_context *ctx = mem;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
-  __u8 start_guest = ctx->next_tx_guest;
+  __u8 start_guest = ctx->next_sched_guest;
   const int charge_budget = comb_perf_iso(ctx);
 
   (void) mem_len;
@@ -383,11 +383,11 @@ uint64_t fast_tx_poll_comb(void *mem, size_t mem_len)
   if (start_guest >= n_guests)
     start_guest = 0;
 
-  has_tx_work = 0;
+  has_sched_work = 0;
   for (i = 0; i < n_guests; i++)
   {
     g = &ctx->guests[i];
-    if (!g->proto.has_event_tx)
+    if (!g->proto.has_event_sched)
       continue;
 
     if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
@@ -396,14 +396,14 @@ uint64_t fast_tx_poll_comb(void *mem, size_t mem_len)
     if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
       continue;
 
-    has_tx_work = 1;
+    has_sched_work = 1;
     break;
   }
 
-  if (!has_tx_work)
+  if (!has_sched_work)
     return 0;
 
-  max = FAST_TX_BATCH_SIZE;
+  max = FAST_SCHED_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
     max = TXBUF_SIZE - ctx->tx_n;
 
@@ -415,7 +415,7 @@ uint64_t fast_tx_poll_comb(void *mem, size_t mem_len)
   rte_prefetch0(rte_pktmbuf_mtod(mbs[0], __u8 *) + 64);
 
   ntx = 0;
-  last_tx_guest = -1;
+  last_sched_guest = -1;
   for (i = 0; i < n_guests && ntx < max; i++)
   {
     if (ntx + 1 < max)
@@ -425,15 +425,15 @@ uint64_t fast_tx_poll_comb(void *mem, size_t mem_len)
     }
 
     gid = (start_guest + i) % n_guests;
-    ret = tx_poll_slot(ctx, gid, mbs, max, &ntx, charge_budget);
+    ret = sched_poll_slot(ctx, gid, mbs, max, &ntx, charge_budget);
     if (ret < 0)
       return (uint64_t) -1;
     if (ret > 0)
-      last_tx_guest = gid;
+      last_sched_guest = gid;
   }
 
-  if (last_tx_guest >= 0)
-    ctx->next_tx_guest = (last_tx_guest + 1) % n_guests;
+  if (last_sched_guest >= 0)
+    ctx->next_sched_guest = (last_sched_guest + 1) % n_guests;
 
   txcache_unalloc(ctx, max - ntx);
   return ntx;
@@ -458,19 +458,19 @@ static inline int rx_poll_slot(struct fast_context *ctx,
   }
 }
 
-static inline int tx_poll_slot(struct fast_context *ctx, int slot,
+static inline int sched_poll_slot(struct fast_context *ctx, int slot,
     struct rte_mbuf **mbs, int max, int *ntx, int charge_budget)
 {
   switch (slot)
   {
     case 0:
-      return tx_poll_slot_0(ctx, mbs, max, ntx, charge_budget);
+      return sched_poll_slot_0(ctx, mbs, max, ntx, charge_budget);
     case 1:
-      return tx_poll_slot_1(ctx, mbs, max, ntx, charge_budget);
+      return sched_poll_slot_1(ctx, mbs, max, ntx, charge_budget);
     case 2:
-      return tx_poll_slot_2(ctx, mbs, max, ntx, charge_budget);
+      return sched_poll_slot_2(ctx, mbs, max, ntx, charge_budget);
     case 3:
-      return tx_poll_slot_3(ctx, mbs, max, ntx, charge_budget);
+      return sched_poll_slot_3(ctx, mbs, max, ntx, charge_budget);
     default:
       return 0;
   }

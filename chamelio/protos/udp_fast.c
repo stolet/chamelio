@@ -134,7 +134,7 @@ int udp_event_rx(struct cham_ebpf_ctx *ctx)
   return 0;
 }
 
-int udp_event_tx(struct cham_ebpf_ctx *ctx)
+int udp_event_sched(struct cham_ebpf_ctx *ctx)
 {
   return -1;
 }

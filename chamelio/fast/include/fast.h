@@ -16,7 +16,7 @@
 #include "shmalloc.h"
 
 #define FAST_RX_BATCH_SIZE 16
-#define FAST_TX_BATCH_SIZE 16
+#define FAST_SCHED_BATCH_SIZE 16
 #define FAST_DEQ_BATCH_SIZE 32
 #define FAST_CTL_BATCH_SIZE 16
 
@@ -40,15 +40,15 @@ struct proto_fast {
   struct cham_ebpf_ctx ebpf_ctx;
   /* RX event handler has been uploaded */
   __u8 has_event_rx;
-  /* TX event handler has been uploaded */
-  __u8 has_event_tx;
+  /* Scheduler event handler has been uploaded */
+  __u8 has_event_sched;
   /* Dequeue event handler has been uploaded */
   __u8 has_event_deq;
 
   /* Jitted LLVM VM to process one received packet */
   struct ebpf_vm_c *event_rx_vm;
   /* Jitted LLVM VM to process one scheduled packet for transmission */
-  struct ebpf_vm_c *event_tx_vm;
+  struct ebpf_vm_c *event_sched_vm;
   /* Jitted LLVM VM to dequeue and process entry from a queue */
   struct ebpf_vm_c *event_deq_vm;
 };
@@ -89,8 +89,8 @@ struct fast_context {
   
   /* Number of guests registered so far in this fast-path */
   __u8 n_guests;
-  /* First guest to poll in the tx phase */
-  __u8 next_tx_guest;
+  /* First guest to poll in the scheduler phase */
+  __u8 next_sched_guest;
   /* First guest to poll in the queue phase */
   __u8 next_queues_guest;
   /* List of guests registered so far in this fast-path */
@@ -133,7 +133,7 @@ struct fast_context {
   /* Aggregate combined entries shared across fast-path cores */
   ebpf_jitted_fn agg_rx_fn;
   ebpf_jitted_fn agg_deq_fn;
-  ebpf_jitted_fn agg_tx_fn;
+  ebpf_jitted_fn agg_sched_fn;
 };
 
 /* Initialises the fast-path context when a core is launched */

@@ -6,6 +6,6 @@
 
 uint64_t fast_rx_poll_comb(void *mem, size_t mem_len);
 uint64_t fast_queues_poll_comb(void *mem, size_t mem_len);
-uint64_t fast_tx_poll_comb(void *mem, size_t mem_len);
+uint64_t fast_sched_poll_comb(void *mem, size_t mem_len);
 
 #endif

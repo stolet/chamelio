@@ -117,11 +117,11 @@ static inline void handle_new_guest(struct fast_context *ctx,
   g->proto.dqueues_head = PROTOQ_ID_INVALID;
   g->proto.dqueues_tail = PROTOQ_ID_INVALID;
   g->proto.has_event_rx = 0;
-  g->proto.has_event_tx = 0;
+  g->proto.has_event_sched = 0;
   g->proto.has_event_deq = 0;
   
   g->proto.event_rx_vm = NULL;
-  g->proto.event_tx_vm = NULL;
+  g->proto.event_sched_vm = NULL;
   g->proto.event_deq_vm = NULL;
 
   /* Add network virtualization configuration if enabled */
@@ -274,11 +274,11 @@ static inline void handle_upload_ebpf(struct fast_context *ctx,
 
       g->proto.has_event_rx = 1;
       g->proto.has_event_deq = 1;
-      g->proto.has_event_tx = 1;
+      g->proto.has_event_sched = 1;
     }
     ctx->agg_rx_fn = req->agg_rx_fn;
     ctx->agg_deq_fn = req->agg_deq_fn;
-    ctx->agg_tx_fn = req->agg_tx_fn;
+    ctx->agg_sched_fn = req->agg_sched_fn;
     return;
   }
 
@@ -287,9 +287,9 @@ static inline void handle_upload_ebpf(struct fast_context *ctx,
 
   p->has_event_rx = 1;
   p->has_event_deq = 1;
-  p->has_event_tx = 1;
+  p->has_event_sched = 1;
   p->event_rx_vm = req->event_rx_vm;
-  p->event_tx_vm = req->event_tx_vm;
+  p->event_sched_vm = req->event_sched_vm;
   p->event_deq_vm = req->event_deq_vm;
 }
 

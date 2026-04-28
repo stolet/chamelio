@@ -223,16 +223,16 @@ struct queue_up_ebpf_req {
   __u64 off;
   /* Function pointer to ebpf rx function. Used only in message to fast */
   struct ebpf_vm_c *event_rx_vm;
-  /* Function pointer to ebpf tx function. Used only in message to fast */
-  struct ebpf_vm_c *event_tx_vm;
+  /* Function pointer to ebpf scheduler function. Used only in message to fast */
+  struct ebpf_vm_c *event_sched_vm;
   /* Function pointer to ebpf deq function. Used only in message to fast */
   struct ebpf_vm_c *event_deq_vm;
   /* Aggregate combined rx entry */
   ebpf_jitted_fn agg_rx_fn;
   /* Aggregate combined dequeue entry */
   ebpf_jitted_fn agg_deq_fn;
-  /* Aggregate combined tx entry */
-  ebpf_jitted_fn agg_tx_fn;
+  /* Aggregate combined scheduler entry */
+  ebpf_jitted_fn agg_sched_fn;
 } __attribute__((packed));
 
 /* Request to free an EBPF snippet */

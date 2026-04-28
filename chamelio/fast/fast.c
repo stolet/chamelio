@@ -13,7 +13,7 @@
 #include "config.h"
 #include "controlif.h"
 #include "fast_rx.h"
-#include "fast_tx.h"
+#include "fast_sched.h"
 #include "fast_queues.h"
 
 
@@ -41,7 +41,7 @@ int fast_context_init(struct fast_context *f_ctx,
   f_ctx->perf_iso = config->perf_iso;
   f_ctx->agg_rx_fn = NULL;
   f_ctx->agg_deq_fn = NULL;
-  f_ctx->agg_tx_fn = NULL;
+  f_ctx->agg_sched_fn = NULL;
   f_ctx->shm_fd_internal = shm_fd_internal;
   f_ctx->shm_base_internal= shm_base_internal;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
@@ -78,7 +78,7 @@ int fast_context_init(struct fast_context *f_ctx,
   f_ctx->ctl_txq = ctxq;
 
   f_ctx->n_guests = 0;
-  f_ctx->next_tx_guest = 0;
+  f_ctx->next_sched_guest = 0;
   f_ctx->next_queues_guest = 0;
 
   /* Set initial ID to invalid for each scheduler entry in guest */
@@ -152,15 +152,15 @@ int fast_loop_default(struct fast_context *ctx)
       ctx->batch_stats.queue_items += ret;
     }
 
-    ret = fast_tx_poll(ctx);
+    ret = fast_sched_poll(ctx);
     if (ret < 0)
     {
-      LOG_ERROR("poll_tx failed");
+      LOG_ERROR("poll_sched failed");
     }
     else
     {
-      ctx->batch_stats.tx_calls++;
-      ctx->batch_stats.tx_items += ret;
+      ctx->batch_stats.sched_calls++;
+      ctx->batch_stats.sched_items += ret;
     }
 
     ret = controlif_poll(ctx);
@@ -211,15 +211,15 @@ int fast_loop_comb(struct fast_context *ctx)
       ctx->batch_stats.queue_items += ret;
     }
 
-    ret = (int) ctx->agg_tx_fn(ctx, sizeof(*ctx));
+    ret = (int) ctx->agg_sched_fn(ctx, sizeof(*ctx));
     if (ret < 0)
     {
-      LOG_ERROR("poll_tx_comb failed");
+      LOG_ERROR("poll_sched_comb failed");
     }
     else
     {
-      ctx->batch_stats.tx_calls++;
-      ctx->batch_stats.tx_items += ret;
+      ctx->batch_stats.sched_calls++;
+      ctx->batch_stats.sched_items += ret;
     }
 
     ret = controlif_poll(ctx);
@@ -237,7 +237,7 @@ static inline int agg_fns_ready(struct fast_context *ctx)
 {
   return ctx->agg_rx_fn != NULL &&
       ctx->agg_deq_fn != NULL &&
-      ctx->agg_tx_fn != NULL;
+      ctx->agg_sched_fn != NULL;
 }
 
 int fast_txflush(struct fast_context *ctx)
