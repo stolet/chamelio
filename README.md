@@ -63,12 +63,11 @@ pkg-config --cflags --libs cham_tcp
 
 ## Minimal Runtime Shape
 
-A bare-metal TCP or UDP run has four processes per host:
+A bare-metal TCP or UDP run has three processes per host:
 
 1. Chamelio, bound to a DPDK NIC.
 2. The protocol slow path, such as `protos/tcp/slow/tcp_slow`.
 3. An application linked with the protocol library.
-4. A peer host with the same stack arrangement.
 
 A VM run starts Chamelio on the host first, then boots the guest with the
 QEMU `ivshmem-doorbell` device connected to Chamelio's ivshmem socket. The
