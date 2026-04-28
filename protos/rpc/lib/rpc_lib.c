@@ -640,8 +640,8 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   hdr.rid.x = htonl(__sync_fetch_and_add(&rpc->next_rid, 1));
   hdr.type = 0; // request
 
-  fprintf(stderr, "rpc_call: service=%u client_id=%u rid=%u\n",
-          service, c->client_id, ntohl(hdr.rid.x));
+  // fprintf(stderr, "rpc_call: service=%u client_id=%u rid=%u\n",
+          // service, c->client_id, ntohl(hdr.rid.x));
 
   // tail pos. of tx ring
   tail = c->tx_head + c->tx_avail;
@@ -726,7 +726,7 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
   struct rpc_queue_bump_cham_tx *bump_tx;
   struct rpc_queue_bump_cham_rx *bump_rx;
   struct rpc_hdr hdr;
-  __u32 tail, n1, n2, new_head;
+  __u32 tail, n1, n2;
   int ret, n;
 
   if (!s)
@@ -815,13 +815,6 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
     return -1;
   }
 
-  // dequeue the RX ring buffer now that we are done processing the request
-  // w->rx_avail -= hdr.len.x;
-  new_head = w->rx_head + w->rx_avail;
-  if (new_head >= w->rx_len)
-    new_head -= w->rx_len;
-  w->rx_head = new_head;
-
   // notify fast-path that RX space has been freed
   qe = queue_tail(eq);
   if (!qe)
@@ -831,8 +824,7 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
   }
   bump_rx = &qe->data.bump_cham_rx;
   bump_rx->sock_id = w->worker_id;
-  bump_rx->rx_head = w->rx_avail;
-  w->rx_avail = 0;
+  bump_rx->rx_head = w->rx_pkt_len;
   bump_rx->type = 0; // request
 
   ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_RX);
@@ -896,7 +888,7 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
   }
 
   *rid = hdr.rid.x;
-  // w->rx_pkt_len = hdr.len.x;
+  w->rx_pkt_len = hdr.len.x;
 
   new_head = w->rx_head + sizeof(struct rpc_hdr);
   if (new_head >= w->rx_len)
@@ -915,12 +907,12 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     memcpy(buf, w->rx_buf + new_head, n);
   }
 
-  // // Update rx buffer head and avail
-  // w->rx_avail -= hdr.len.x;
-  // new_head = w->rx_head + hdr.len.x;
-  // if (new_head >= w->rx_len)
-  //   new_head -= w->rx_len;
-  // w->rx_head = new_head;
+  // advance rx head and avail 
+  w->rx_avail -= hdr.len.x;
+  new_head = w->rx_head + hdr.len.x;
+  if (new_head >= w->rx_len)
+    new_head -= w->rx_len;
+  w->rx_head = new_head;
 
   // // TODO: store some information about the call in the worker struct?
 

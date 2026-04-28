@@ -69,6 +69,8 @@ struct rpc_worker_lib
   __u32 rx_head;
   /* Pointer to start of RX buffer in shared memory */
   void *rx_buf;
+  /* Total size of the current in-flight request (hdr + payload) */
+  __u32 rx_pkt_len;
 
   /* Queue ID used for TX buffer */
   __u16 tx_qid;
