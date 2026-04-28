@@ -36,10 +36,6 @@ static int handle_new_service_res(struct rpc_queue_entry *qe);
 static int handle_tx_bump(struct rpc_queue_bump_entry *qe);
 static int handle_rx_bump(struct rpc_queue_bump_entry *qe);
 
-static int worker_add_req(struct rpc_worker_lib *w, __u32 rid, __u8 service,
-                          __u32 ip, __u16 port);
-static int worker_remove_req(struct worker_request *req);
-static struct worker_request *worker_get_req(struct rpc_worker_lib *w, __u32 rid);
 static int client_add_req(struct rpc_client_lib *c, __u32 rid);
 static int client_remove_req(struct client_request *req);
 static struct client_request *client_get_req(struct rpc_client_lib *c, __u32 rid);
@@ -644,6 +640,9 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   hdr.rid.x = htonl(__sync_fetch_and_add(&rpc->next_rid, 1));
   hdr.type = 0; // request
 
+  fprintf(stderr, "rpc_call: service=%u client_id=%u rid=%u\n",
+          service, c->client_id, ntohl(hdr.rid.x));
+
   // tail pos. of tx ring
   tail = c->tx_head + c->tx_avail;
   if (tail >= c->tx_len)
@@ -724,12 +723,10 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
 {
   struct equeue *eq;
   struct rpc_queue_bump_entry *qe;
-  struct rpc_queue_bump_cham_tx *bump;
-  struct worker_request *req;
+  struct rpc_queue_bump_cham_tx *bump_tx;
+  struct rpc_queue_bump_cham_rx *bump_rx;
   struct rpc_hdr hdr;
-  __u32 ip;
-  __u16 port;
-  __u32 tail, n1, n2;
+  __u32 tail, n1, n2, new_head;
   int ret, n;
 
   if (!s)
@@ -749,17 +746,6 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
     LOG_ERROR("rpc return with zero-length payload");
     return -1;
   }
-
-  req = worker_get_req(w, rid);
-  if (req == NULL)
-  {
-    LOG_ERROR("rpc return: could not find pending request rid=%u",
-              rid);
-    return -1;
-  }
-
-  ip = req->ip;
-  port = req->port;
 
   n = len + sizeof(struct rpc_hdr);
   if (n > w->tx_len - w->tx_avail)
@@ -803,35 +789,58 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
     memcpy(w->tx_buf + tail, buf, len);
   }
 
-  // update avail
-  // TODO: revise if we actually need the tx_port and tx_ip
   w->tx_avail += n;
-  w->tx_port = port;
-  w->tx_ip = ip;
+  w->tx_port = w->rx_port;
+  w->tx_ip = w->rx_ip;
 
-  // enqueue bump entry to notify fast-path
+  // enqueue TX bump to notify fast-path to send the response
   eq = w->ctx->app_fast_qs[w->server->core];
   qe = queue_tail(eq);
   if (!qe)
   {
-    LOG_ERROR("failed to get queue tail for bump req");
+    LOG_ERROR("failed to get queue tail for tx bump req");
     return -1;
   }
-  bump = &qe->data.bump_cham_tx;
-  bump->sock_id = w->worker_id;
-  bump->tx_ip = ip;
-  bump->tx_port = port;
-  bump->tx_avail = n;
-  bump->type = 1; // response
+  bump_tx = &qe->data.bump_cham_tx;
+  bump_tx->sock_id = w->worker_id;
+  bump_tx->tx_ip = w->rx_ip;
+  bump_tx->tx_port = w->rx_port;
+  bump_tx->tx_avail = n;
+  bump_tx->type = 1; // response
 
   ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_TX);
   if (ret != 0)
   {
-    LOG_ERROR("failed to enqueue bump req");
+    LOG_ERROR("failed to enqueue tx bump req");
     return -1;
   }
 
-  worker_remove_req(req);
+  // dequeue the RX ring buffer now that we are done processing the request
+  // w->rx_avail -= hdr.len.x;
+  new_head = w->rx_head + w->rx_avail;
+  if (new_head >= w->rx_len)
+    new_head -= w->rx_len;
+  w->rx_head = new_head;
+
+  // notify fast-path that RX space has been freed
+  qe = queue_tail(eq);
+  if (!qe)
+  {
+    LOG_ERROR("failed to get queue tail for rx bump req");
+    return -1;
+  }
+  bump_rx = &qe->data.bump_cham_rx;
+  bump_rx->sock_id = w->worker_id;
+  bump_rx->rx_head = w->rx_avail;
+  w->rx_avail = 0;
+  bump_rx->type = 0; // request
+
+  ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_RX);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue rx bump req");
+    return -1;
+  }
 
   return (int)len;
 }
@@ -841,10 +850,7 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 {
   struct rpc_hdr hdr;
   __u32 n1, n2, new_head;
-  int ret, n;
-  struct equeue *eq;
-  struct rpc_queue_bump_entry *qe;
-  struct rpc_queue_bump_cham_rx *bump;
+  int n;
 
   if (!w || !rid)
   {
@@ -889,13 +895,8 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     return -1;
   }
 
-  if (worker_add_req(w, hdr.rid.x, hdr.service.x, w->rx_ip, w->rx_port) != 0)
-  {
-    LOG_ERROR("failed to track pending worker request rid=%u", hdr.rid.x);
-    return -1;
-  }
-
   *rid = hdr.rid.x;
+  // w->rx_pkt_len = hdr.len.x;
 
   new_head = w->rx_head + sizeof(struct rpc_hdr);
   if (new_head >= w->rx_len)
@@ -914,34 +915,34 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     memcpy(buf, w->rx_buf + new_head, n);
   }
 
-  // Update rx buffer head and avail
-  w->rx_avail -= hdr.len.x;
-  new_head = w->rx_head + hdr.len.x;
-  if (new_head >= w->rx_len)
-    new_head -= w->rx_len;
-  w->rx_head = new_head;
+  // // Update rx buffer head and avail
+  // w->rx_avail -= hdr.len.x;
+  // new_head = w->rx_head + hdr.len.x;
+  // if (new_head >= w->rx_len)
+  //   new_head -= w->rx_len;
+  // w->rx_head = new_head;
 
-  // TODO: store some information about the call in the worker struct?
+  // // TODO: store some information about the call in the worker struct?
 
-  // bump fast path
-  eq = w->ctx->app_fast_qs[w->server->core];
-  qe = queue_tail(eq);
-  if (!qe)
-  {
-    LOG_ERROR("failed to get queue tail for bump req");
-    return -1;
-  }
-  bump = &qe->data.bump_cham_rx;
-  bump->sock_id = w->worker_id;
-  bump->rx_head = hdr.len.x;
-  bump->type = 0; // request
+  // // bump fast path
+  // eq = w->ctx->app_fast_qs[w->server->core];
+  // qe = queue_tail(eq);
+  // if (!qe)
+  // {
+  //   LOG_ERROR("failed to get queue tail for bump req");
+  //   return -1;
+  // }
+  // bump = &qe->data.bump_cham_rx;
+  // bump->sock_id = w->worker_id;
+  // bump->rx_head = hdr.len.x;
+  // bump->type = 0; // request
 
-  ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_RX);
-  if (ret != 0)
-  {
-    LOG_ERROR("failed to enqueue bump req");
-    return -1;
-  }
+  // ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_RX);
+  // if (ret != 0)
+  // {
+  //   LOG_ERROR("failed to enqueue bump req");
+  //   return -1;
+  // }
 
   return n;
 }
@@ -990,10 +991,26 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
   n = hdr.len.x - sizeof(struct rpc_hdr);
 
   req = client_get_req(c, hdr.rid.x);
+
+  // if we can't find the req, we do not loop on the same pkt
   if (req == NULL)
   {
-    LOG_ERROR("rpc response: could not find pending request rid=%u",
-              hdr.rid.x);
+    int _di;
+    LOG_ERROR("rpc response: could not find pending request"
+              " client_id=%u rid=%u rx_avail=%u rx_head=%u hdr_len=%u",
+              c->client_id, hdr.rid.x, c->rx_avail, c->rx_head, hdr.len.x);
+    for (_di = 0; _di < MAX_PENDING_RPC; _di++)
+    {
+      if (c->pending_calls[_di].state != RPC_REQ_EMPTY)
+        LOG_ERROR("  pending slot=%d state=%u rid=%u",
+                  _di, c->pending_calls[_di].state, c->pending_calls[_di].rid);
+    }
+    /* Advance past the stuck packet so we don't loop on the same error */
+    c->rx_avail -= hdr.len.x;
+    new_head = c->rx_head + hdr.len.x;
+    if (new_head >= c->rx_len)
+      new_head -= c->rx_len;
+    c->rx_head = new_head;
     return -1;
   }
 
@@ -1202,109 +1219,6 @@ static int handle_rx_bump(struct rpc_queue_bump_entry *qe)
     return -1;
   }
   return 0;
-}
-
-// TODO: change the hashing technique later if needed: linear probing rn
-
-static int worker_add_req(struct rpc_worker_lib *w, __u32 rid, __u8 service,
-                          __u32 ip, __u16 port)
-
-{
-  int first_tomb, i, idx;
-  struct worker_request *req;
-
-  if (!w)
-  {
-    LOG_ERROR("add_req: null worker");
-    return -1;
-  }
-
-  idx = rid % MAX_PENDING_RPC;
-  first_tomb = -1;
-
-  for (i = 0; i < MAX_PENDING_RPC; i++)
-  {
-    req = &w->pending_calls[(idx + i) % MAX_PENDING_RPC];
-
-    if (req->state == RPC_REQ_USED)
-    {
-      if (req->rid == rid)
-      {
-        LOG_ERROR("add_req: duplicate rid=%u", rid);
-        return -1;
-      }
-      continue;
-    }
-
-    if (req->state == RPC_REQ_TOMBSTONE)
-    {
-      if (first_tomb < 0)
-        first_tomb = (idx + i) % MAX_PENDING_RPC;
-      continue;
-    }
-
-    // empty slot + tombstone slot available
-    if (first_tomb >= 0)
-      req = &w->pending_calls[first_tomb];
-
-    req->state = RPC_REQ_USED;
-    req->rid = rid;
-    req->service = service;
-    req->ip = ip;
-    req->port = port;
-    return 0;
-  }
-
-  // no empty slots but tombstone slot available
-  if (first_tomb >= 0)
-  {
-    req = &w->pending_calls[first_tomb];
-    req->state = RPC_REQ_USED;
-    req->rid = rid;
-    req->service = service;
-    req->ip = ip;
-    req->port = port;
-    return 0;
-  }
-
-  LOG_ERROR("add_req: worker pending table full");
-  return -1;
-}
-
-static int worker_remove_req(struct worker_request *req)
-{
-  if (!req)
-    return -1;
-
-  memset(req, 0, sizeof(struct worker_request));
-  req->state = RPC_REQ_TOMBSTONE;
-
-  return 0;
-}
-
-static struct worker_request *worker_get_req(struct rpc_worker_lib *w, __u32 rid)
-{
-  int idx, i;
-  struct worker_request *req;
-
-  if (!w)
-    return NULL;
-
-  idx = rid % MAX_PENDING_RPC;
-
-  // do not stop at tombstone b/c the value could be stored after that
-  for (i = 0; i < MAX_PENDING_RPC; i++)
-  {
-    req = &w->pending_calls[(idx + i) % MAX_PENDING_RPC];
-
-    if (req->state == RPC_REQ_EMPTY)
-      return NULL;
-
-    if (req->state == RPC_REQ_USED && req->rid == rid)
-      return req;
-  }
-
-  return NULL;
 }
 
 static int client_add_req(struct rpc_client_lib *c, __u32 rid)
