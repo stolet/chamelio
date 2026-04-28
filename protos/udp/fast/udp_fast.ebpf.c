@@ -1,10 +1,6 @@
-#ifdef CHAM_NATIVE_FAST
-#include "native_fast.h"
-#else
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
-#endif
 
 #include "cham_fast.h"
 #include "udp_hdr.h"
@@ -12,10 +8,6 @@
 #include "udp.h"
 #include "udp_queue_types.h"
 #include "utils.h"
-
-#ifdef CHAM_NATIVE_FAST
-#define sched_head cham_native_sched_head
-#endif
 
 #define PORT_MAP 0
 #define SOCK_MAP 1
@@ -29,7 +21,6 @@ static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx);
 static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx);
 static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx);
 
-#ifndef CHAM_NATIVE_FAST
 /* Add these functions as helpers */
 static void * (*ebpf_queue_tail)(struct equeue *q, __u64 elsize) = (void *) 1001;
 static int (*queue_enqueue)(struct equeue *q, __u8 type) = (void *) 1002;
@@ -48,7 +39,6 @@ static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u64 priority,
 
 static void * (*ebpf_map_get)(void *map_base, __u32 len) = (void *) 1010;
 static void * (*ebpf_map_lookup)(void *map_base, __u64 id, __u64 elsize) = (void *) 1011;
-#endif
 
 SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
@@ -350,11 +340,6 @@ static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
   next_port = cfg->next_port;
   if (next_port < MIN_PORT || next_port > MAX_PORT)
     next_port = MIN_PORT;
-
-#ifndef CHAM_NATIVE_FAST
-  /* Keep the verifier from over-optimizing the backing map access. */
-  (void) ebpf_map_get(map->addr, map->size);
-#endif
 
   map = &ctx->maps[PORT_MAP];
   for (i = 0; i < UDP_PORT_SCAN_MAX; i++)

@@ -1,10 +1,6 @@
-#ifdef CHAM_NATIVE_FAST
-#include "native_fast.h"
-#else
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
-#endif
 
 #include "cham_fast.h"
 #include "tcp_hdr.h"
@@ -115,7 +111,6 @@ static __always_inline __u32 sock_hash(__u32 lip, __u16 lport,
     __u32 rip, __u16 rport);
 static __always_inline __u32 sock_sched_avail(struct tcp_sock *sock);
 
-#ifndef CHAM_NATIVE_FAST
 /* Add these functions as helpers */
 static void * (*ebpf_queue_tail)(struct equeue *q, __u64 elsize) = (void *) 1001;
 static int (*queue_enqueue)(struct equeue *q, __u8 type) = (void *) 1002;
@@ -139,7 +134,6 @@ static void * (*ebpf_map_lookup)(void *map_base, __u64 id, __u64 elsize) = (void
 
 static void (*ebpf_spin_lock)(volatile __u32 *) = (void *) 1016;
 static void (*ebpf_spin_unlock)(volatile __u32 *) = (void *) 1017;
-#endif
 
 SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
