@@ -14,14 +14,8 @@
 #define SOCK_INACTIVE (-1U)
 /* Invalid server ID */
 #define INVALID_ID -1
-/* Max concurrent in-flight requests per worker */
+/* Max concurrent in-flight requests per client */
 #define MAX_PENDING_RPC 256
-
-// enum rpc_entity_type
-// {
-//   RPC_ENTITY_CLIENT = 1,
-//   RPC_ENTITY_WORKER = 2,
-// };
 
 struct rpc_context_lib
 {
@@ -45,19 +39,9 @@ struct client_request
   __u32 rid;
 };
 
-//TODO: see if service is really required
-struct worker_request
-{
-  __u8 state;    // indicates if the request slot is in use or not
-  __u32 rid;
-  __u8 service;
-  __u32 ip;
-  __u16 port;
-};
-
 /* Worker that handles RPC requests */
 struct rpc_worker_lib
-{ 
+{
   /* Context that created this worker */
   struct rpc_context_lib *ctx;
   /* Server for this worker */
@@ -98,10 +82,6 @@ struct rpc_worker_lib
   void *tx_buf;
   /* Pointer to the worker state in shared memory */
   void *shm_worker;
-
-  struct worker_request pending_calls[MAX_PENDING_RPC];
-  /* RID of the last request read by rpc_handle_call */
-  // __u32 last_rid;
 };
 
 /* RPC client that makes calls */
