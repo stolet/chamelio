@@ -8,6 +8,7 @@
 #include "arp.h"
 #include "eth_hdr.h"
 #include "ip_hdr.h"
+#include "tcp_hdr.h"
 #include "udp_hdr.h"
 #include "gre_hdr.h"
 #include "arp_hdr.h"
@@ -23,9 +24,13 @@ static inline void process_arp_rx_req(struct fast_context *ctx,
 static inline void process_arp_rx_rep(struct fast_context *ctx,
     struct queue_entry *qe, struct arp_pkt *pkt);
 
-static inline void process_tx_gre(struct fast_context *ctx, 
+static inline void process_tx_mbuf(struct rte_mbuf *mb, size_t pkt_len);
+static inline void process_tx_chksum(struct rte_mbuf *mb, void *pkt);
+static inline void process_tx_hdrs_gre(struct fast_context *ctx, 
     struct guest_fast *g, struct rte_mbuf *mb, 
     __u32 outer_remote_ip, size_t pkt_len);
+static inline void process_tx_mbuf_gre(struct rte_mbuf *mb, size_t pkt_len);
+static inline void process_tx_chksum_gre(struct rte_mbuf *mb);
 static inline int process_tx_arp(struct fast_context *ctx, 
     struct guest_fast *g, struct rte_mbuf *mb, __u32 outer_remote_ip);
 
@@ -55,7 +60,6 @@ int infra_tx(struct fast_context *ctx,
   int ret;
   __u32 outer_remote_ip;
   struct ip_hdr *ip;
-  struct udp_hdr *udp;
   struct netvirt_entry *e;
   void *pkt;
   struct gre_pkt *gre_pkt;
@@ -75,8 +79,6 @@ int infra_tx(struct fast_context *ctx,
   }
   else
   {
-    struct ip_hdr *ip;
-
     ip = (struct ip_hdr *) (pkt + sizeof(struct eth_hdr));
     outer_remote_ip = f_beui32(ip->dst);
   }
@@ -87,36 +89,14 @@ int infra_tx(struct fast_context *ctx,
 
   if (ctx->virt_gre)
   {
-    process_tx_gre(ctx, g, mb, outer_remote_ip, pkt_len);
+    process_tx_hdrs_gre(ctx, g, mb, outer_remote_ip, pkt_len);
+    process_tx_mbuf_gre(mb, pkt_len);
+    process_tx_chksum_gre(mb);
   }
   else
   {
-    ip = (struct ip_hdr *) (pkt + sizeof(struct eth_hdr));
-    udp = (struct udp_hdr *) ((__u8 *) ip + sizeof(struct ip_hdr));
-
-    mb->pkt_len = mb->data_len = pkt_len + sizeof(struct eth_hdr);
-    mb->l2_len = sizeof(struct eth_hdr);
-    mb->l3_len = sizeof(struct ip_hdr);
-    mb->l4_len = sizeof(struct udp_hdr);
-
-    ip = (struct ip_hdr *) (pkt + sizeof(struct eth_hdr));
-    mb->pkt_len = mb->data_len = pkt_len + sizeof(struct eth_hdr);
-    
-    /* TODO: Deal with the offloads in the protocol code */
-    if (ip->proto == IP_PROTO_TCP)
-    {
-      mb->ol_flags = 0;
-      mb->ol_flags = RTE_MBUF_F_TX_IPV4 |
-          RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_TCP_CKSUM;
-    }
-    else
-    {
-      mb->ol_flags |= RTE_MBUF_F_TX_IPV4 |
-          RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_UDP_CKSUM;
-      ip->chksum = 0;
-      udp->chksum = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *) ip,
-          mb->ol_flags);
-    }
+    process_tx_mbuf(mb, pkt_len);
+    process_tx_chksum(mb, pkt);
   }
 
   return 0;
@@ -224,12 +204,109 @@ static inline int process_tx_arp(struct fast_context *ctx,
   return 0;
 }
 
-static inline void process_tx_gre(struct fast_context *ctx, 
+static inline void process_tx_mbuf(struct rte_mbuf *mb, size_t pkt_len)
+{
+    mb->pkt_len  = pkt_len + sizeof(struct eth_hdr);
+    mb->data_len = mb->pkt_len;
+    mb->l2_len   = sizeof(struct eth_hdr);
+    mb->ol_flags = 0;
+}
+
+static inline void process_tx_chksum(struct rte_mbuf *mb, void *pkt)
+{
+  struct ip_hdr *ip;
+  struct tcp_hdr *tcp;
+  struct udp_hdr *udp;
+
+  ip = (struct ip_hdr *) (pkt + sizeof(struct eth_hdr));
+  ip->chksum = 0;
+
+  switch (ip->proto) 
+  {
+    case IP_PROTO_TCP:
+      tcp = (struct tcp_hdr *) (uint8_t *) ip + sizeof(struct ip_hdr);
+      tcp->chksum = 0;
+      mb->ol_flags = RTE_MBUF_F_TX_IPV4 |
+          RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_TCP_CKSUM;
+      tcp->chksum = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *) ip, 
+          mb->ol_flags);
+      break;
+    case IP_PROTO_UDP:
+      udp = (struct udp_hdr *) (uint8_t *)ip + sizeof(struct ip_hdr);
+      udp->chksum = 0;
+      mb->ol_flags = RTE_MBUF_F_TX_IPV4 |
+          RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_UDP_CKSUM;
+      udp->chksum = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *) ip,
+          mb->ol_flags);
+      break;
+    default:
+      LOG_WARN("Got unknown type in ip header");
+      break;
+  }
+}
+
+static inline void process_tx_mbuf_gre(struct rte_mbuf *mb, size_t pkt_len)
+{
+  mb->pkt_len = mb->data_len = pkt_len + sizeof(struct eth_hdr) + 
+      sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
+  mb->l2_len = sizeof(struct gre_hdr);
+  mb->l3_len = sizeof(struct ip_hdr);
+  mb->l4_len = 0;
+  mb->outer_l2_len = sizeof(struct eth_hdr);
+  mb->outer_l3_len = sizeof(struct ip_hdr);
+  mb->ol_flags = 0;
+}
+
+static inline void process_tx_chksum_gre(struct rte_mbuf *mb)
+{
+  struct gre_pkt *pkt;
+  struct tcp_hdr *tcp;
+  struct udp_hdr *udp;
+
+  pkt = (struct gre_pkt *) rte_pktmbuf_mtod(mb, __u8 *);
+  pkt->outer_ip.chksum = 0;
+  pkt->inner_ip.chksum = 0;
+
+  switch (pkt->inner_ip.proto)
+  {
+    case IP_PROTO_TCP:
+      tcp = (struct tcp_hdr *) ((__u8 *) &pkt->inner_ip + 
+          sizeof(struct ip_hdr));
+          
+      tcp->chksum = 0;
+      tcp->chksum = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *) &pkt->inner_ip,
+          mb->ol_flags);
+      mb->ol_flags = RTE_MBUF_F_TX_OUTER_IPV4 |
+          RTE_MBUF_F_TX_OUTER_IP_CKSUM |
+          RTE_MBUF_F_TX_TUNNEL_GRE |
+          RTE_MBUF_F_TX_IPV4 |
+          RTE_MBUF_F_TX_IP_CKSUM |
+          RTE_MBUF_F_TX_TCP_CKSUM;
+      break;
+    case IP_PROTO_UDP:
+      udp = (struct udp_hdr *) ((__u8 *) &pkt->inner_ip +
+          sizeof(struct ip_hdr));
+      udp->chksum = 0;
+      udp->chksum = rte_ipv4_phdr_cksum(
+          (struct rte_ipv4_hdr *) &pkt->inner_ip, mb->ol_flags);
+      mb->ol_flags = RTE_MBUF_F_TX_OUTER_IPV4 |
+          RTE_MBUF_F_TX_OUTER_IP_CKSUM |
+          RTE_MBUF_F_TX_TUNNEL_GRE |
+          RTE_MBUF_F_TX_IPV4 |
+          RTE_MBUF_F_TX_IP_CKSUM |
+          RTE_MBUF_F_TX_UDP_CKSUM;
+      break;
+    default:
+      LOG_WARN("Got unknown inner type in ip header");
+      break;
+  }
+}
+
+static inline void process_tx_hdrs_gre(struct fast_context *ctx, 
     struct guest_fast *g, struct rte_mbuf *mb, 
     __u32 outer_remote_ip, size_t pkt_len)
 {
   struct gre_pkt *pkt;
-
   pkt = (struct gre_pkt *) rte_pktmbuf_mtod(mb, __u8 *);
 
   IPH_VHL_SET(&pkt->outer_ip, 4, 5);
@@ -247,18 +324,6 @@ static inline void process_tx_gre(struct fast_context *ctx,
   GREH_CKSV_SET(&pkt->gre, 0, 1, 0, 0);
   pkt->gre.proto = t_beui16(GRE_PROTO_IP);
   pkt->gre.key = t_beui32(g->gre_key);
-
-  mb->pkt_len = mb->data_len = pkt_len + sizeof(struct eth_hdr) + 
-      sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
-  /* Enable checksum offload */
-  // mb->l2_len = 0;
-  // mb->l3_len = sizeof(struct ip_hdr);
-  // mb->l4_len = 0;
-  // mb->outer_l2_len = sizeof(struct eth_hdr);
-  // mb->outer_l3_len = sizeof(struct ip_hdr);
-  // mb->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM |
-  //   RTE_MBUF_F_TX_OUTER_IPV4 | RTE_MBUF_F_TX_OUTER_IP_CKSUM  |
-  //   RTE_MBUF_F_TX_TCP_CKSUM | RTE_MBUF_F_TX_TUNNEL_GRE;
 }
 
 static inline void process_arp_rx_req(struct fast_context *ctx,

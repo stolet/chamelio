@@ -17,7 +17,7 @@
 
 #define FAST_RX_BATCH_SIZE 16
 #define FAST_TX_BATCH_SIZE 16
-#define FAST_DEQ_BATCH_SIZE 64
+#define FAST_DEQ_BATCH_SIZE 32
 #define FAST_CTL_BATCH_SIZE 16
 
 /* We want the TXBUF_SIZE to be the larger or the batch sizes */
