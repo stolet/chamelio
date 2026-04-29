@@ -22,7 +22,7 @@ static inline int sched_poll_guest(struct fast_context *ctx,
 int fast_sched_poll(struct fast_context *ctx)
 {
   int max, ret;
-  int i, gid, ntx, has_sched_work, last_sched_guest;
+  int i, gid, ntx, last_sched_guest;
   struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
@@ -35,38 +35,6 @@ int fast_sched_poll(struct fast_context *ctx)
 
   if (start_guest >= n_guests)
     start_guest = 0;
-
-  /* Skip scheduler path if no guest has a scheduler vm or pending work. */
-  has_sched_work = 0;
-  for (i = 0; i < n_guests; i++)
-  {
-    g = &ctx->guests[i];
-    switch (ctx->fp_proto_mode)
-    {
-      case FP_PROTO_EBPF:
-        if (g->proto.event_sched_vm == NULL)
-          continue;
-        break;
-      case FP_PROTO_HAND:
-        if (g->proto.proto_type == CHAM_PROTO_INVALID)
-          continue;
-        break;
-      default:
-        continue;
-    }
-      
-    if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
-      continue;
-    
-    if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
-      continue;
-      
-    has_sched_work = 1;
-    break;
-  }
-
-  if (!has_sched_work)
-    return 0;
 
   max = FAST_SCHED_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)
@@ -135,16 +103,13 @@ static inline int sched_poll_guest(struct fast_context *ctx,
       return 0;
   }
 
-  /* Continue to next guest if there is no pending scheduler work */
-  if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
-    return 0;
-
   /* Continue to next guest if out of budget */
   if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
     return 0;
 
   if (charge_budget)
     tsc_start = clock_rdtsc();
+  
   ntx_start = *ntx;
   sched_ret = 0;
   did_work = 0;

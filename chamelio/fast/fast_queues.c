@@ -127,11 +127,11 @@ static inline int queues_poll_guest(struct fast_context *ctx,
         break;
 
       ret = queues_poll_guest_dequeue(ctx, g, qcur, qe, mbs[*ntx], ntx, ndeq);
-      if (ret != 0)
+      if (ret < 0)
         return -1;
 
       ret = queue_dequeue(&qcur->dq);
-      if (ret != 0)
+      if (ret < 0)
         return -1;
     }
 

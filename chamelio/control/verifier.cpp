@@ -443,7 +443,6 @@ extern "C"
                 res.worst_instr_count, perf_iso_max_ins);
             return -1;
         }
-        LOG_DEBUG("max_loop_count=%d max_instrs=%d", res.max_loop_count, res.worst_instr_count);
 
         return 0;
     }

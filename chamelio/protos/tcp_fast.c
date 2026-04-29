@@ -364,7 +364,11 @@ int tcp_event_sched(struct cham_ebpf_ctx *ctx)
 
     /* Re-schedule if there are still bytes to send */
     if (avail > 0)
-      sched_add(&ctx->sched, sock->id, tx_sched_tsc(sock), avail);
+    {
+      ret = sched_add(&ctx->sched, sock->id, tx_sched_tsc(sock), avail);
+      if (ret < 0)
+        return -1;
+    }
   }
   
   util_spin_unlock(&sock->lock);
@@ -807,9 +811,7 @@ static inline int rx_enqueue_rx_bump(struct equeue *q,
 
   ret = queue_enqueue(q, TCP_QUEUE_BUMP_APP_RX);
   if (ret != 0)
-  {
     return -1;
-  }
 
   return 0;
 }
@@ -833,9 +835,7 @@ static inline int rx_enqueue_tx_bump(struct equeue *q,
 
   ret = queue_enqueue(q, TCP_QUEUE_BUMP_APP_TX);
   if (ret != 0)
-  {
     return -1;
-  }
 
   return 0;
 }
@@ -1024,6 +1024,7 @@ static inline void tx_sock_sched_next(struct tcp_sock *sock,
 
 static inline int deq_handle_bump_tx(struct cham_ebpf_ctx *ctx)
 {
+  int ret;
   __u8 qe_valid;
   struct tcp_sock *sock;
   struct tcp_queue_bump_entry *qe;
@@ -1049,7 +1050,9 @@ static inline int deq_handle_bump_tx(struct cham_ebpf_ctx *ctx)
   util_spin_unlock(&sock->lock);
   
   /* Schedule bytes for transmission */
-  sched_add(&ctx->sched, sock->id, tx_sched_tsc(sock), bump->tx_avail);
+  ret = sched_add(&ctx->sched, sock->id, tx_sched_tsc(sock), bump->tx_avail);
+  if (ret < 0)
+    return -1;
   
   return 0;
 }

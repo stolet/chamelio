@@ -268,7 +268,6 @@ uint64_t fast_rx_poll_comb(void *mem, size_t mem_len)
   __u64 tsc_start = 0, pkt_off;
   const int charge_budget = comb_perf_iso(ctx);
 
-  (void) mem_len;
   nrx = FAST_RX_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < nrx)
     nrx = TXBUF_SIZE - ctx->tx_n;
@@ -321,7 +320,6 @@ uint64_t fast_queues_poll_comb(void *mem, size_t mem_len)
   __u8 start_guest = ctx->next_queues_guest;
   const int charge_budget = comb_perf_iso(ctx);
 
-  (void) mem_len;
   if (ctx->n_guests == 0)
     return 0;
 
@@ -368,40 +366,18 @@ uint64_t fast_queues_poll_comb(void *mem, size_t mem_len)
 uint64_t fast_sched_poll_comb(void *mem, size_t mem_len)
 {
   int max, ret;
-  int i, gid, ntx, has_sched_work, last_sched_guest;
+  int i, gid, ntx, last_sched_guest;
   struct fast_context *ctx = mem;
-  struct guest_fast *g;
   struct rte_mbuf **mbs;
   __u8 n_guests = ctx->n_guests;
   __u8 start_guest = ctx->next_sched_guest;
   const int charge_budget = comb_perf_iso(ctx);
 
-  (void) mem_len;
   if (n_guests == 0)
     return 0;
 
   if (start_guest >= n_guests)
     start_guest = 0;
-
-  has_sched_work = 0;
-  for (i = 0; i < n_guests; i++)
-  {
-    g = &ctx->guests[i];
-    if (!g->proto.has_event_sched)
-      continue;
-
-    if (sched_head(&g->proto.ebpf_ctx.sched) == NULL)
-      continue;
-
-    if (charge_budget && __atomic_load_n(g->budget, __ATOMIC_RELAXED) <= 0)
-      continue;
-
-    has_sched_work = 1;
-    break;
-  }
-
-  if (!has_sched_work)
-    return 0;
 
   max = FAST_SCHED_BATCH_SIZE;
   if (TXBUF_SIZE - ctx->tx_n < max)

@@ -232,19 +232,16 @@ void control_ebpf_upload(struct control_context *ctx,
   {
     char slot_sym[32];
 
-    LOG_DEBUG("verify and emi event_rx");
     ret = snprintf(slot_sym, sizeof(slot_sym), "event_rx_slot_%u", g->id);
     if (ret < 0 || ret >= (int) sizeof(slot_sym) ||
         verify_and_emit(ctx, bpf_obj, "event_rx", slot_sym, &rx_bc) != 0)
       goto out;
 
-    LOG_DEBUG("verify and emi event_deq");
     ret = snprintf(slot_sym, sizeof(slot_sym), "event_deq_slot_%u", g->id);
     if (ret < 0 || ret >= (int) sizeof(slot_sym) ||
         verify_and_emit(ctx, bpf_obj, "event_deq", slot_sym, &deq_bc) != 0)
       goto out;
 
-    LOG_DEBUG("verify and emi event_sched");
     ret = snprintf(slot_sym, sizeof(slot_sym), "event_sched_slot_%u", g->id);
     if (ret < 0 || ret >= (int) sizeof(slot_sym) ||
         verify_and_emit(ctx, bpf_obj, "event_sched", slot_sym, &sched_bc) != 0)
