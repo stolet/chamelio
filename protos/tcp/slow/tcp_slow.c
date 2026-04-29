@@ -1,10 +1,16 @@
 #include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 #include "app/tcp_appif.h"
 #include "clock.h"
 #include "tcp_config.h"
 #include "tcp_internal.h"
+#include "tcp_trace.h"
 #include "log.h"
+
+static void tcp_trace_publish(struct tcp_slow_context *ctx);
 
 int main(int argc, char **argv)
 {
@@ -24,6 +30,8 @@ int main(int argc, char **argv)
     LOG_ERROR("failed to initialise tcp slow context");
     abort();
   }
+
+  tcp_trace_publish(&ctx);
 
   ret = tcp_appif_init(&ctx);
   if (ret != 0)
@@ -56,4 +64,34 @@ int main(int argc, char **argv)
       ctx.stats_log_tsc = clock_rdtsc();
     }
   }
+}
+
+static void tcp_trace_publish(struct tcp_slow_context *ctx)
+{
+  int fd;
+  struct tcp_trace_state state = {
+    .magic = TCP_TRACE_MAGIC,
+    .version = TCP_TRACE_VERSION,
+    .pid = getpid(),
+    .ctx_addr = (__u64) ctx,
+    .ctx_size = sizeof(*ctx),
+    .sock_size = sizeof(struct tcp_sock),
+    .port_size = sizeof(struct tcp_port),
+    .flow_bucket_size = sizeof(struct tcp_flow_bucket),
+    .ctl_cfg_size = sizeof(struct tcp_ctl_cfg),
+    .listener_size = sizeof(struct tcp_listener_slow),
+    .meta_size = sizeof(struct tcp_sock_meta_slow),
+  };
+
+  mkdir("/run/chamelio", 0777);
+  fd = open(TCP_TRACE_PATH, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+  if (fd < 0)
+  {
+    LOG_WARN("failed to publish TCP trace state");
+    return;
+  }
+
+  if (write(fd, &state, sizeof(state)) != sizeof(state))
+    LOG_WARN("failed to write TCP trace state");
+  close(fd);
 }
