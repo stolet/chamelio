@@ -144,6 +144,8 @@ struct tcp_context_lib {
 struct tcp_lib {
   /* Unix socket file descriptor */
   int uxsocket_fd;
+  /* Lock used in context intiialisation */
+  volatile __u32 lock; 
 
   /* Shared memory file descriptor */
   int shm_fd;

@@ -20,6 +20,7 @@
 #include "log.h"
 #include "uxsocket.h"
 #include "internal.h"
+#include "utils_sync.h"
 
 #define LIB_BATCH_SIZE 16
 #define TCP_TX_BUMP_THRESH 1024U
@@ -76,37 +77,6 @@ enum tcp_wait_poll_mode {
   TCP_WAIT_POLL_FAST,
   TCP_WAIT_POLL_SLOW,
 };
-
-static int tcp_lib_should_log(__u64 *counter)
-{
-  __u64 n;
-
-  n = ++(*counter);
-  return n <= 8 || (n & (n - 1)) == 0;
-}
-
-static const char *tcp_lib_state_name(__u8 state)
-{
-  switch (state)
-  {
-    case TCP_LIB_STATE_INIT:
-      return "INIT";
-    case TCP_LIB_STATE_BOUND:
-      return "BOUND";
-    case TCP_LIB_STATE_LISTEN:
-      return "LISTEN";
-    case TCP_LIB_STATE_CONNECTING:
-      return "CONNECTING";
-    case TCP_LIB_STATE_ESTABLISHED:
-      return "ESTABLISHED";
-    case TCP_LIB_STATE_CLOSING:
-      return "CLOSING";
-    case TCP_LIB_STATE_CLOSED:
-      return "CLOSED";
-    default:
-      return "UNKNOWN";
-  }
-}
 
 int tcp_connect_slow()
 {
@@ -170,6 +140,7 @@ int tcp_connect_slow()
   u->shm_base = NULL;
   u->next_ctxid = 0;
   u->next_sockfd = 0;
+  u->lock = 0;
   tcp = u;
 
   return 0;
@@ -206,11 +177,13 @@ struct tcp_context_lib * tcp_ctx_new()
     .msg_flags = 0,
   };
 
+  util_spin_lock(&tcp->lock);
   sz = sendmsg(tcp->uxsocket_fd, &msg, 0);
   if (sz != sizeof(req))
   {
     LOG_ERROR("failed to send msg to register tcp app ctx");
     perror("");
+    util_spin_unlock(&tcp->lock);
     return NULL;
   }
 
@@ -223,6 +196,7 @@ struct tcp_context_lib * tcp_ctx_new()
     {
       LOG_ERROR("read failed");
       perror("");
+      util_spin_unlock(&tcp->lock);
       return NULL;
     }
     off += sz;
@@ -232,6 +206,7 @@ struct tcp_context_lib * tcp_ctx_new()
   if (ctx == NULL)
   {
     LOG_ERROR("failed to allocate tcp context struct");
+    util_spin_unlock(&tcp->lock);
     return NULL;
   }
 
@@ -247,6 +222,7 @@ struct tcp_context_lib * tcp_ctx_new()
     if (shm_base == (void *) -1)
     {
       LOG_ERROR("failed to map shm region");
+      util_spin_unlock(&tcp->lock);
       return NULL;
     }
     tcp->shm_base = shm_base;
@@ -259,6 +235,7 @@ struct tcp_context_lib * tcp_ctx_new()
   if (eq == NULL)
   {
     LOG_ERROR("failed to create queue from app to slow-path");
+    util_spin_unlock(&tcp->lock);
     return NULL;
   }
   ctx->app_slow_q = eq;
@@ -268,6 +245,7 @@ struct tcp_context_lib * tcp_ctx_new()
   if (dq == NULL)
   {
     LOG_ERROR("failed to create queue from slow-path to app");
+    util_spin_unlock(&tcp->lock);
     return NULL;
   }
   ctx->slow_app_q = dq;
@@ -276,6 +254,7 @@ struct tcp_context_lib * tcp_ctx_new()
   if (eq_list == NULL)
   {
     LOG_ERROR("failed to allocate list for queues app->fast");
+    util_spin_unlock(&tcp->lock);
     return NULL;
   }
   ctx->app_fast_qs = eq_list;
@@ -284,6 +263,7 @@ struct tcp_context_lib * tcp_ctx_new()
   if (dq_list == NULL)
   {
     LOG_ERROR("failed to allocate list for queues fast->app");
+    util_spin_unlock(&tcp->lock);
     return NULL;
   }
   ctx->fast_app_qs = dq_list;
@@ -295,6 +275,7 @@ struct tcp_context_lib * tcp_ctx_new()
     if (eq == NULL)
     {
       LOG_ERROR("failed to create app->fast bump queue");
+      util_spin_unlock(&tcp->lock);
       return NULL;
     }
     eq_list[i] = eq;
@@ -304,11 +285,13 @@ struct tcp_context_lib * tcp_ctx_new()
     if (dq == NULL)
     {
       LOG_ERROR("failed to create fast->app bump queue");
+      util_spin_unlock(&tcp->lock);
       return NULL;
     }
     dq_list[i] = dq;
   }
 
+  util_spin_unlock(&tcp->lock);
   return ctx;
 }
 
@@ -1108,7 +1091,6 @@ int tcp_close(struct tcp_context_lib *ctx, int sockfd)
 
 int tcp_poll_fast(struct tcp_context_lib *ctx)
 {
-  static __u64 backlog_logs;
   int i, n, ncores;
   struct dqueue *q;
   struct tcp_queue_bump_entry *qe;
@@ -1146,11 +1128,6 @@ int tcp_poll_fast(struct tcp_context_lib *ctx)
 
       queue_dequeue(q);
     }
-  }
-
-  if (n >= 1024 && tcp_lib_should_log(&backlog_logs))
-  {
-    LOG_WARN("tcp_poll_fast drained backlog n=%d ncores=%d", n, ncores);
   }
 
   return n;
@@ -1350,7 +1327,6 @@ static int handle_accept_res(struct tcp_queue_entry *qe)
 
 static int handle_tx_bump(struct tcp_queue_bump_entry *qe)
 {
-  static __u64 invalid_logs;
   __u32 tx_bump;
   __u32 new_head;
   struct tcp_queue_bump_app_tx *bump;
@@ -1360,27 +1336,11 @@ static int handle_tx_bump(struct tcp_queue_bump_entry *qe)
   sock = (struct tcp_socket_lib *) bump->opaque;
 
   if (sock == NULL || sock->fd == SOCK_INACTIVE || sock->tx_len == 0)
-  {
-    if (tcp_lib_should_log(&invalid_logs))
-    {
-      LOG_WARN("ignoring invalid TX reclaim opaque=%p bump=%u",
-          (void *) sock, bump->tx_head);
-    }
     return 0;
-  }
 
   tx_bump = bump->tx_head;
   if (tx_bump > sock->tx_avail)
-  {
-    if (tcp_lib_should_log(&invalid_logs))
-    {
-      LOG_WARN("TX reclaim exceeds outstanding bytes sockfd=%d state=%s "
-          "bump=%u tx_avail=%u tx_len=%u tx_head=%u",
-          sock->fd, tcp_lib_state_name(sock->state), tx_bump, sock->tx_avail,
-          sock->tx_len, sock->tx_head);
-    }
     tx_bump = sock->tx_avail;
-  }
 
   if (tx_bump == 0)
     return 0;
@@ -1402,7 +1362,6 @@ static int handle_tx_bump(struct tcp_queue_bump_entry *qe)
 
 static int handle_rx_bump(struct tcp_queue_bump_entry *qe)
 {
-  static __u64 invalid_logs;
   __u32 free_bytes, rx_bump;
   struct tcp_queue_bump_app_rx *bump;
   struct tcp_socket_lib *sock;
@@ -1410,28 +1369,12 @@ static int handle_rx_bump(struct tcp_queue_bump_entry *qe)
   bump = &qe->data.bump_app_rx;
   sock = (struct tcp_socket_lib *) bump->opaque;
   if (sock == NULL || sock->fd == SOCK_INACTIVE || sock->rx_len == 0)
-  {
-    if (tcp_lib_should_log(&invalid_logs))
-    {
-      LOG_WARN("ignoring invalid RX bump opaque=%p bump=%u",
-          (void *) sock, bump->rx_avail);
-    }
     return 0;
-  }
 
   rx_bump = bump->rx_avail;
   free_bytes = sock->rx_len - sock->rx_avail;
   if (rx_bump > free_bytes)
-  {
-    if (tcp_lib_should_log(&invalid_logs))
-    {
-      LOG_WARN("RX bump exceeds free space sockfd=%d state=%s bump=%u "
-          "rx_avail=%u rx_len=%u rx_head=%u",
-          sock->fd, tcp_lib_state_name(sock->state), rx_bump, sock->rx_avail,
-          sock->rx_len, sock->rx_head);
-    }
     rx_bump = free_bytes;
-  }
 
   if (rx_bump == 0)
     return 0;
