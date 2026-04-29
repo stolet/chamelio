@@ -1107,12 +1107,14 @@ static inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx)
   int ret;
   __u8 qe_valid, paylen_valid;
   __u32 hdrlen;
+  __u32 now_us;
   struct cham_map *map;
   struct tcp_ctl_cfg *cfg;
   struct dqueue *ctl_pkt_q;
   struct tcp_queue_pkt_entry *ctl_pkt_qe;
   struct tcp_pkt_inner *ctl_pkt;
-
+  struct tcp_timestamp_opt_pad *ts_opt;
+  
   qe_valid = is_qe_ctl_valid(ctx->qe, ctx->shm_end);
   if (!qe_valid)
     return -1;
@@ -1141,6 +1143,13 @@ static inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx)
   ctl_pkt->ip.chksum = 0;
   ctl_pkt->tcp.chksum = 0;
   memcpy(ctx->pkt, ctl_pkt, hdrlen);
+  if (TCPH_HDRLEN(&ctl_pkt->tcp) * 4 == TCP_HLEN + TCP_TS_OPT_LEN)
+  {
+    now_us = tcp_now_us();
+    ts_opt = (struct tcp_timestamp_opt_pad *) ((__u8 *) 
+        &((struct tcp_pkt_inner *) ctx->pkt)->tcp + TCP_HLEN);
+    ts_opt->ts.ts_val = t_beui32(now_us);
+  }
   
   ret = queue_dequeue(ctl_pkt_q);
   if (ret != 0)
