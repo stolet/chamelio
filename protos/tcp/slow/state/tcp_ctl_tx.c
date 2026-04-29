@@ -126,7 +126,7 @@ static void ctl_pkt_fill(struct tcp_queue_ctl_pkt *pkt,
   if (sock == NULL)
     return;
 
-  now_us = (__u32) (clock_now_ns() / 1000);
+  now_us = (__u32) clock_tsc_to_us(clock_rdtsc());
   pkt->ts_opt.nop0 = TCP_OPT_NO_OP;
   pkt->ts_opt.nop1 = TCP_OPT_NO_OP;
   pkt->ts_opt.ts.kind = TCP_OPT_TIMESTAMP;

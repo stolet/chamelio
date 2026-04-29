@@ -147,7 +147,7 @@ static void sock_ts_rx(struct tcp_sock *sock, const struct tcp_rx_ctl *rx)
   if (rx->ts_ecr == 0)
     return;
 
-  now_us = (__u32) (clock_now_ns() / 1000);
+  now_us = (__u32) clock_tsc_to_us(clock_rdtsc());
   rtt = now_us - rx->ts_ecr;
   if (rtt == 0)
     return;
