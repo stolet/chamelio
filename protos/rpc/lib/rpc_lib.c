@@ -111,11 +111,9 @@ close_sockfd:
 
 struct rpc_context_lib *rpc_ctx_new()
 {
-  int i, ctx_fd, tmp_fd, ret;
+  int i;
   ssize_t sz, off;
-  int64_t tmp;
   void *shm_base;
-  struct sockaddr_un s_un;
   struct rpc_context_lib *ctx;
   struct rpc_queue_new_actx_res *res;
   __u8 resp_buf[sizeof(*res)];
@@ -125,42 +123,7 @@ struct rpc_context_lib *rpc_ctx_new()
       .req = 1,
   };
 
-  /* Open a private connection so concurrent calls don't interleave */
-  ctx_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (ctx_fd < 0)
-  {
-    LOG_ERROR("rpc_ctx_new: failed to create socket");
-    return NULL;
-  }
-
-  s_un.sun_family = AF_UNIX;
-  ret = snprintf(s_un.sun_path, sizeof(s_un.sun_path), "%s", APP_SOCKET_PATH);
-  if (ret < 0 || ret >= (int)sizeof(s_un.sun_path))
-  {
-    LOG_ERROR("rpc_ctx_new: could not copy unix socket path");
-    close(ctx_fd);
-    return NULL;
-  }
-
-  if (connect(ctx_fd, (struct sockaddr *)&s_un, sizeof(s_un)) < 0)
-  {
-    LOG_ERROR("rpc_ctx_new: cannot connect to slow-path");
-    close(ctx_fd);
-    return NULL;
-  }
-
-  /* Slow-path sends shm_fd on every new connection; discard it here
-     since rpc_connect_slow already received and mapped it. */
-  if (uxsocket_read_one_msg(ctx_fd, &tmp, &tmp_fd) < 0)
-  {
-    LOG_ERROR("rpc_ctx_new: failed to read shm_fd from slow-path");
-    close(ctx_fd);
-    return NULL;
-  }
-  if (tmp_fd >= 0)
-    close(tmp_fd);
-
-  /* Send request on private socket */
+  /* Send request on kernel socket */
   struct iovec iov = {
       .iov_base = &req,
       .iov_len = sizeof(req),
@@ -176,30 +139,28 @@ struct rpc_context_lib *rpc_ctx_new()
       .msg_flags = 0,
   };
 
-  sz = sendmsg(ctx_fd, &msg, 0);
+  sz = sendmsg(rpc->uxsocket_fd, &msg, 0);
   if (sz != sizeof(req))
   {
     LOG_ERROR("failed to send msg to register rpc app ctx");
-    close(ctx_fd);
+    perror("");
     return NULL;
   }
 
-  /* Receive response on private socket */
+  /* Receive response on kernel socket */
   res = (struct rpc_queue_new_actx_res *)resp_buf;
   off = 0;
   while (off < sizeof(*res))
   {
-    sz = read(ctx_fd, (__u8 *)res + off, sizeof(*res) - off);
+    sz = read(rpc->uxsocket_fd, (__u8 *)res + off, sizeof(*res) - off);
     if (sz < 0)
     {
       LOG_ERROR("read failed");
-      close(ctx_fd);
+      perror("");
       return NULL;
     }
     off += sz;
   }
-
-  close(ctx_fd);
 
   ctx = malloc(sizeof(struct rpc_context_lib));
   if (ctx == NULL)
@@ -680,7 +641,7 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   hdr.type = 0; // request
 
   // fprintf(stderr, "rpc_call: service=%u client_id=%u rid=%u\n",
-  // service, c->client_id, ntohl(hdr.rid.x));
+          // service, c->client_id, ntohl(hdr.rid.x));
 
   // tail pos. of tx ring
   tail = c->tx_head + c->tx_avail;
@@ -946,7 +907,7 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     memcpy(buf, w->rx_buf + new_head, n);
   }
 
-  // advance rx head and avail
+  // advance rx head and avail 
   w->rx_avail -= hdr.len.x;
   new_head = w->rx_head + hdr.len.x;
   if (new_head >= w->rx_len)
@@ -1042,27 +1003,6 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
     if (new_head >= c->rx_len)
       new_head -= c->rx_len;
     c->rx_head = new_head;
-    // TODO: maybe to remove later on
-    // bump fast path
-    eq = c->ctx->app_fast_qs[c->core];
-    qe = queue_tail(eq);
-    if (!qe)
-    {
-      LOG_ERROR("failed to get queue tail for bump req");
-      return -1;
-    }
-    bump = &qe->data.bump_cham_rx;
-    bump->sock_id = c->client_id;
-    bump->rx_head = hdr.len.x;
-    bump->type = 1; // response
-
-    ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_RX);
-    if (ret != 0)
-    {
-      LOG_ERROR("failed to enqueue bump req");
-      return -1;
-    }
-
     return -1;
   }
 
