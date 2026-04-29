@@ -673,7 +673,7 @@ static __always_inline void sock_ts_rx(struct tcp_sock *sock,
 
   now_us = (__u32) ebpf_now_us();
   rtt = now_us - ts_ecr;
-  if (rtt == 0)
+  if (rtt == 0 || rtt >= TCP_MAX_RTT)
     return;
 
   if (sock->rtt_est != 0)

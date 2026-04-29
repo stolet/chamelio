@@ -149,7 +149,7 @@ static void sock_ts_rx(struct tcp_sock *sock, const struct tcp_rx_ctl *rx)
 
   now_us = (__u32) clock_tsc_to_us(clock_rdtsc());
   rtt = now_us - rx->ts_ecr;
-  if (rtt == 0)
+  if (rtt == 0 || rtt >= TCP_MAX_RTT)
     return;
 
   if (sock->rtt_est != 0)

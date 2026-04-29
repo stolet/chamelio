@@ -450,7 +450,6 @@ static inline __u8 is_paylen_valid(void *pkt,
 static inline void remit(struct cham_scheduler *sched,
     struct tcp_sock *sock)
 {
-  int ret;
   __u32 avail;
 
   tcp_sock_recovery_enter(sock);
@@ -464,11 +463,7 @@ static inline void remit(struct cham_scheduler *sched,
   
   /* Add a new retransmit entry */
   avail = sock_sched_avail(sock);
-  ret = sched_add(sched, sock->id, clock_rdtsc(), avail);
-  if (ret < 0)
-  {
-    LOG_DEBUG("sched add failed");
-  }
+  sched_add(sched, sock->id, clock_rdtsc(), avail);
 }
 
 /***** RX helpers ************************************************************/
@@ -604,7 +599,6 @@ static inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
   ret = queue_enqueue(pkt_q, TCP_QUEUE_CTL_RX_PKT);
   if (ret != 0)
   {
-    LOG_DEBUG("enqueue failed");
     return -1;
   }
 
@@ -612,7 +606,6 @@ static inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
   ret = queue_enqueue(sig_q, TCP_QUEUE_CTL_RX);
   if (ret != 0)
   {
-    LOG_DEBUG("enqueue failed");
     return -1;
   }
 
@@ -690,7 +683,7 @@ static inline void sock_ts_rx(struct tcp_sock *sock,
 
   now_us = tcp_now_us();
   rtt = now_us - ts_ecr;
-  if (rtt == 0)
+  if (rtt == 0 || rtt >= TCP_MAX_RTT)
     return;
 
   if (sock->rtt_est != 0)
@@ -702,18 +695,13 @@ static inline void sock_ts_rx(struct tcp_sock *sock,
 static inline void rx_sched_tx(struct cham_ebpf_ctx *ctx,
     struct tcp_sock *sock, __u32 avail_before, __u32 avail_after)
 {
-  int ret;
   __u64 prio;
 
   if (avail_after <= avail_before)
     return;
 
   prio = tx_sched_tsc(sock);
-  ret = sched_add(&ctx->sched, sock->id, prio, avail_after - avail_before);
-  if (ret < 0)
-  {
-    LOG_DEBUG("sched add failed");
-  }
+  sched_add(&ctx->sched, sock->id, prio, avail_after - avail_before);
 }
 
 static inline __u32 rx_get_rx_bump(struct tcp_sock *sock, __u32 paylen)

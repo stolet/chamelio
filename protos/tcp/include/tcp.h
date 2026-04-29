@@ -50,6 +50,8 @@ enum tcp_sock_state {
 
 /* Payload size for plain IPv4/TCP packets without TCP options. */
 #define TCP_PAYLOAD_MSS 1460
+/* Ignore timestamp RTT samples that are implausibly large. */
+#define TCP_MAX_RTT 100000
 
 /* Entry for the socket map */
 struct tcp_sock {
@@ -132,7 +134,6 @@ struct tcp_sock {
   __u64 tx_ready_tsc;
   /* 1 while recovery limits new sends to the original flight */
   __u8 recovery_active;
-  __u8 recovery_pad[3];
   /* Sequence number that ended the original outstanding region */
   __u32 recovery_end_seq;
 } __attribute__((packed));

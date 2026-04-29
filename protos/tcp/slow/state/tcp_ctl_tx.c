@@ -1,7 +1,6 @@
 #include "tcp_internal.h"
 #include "queue_fns.h"
 #include "tcp_hdr.h"
-#include "clock.h"
 
 /*** Ctrl TX Helpers **********************************************************/
 
@@ -101,8 +100,6 @@ static void ctl_pkt_fill(struct tcp_queue_ctl_pkt *pkt,
     __u16 local_port, __u32 remote_ip, __u16 remote_port, __u32 seq,
     __u32 ack, __u16 flags, __u16 wnd)
 {
-  __u32 now_us;
-
   IPH_VHL_SET(&pkt->pkt.ip, 4, 5);
   pkt->pkt.ip._tos = 0;
   pkt->pkt.ip.len = t_beui16(sizeof(pkt->pkt) + (sock != NULL ? TCP_TS_OPT_LEN : 0));
@@ -126,11 +123,10 @@ static void ctl_pkt_fill(struct tcp_queue_ctl_pkt *pkt,
   if (sock == NULL)
     return;
 
-  now_us = (__u32) clock_tsc_to_us(clock_rdtsc());
   pkt->ts_opt.nop0 = TCP_OPT_NO_OP;
   pkt->ts_opt.nop1 = TCP_OPT_NO_OP;
   pkt->ts_opt.ts.kind = TCP_OPT_TIMESTAMP;
   pkt->ts_opt.ts.length = sizeof(pkt->ts_opt.ts);
-  pkt->ts_opt.ts.ts_val = t_beui32(now_us);
+  pkt->ts_opt.ts.ts_val = t_beui32(0);
   pkt->ts_opt.ts.ts_ecr = t_beui32(sock->ts_recent);
 }
