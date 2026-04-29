@@ -46,7 +46,7 @@ echo 1024 | sudo tee /sys/devices/system/node/node*/hugepages/hugepages-2048kB/n
 ```
 
 Bind the NIC used by Chamelio to a DPDK-compatible driver. Skip this for NICs
-whose DPDK PMD uses the kernel driver directly.
+whose DPDK PMD uses the kernel driver directly (e.g. Mellanox).
 
 ```bash
 sudo dpdk-devbind.py -b vfio-pci 0000:d8:00.0
