@@ -1,4 +1,4 @@
-# <img src="docs/assets/chamelio.svg" alt="Chamelio logo" height="40" style="vertical-align: text-bottom;"> Chamelio
+# <img src="docs/assets/chamelio.svg" alt="Chamelio logo" height="60" style="vertical-align: text-bottom;"> Chamelio
 
 Chamelio is a shared, high-performance network stack that lets guests and
 applications use protocol implementations registered with a host fast path.
