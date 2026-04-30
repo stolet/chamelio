@@ -171,3 +171,22 @@ TCP:
 tcp_cham_server <bind_ip> <port> [--msize N] [--ncores N] [--buf-size N] [--mconns N]
 tcp_cham_client <src_ip> <src_port> <rem_ip> <rem_port> [--msize N] [--duration S] [--rate R] [--ncores N] [--nconns N] [--mpending N] [--cwait S]
 ```
+
+## statetool
+
+TCP and UDP each build a protocol-specific `statetool` executable:
+
+```bash
+build/protos/tcp/statetool [STATE_PATH]
+build/protos/udp/statetool [STATE_PATH]
+```
+
+Default state paths:
+
+```text
+/run/chamelio/tcp_statetool
+/run/chamelio/udp_statetool
+```
+
+Run the tool in the same container, VM, or host namespace as the corresponding
+slow path. See [Debug TCP and UDP state](../../how-to/debug-with-statetool/README.md).

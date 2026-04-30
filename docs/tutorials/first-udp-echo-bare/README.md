@@ -14,9 +14,40 @@ The example uses:
 
 Replace PCI addresses and CPU cores with values from your machines.
 
-## 1. Build and Install
+## 1. Start the Container
 
-On both machines:
+On both machines, build the Chamelio container image from the repository root:
+
+```bash
+cd /local/mstolet/projects/chamelio
+docker build -t chamelio-dev -f .devcontainer/Dockerfile .
+```
+
+Start a long-running container. Mount the benchmark repository if you want to
+run the echo benchmark from this tutorial:
+
+```bash
+docker run -d --name chamelio-dev \
+  --privileged \
+  --network=host \
+  -v /local/mstolet/projects/chamelio:/workspaces/chamelio \
+  -v /local/mstolet/projects/chamelio-benchmarks/benchmarks:/workspaces/benchmarks \
+  -v /dev/hugepages:/dev/hugepages \
+  chamelio-dev sleep infinity
+```
+
+Enter the container:
+
+```bash
+docker exec -it chamelio-dev bash
+```
+
+Use additional `docker exec -it chamelio-dev bash` shells for the Chamelio,
+UDP slow-path, and application processes.
+
+## 2. Build and Install
+
+Inside the container on both machines:
 
 ```bash
 cd /workspaces/chamelio
@@ -34,9 +65,9 @@ meson setup build
 ninja -C build udp_cham
 ```
 
-## 2. Prepare Hugepages and the NIC
+## 3. Prepare Hugepages and the NIC
 
-On both machines:
+On the host or inside the privileged container on both machines:
 
 ```bash
 sudo modprobe vfio-pci
@@ -46,9 +77,9 @@ echo 1024 | sudo tee /sys/devices/system/node/node*/hugepages/hugepages-2048kB/n
 sudo dpdk-devbind.py -b vfio-pci 0000:d8:00.0
 ```
 
-## 3. Start Chamelio
+## 4. Start Chamelio
 
-On the server:
+Inside the container on the server:
 
 ```bash
 cd /workspaces/chamelio
@@ -63,7 +94,7 @@ sudo ./build/chamelio/chamelio \
   --dpdk-extra="--lcores=0@1,1@3"
 ```
 
-On the client:
+Inside the container on the client:
 
 ```bash
 cd /workspaces/chamelio
@@ -78,9 +109,9 @@ sudo ./build/chamelio/chamelio \
   --dpdk-extra="--lcores=0@1,1@3"
 ```
 
-## 4. Start the UDP Slow Path
+## 5. Start the UDP Slow Path
 
-On both machines:
+Inside the container on both machines:
 
 ```bash
 cd /workspaces/chamelio
@@ -92,26 +123,26 @@ sudo ./build/protos/udp/slow/udp_slow \
   --ctlq-len=1024
 ```
 
-## 5. Start the Echo Server
+## 6. Start the Echo Server
 
-On the server:
+Inside the container on the server:
 
 ```bash
 cd /workspaces/benchmarks
-taskset -c 7,9 ./build/udp/udp_cham_server \
+./build/udp/udp_cham_server \
   192.168.10.14 1234 \
   --msize 64 \
   --ncores 1 \
   --buf-size 64
 ```
 
-## 6. Start the Echo Client
+## 7. Start the Echo Client
 
-On the client:
+Inside the container on the client:
 
 ```bash
 cd /workspaces/benchmarks
-taskset -c 7,9 ./build/udp/udp_cham_client \
+./build/udp/udp_cham_client \
   192.168.10.13 1234 192.168.10.14 1234 \
   --msize 64 \
   --rate 10000 \
@@ -123,7 +154,7 @@ The client prints throughput and latency percentiles once per second. The UDP
 benchmark sends a small amount of initial traffic to resolve ARP before the
 main run begins.
 
-## 7. Stop the Run
+## 8. Stop the Run
 
 Stop the client, server, UDP slow paths, and Chamelio processes.
 

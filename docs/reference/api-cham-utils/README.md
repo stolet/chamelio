@@ -81,7 +81,7 @@ Typical enqueue pattern:
 
 ```c
 struct my_entry *e = queue_tail(q);
-if (e != NULL) 
+if (e != NULL)
 {
   e->field = value;
   queue_enqueue(q, MY_ENTRY_TYPE);
@@ -92,7 +92,7 @@ Typical dequeue pattern:
 
 ```c
 struct my_entry *e = queue_head(q);
-if (e != NULL) 
+if (e != NULL)
 {
   /* read entry */
   queue_dequeue(q);

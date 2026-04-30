@@ -33,14 +33,23 @@ Common entry points:
 - [Use UDP in an application](docs/how-to/use-udp-in-an-application/README.md)
 - [Use TCP in an application](docs/how-to/use-tcp-in-an-application/README.md)
 - [Add a new protocol](docs/how-to/add-a-new-protocol/README.md)
+- [Debug TCP and UDP state](docs/how-to/debug-with-statetool/README.md)
 - [API reference](docs/reference/libraries/README.md)
 
 ## Quick Build
 
-The supported development path is the repository dev container. It provides
-DPDK, libbpf, Meson, Ninja, and the compiler toolchain used by this project.
+The supported development path is the repository container. It provides DPDK,
+libbpf, Meson, Ninja, the eBPF compiler, and the compiler toolchain used by
+this project.
 
 ```bash
+docker build -t chamelio-dev -f .devcontainer/Dockerfile .
+docker run --rm -it --name chamelio-dev --privileged --network=host \
+  -v "$PWD":/workspaces/chamelio \
+  -v /dev/hugepages:/dev/hugepages \
+  chamelio-dev bash
+
+cd /workspaces/chamelio
 meson setup build
 ninja -C build
 ```

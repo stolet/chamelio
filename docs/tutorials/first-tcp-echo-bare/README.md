@@ -14,9 +14,40 @@ The example uses:
 
 Replace PCI addresses and CPU cores with values from your machines.
 
-## 1. Build and Install
+## 1. Start the Container
 
-On both machines, inside the Chamelio development environment:
+On both machines, build the Chamelio container image from the repository root:
+
+```bash
+cd /local/mstolet/projects/chamelio
+docker build -t chamelio-dev -f .devcontainer/Dockerfile .
+```
+
+Start a long-running container. Mount the benchmark repository if you want to
+run the echo benchmark from this tutorial:
+
+```bash
+docker run -d --name chamelio-dev \
+  --privileged \
+  --network=host \
+  -v /local/mstolet/projects/chamelio:/workspaces/chamelio \
+  -v /local/mstolet/projects/chamelio-benchmarks/benchmarks:/workspaces/benchmarks \
+  -v /dev/hugepages:/dev/hugepages \
+  chamelio-dev sleep infinity
+```
+
+Enter the container:
+
+```bash
+docker exec -it chamelio-dev bash
+```
+
+Use additional `docker exec -it chamelio-dev bash` shells for the Chamelio,
+TCP slow-path, and application processes.
+
+## 2. Build and Install
+
+Inside the container on both machines:
 
 ```bash
 cd /workspaces/chamelio
@@ -34,9 +65,9 @@ meson setup build
 ninja -C build tcp_cham
 ```
 
-## 2. Prepare Hugepages and the NIC
+## 3. Prepare Hugepages and the NIC
 
-On both machines:
+On the host or inside the privileged container on both machines:
 
 ```bash
 sudo modprobe vfio-pci
@@ -53,9 +84,9 @@ sudo dpdk-devbind.py -b vfio-pci 0000:d8:00.0
 sudo dpdk-devbind.py --status
 ```
 
-## 3. Start Chamelio
+## 4. Start Chamelio
 
-On the server:
+Inside the container on the server:
 
 ```bash
 cd /workspaces/chamelio
@@ -70,7 +101,7 @@ sudo ./build/chamelio/chamelio \
   --dpdk-extra="--lcores=0@1,1@3"
 ```
 
-On the client:
+Inside the container on the client:
 
 ```bash
 cd /workspaces/chamelio
@@ -87,9 +118,9 @@ sudo ./build/chamelio/chamelio \
 
 Leave both Chamelio processes running.
 
-## 4. Start the TCP Slow Path
+## 5. Start the TCP Slow Path
 
-On both machines:
+Inside the container on both machines:
 
 ```bash
 cd /workspaces/chamelio
@@ -104,13 +135,13 @@ sudo ./build/protos/tcp/slow/tcp_slow \
 The slow path registers TCP with the local Chamelio instance and waits for
 applications.
 
-## 5. Start the Echo Server
+## 6. Start the Echo Server
 
-On the server:
+Inside the container on the server:
 
 ```bash
 cd /workspaces/benchmarks
-taskset -c 7,9 ./build/tcp/tcp_cham_server \
+./build/tcp/tcp_cham_server \
   192.168.10.14 1234 \
   --msize 64 \
   --ncores 1 \
@@ -118,13 +149,13 @@ taskset -c 7,9 ./build/tcp/tcp_cham_server \
   --mconns 1
 ```
 
-## 6. Start the Echo Client
+## 7. Start the Echo Client
 
-On the client:
+Inside the container on the client:
 
 ```bash
 cd /workspaces/benchmarks
-taskset -c 7,9 ./build/tcp/tcp_cham_client \
+./build/tcp/tcp_cham_client \
   -1 -1 192.168.10.14 1234 \
   --msize 64 \
   --rate 999999999 \
@@ -138,7 +169,7 @@ taskset -c 7,9 ./build/tcp/tcp_cham_client \
 The client should print per-second throughput and latency statistics. The
 server should show receive/transmit progress.
 
-## 7. Stop the Run
+## 8. Stop the Run
 
 Stop processes in this order:
 

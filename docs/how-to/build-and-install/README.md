@@ -3,13 +3,50 @@
 This guide builds the repository and installs Chamelio libraries so external
 applications can use them.
 
-## Use the Dev Container
+## Start the Container
 
-The easiest supported environment is the repository dev container. It includes
-the DPDK and libbpf dependencies expected by the Meson build.
+The easiest supported environment is the repository container. It includes the
+DPDK, libbpf, Meson, Ninja, Prevail, llvmbpf, and `ecc` dependencies expected
+by the build.
 
 If you use VS Code, install the Dev Containers extension, open this repository,
 and run `Dev Containers: Open Folder in Container`.
+
+You can also start the same environment directly with Docker.
+
+Build the image from the repository root:
+
+```bash
+docker build -t chamelio-dev -f .devcontainer/Dockerfile .
+```
+
+Prepare hugepages on the host before starting runtime processes:
+
+```bash
+sudo mkdir -p /dev/hugepages
+sudo mount -t hugetlbfs nodev /dev/hugepages
+echo 1024 | sudo tee /sys/devices/system/node/node*/hugepages/hugepages-2048kB/nr_hugepages
+```
+
+Start a long-running container:
+
+```bash
+docker run -d --name chamelio-dev \
+  --privileged \
+  --network=host \
+  -v "$PWD":/workspaces/chamelio \
+  -v /dev/hugepages:/dev/hugepages \
+  chamelio-dev sleep infinity
+```
+
+Enter it:
+
+```bash
+docker exec -it chamelio-dev bash
+```
+
+Open additional shells with the same `docker exec` command when you need
+separate terminals for Chamelio, a slow path, and an application.
 
 ## Build
 

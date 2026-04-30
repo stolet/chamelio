@@ -14,6 +14,7 @@
 - [Use UDP in an application](how-to/use-udp-in-an-application/README.md)
 - [Use TCP in an application](how-to/use-tcp-in-an-application/README.md)
 - [Add a new protocol](how-to/add-a-new-protocol/README.md)
+- [Debug TCP and UDP state](how-to/debug-with-statetool/README.md)
 - [Troubleshoot runtime setup](how-to/troubleshoot-runtime-setup/README.md)
 
 ## Reference
