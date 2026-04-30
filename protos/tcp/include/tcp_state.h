@@ -1,13 +1,13 @@
-#ifndef TCP_TRACE_H_
-#define TCP_TRACE_H_
+#ifndef TCP_STATE_H_
+#define TCP_STATE_H_
 
 #include <linux/types.h>
 
-#define TCP_TRACE_PATH "/run/chamelio/tcp_tracetool"
-#define TCP_TRACE_MAGIC 0x7470637472616365ULL
-#define TCP_TRACE_VERSION 1
+#define TCP_STATE_PATH "/run/chamelio/tcp_statetool"
+#define TCP_STATE_MAGIC 0x7470637374617465ULL
+#define TCP_STATE_VERSION 1
 
-struct tcp_trace_state {
+struct tcp_state {
   __u64 magic;
   __u32 version;
   __u32 pid;

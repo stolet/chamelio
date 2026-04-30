@@ -10,26 +10,26 @@
 #include <arpa/inet.h>
 
 #include "tcp_slow.h"
-#include "tcp_trace.h"
+#include "tcp_state.h"
 
-static int state_read(const char *path, struct tcp_trace_state *state);
-static int proc_read(pid_t pid, __u64 addr, 
+static int state_read(const char *path, struct tcp_state *state);
+static int proc_read(pid_t pid, __u64 addr,
     void *buf, size_t len, const char *what);
 static const char *ip_str(__u32 ip, char *buf, size_t len);
 static const char *state_name(__u8 state);
 static void sock_print(const struct tcp_sock *sock);
-static void port_print(const char *name, 
+static void port_print(const char *name,
     const struct tcp_port *ports, __u32 nr);
 static void flow_print(const struct tcp_flow_bucket *flows);
 static void meta_print(const struct tcp_sock_meta_slow *meta, __u32 sid);
-static void listener_print(pid_t pid, 
+static void listener_print(pid_t pid,
     const struct tcp_listener_slow *listener, __u32 sid);
 
 int main(int argc, char **argv)
 {
   pid_t pid;
   const char *path;
-  struct tcp_trace_state state;
+  struct tcp_state state;
   struct tcp_slow_context ctx;
   struct proto_lib proto;
   struct proto_map_lib socks_map;
@@ -45,13 +45,13 @@ int main(int argc, char **argv)
   struct tcp_sock_meta_slow *meta;
   __u32 i;
 
-  path = argc > 1 ? argv[1] : TCP_TRACE_PATH;
+  path = argc > 1 ? argv[1] : TCP_STATE_PATH;
   if (state_read(path, &state) != 0)
     return 1;
 
-  if (state.magic != TCP_TRACE_MAGIC || state.version != TCP_TRACE_VERSION)
+  if (state.magic != TCP_STATE_MAGIC || state.version != TCP_STATE_VERSION)
   {
-    fprintf(stderr, "bad trace state in %s\n", path);
+    fprintf(stderr, "bad TCP state in %s\n", path);
     return 1;
   }
   if (state.ctx_size != sizeof(ctx) ||
@@ -62,7 +62,7 @@ int main(int argc, char **argv)
       state.listener_size != sizeof(struct tcp_listener_slow) ||
       state.meta_size != sizeof(struct tcp_sock_meta_slow))
   {
-    fprintf(stderr, "trace state ABI mismatch, rebuild tcp_slow and tracetool\n");
+    fprintf(stderr, "TCP state ABI mismatch, rebuild tcp_slow and statetool\n");
     return 1;
   }
 
@@ -164,7 +164,7 @@ int main(int argc, char **argv)
   return 0;
 }
 
-static int state_read(const char *path, struct tcp_trace_state *state)
+static int state_read(const char *path, struct tcp_state *state)
 {
   FILE *f;
 
