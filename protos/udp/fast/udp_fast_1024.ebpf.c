@@ -367,6 +367,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   }
 
   /* Update socket */
+  sock->tx_avail += bump_cham->tx_avail;
   new_head = sock->tx_head + payload_len;
   if (new_head >= sock->tx_len)
     new_head -= sock->tx_len;
