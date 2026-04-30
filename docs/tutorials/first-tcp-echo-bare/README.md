@@ -20,30 +20,34 @@ On both machines, build the Chamelio container image from the repository root:
 
 ```bash
 cd /local/mstolet/projects/chamelio
-docker build -t chamelio-dev -f .devcontainer/Dockerfile .
+docker image build -t chamelio-dev:latest -f .devcontainer/Dockerfile .
 ```
 
 Start a long-running container. Mount the benchmark repository if you want to
 run the echo benchmark from this tutorial:
 
 ```bash
-docker run -d --name chamelio-dev \
+docker container rm -f chamelio-dev >/dev/null 2>&1 || true
+docker container run -d \
+  --name chamelio-dev \
   --privileged \
   --network=host \
-  -v /local/mstolet/projects/chamelio:/workspaces/chamelio \
-  -v /local/mstolet/projects/chamelio-benchmarks/benchmarks:/workspaces/benchmarks \
-  -v /dev/hugepages:/dev/hugepages \
-  chamelio-dev sleep infinity
+  --ulimit memlock=-1:-1 \
+  --workdir /workspaces/chamelio \
+  --mount type=bind,source=/local/mstolet/projects/chamelio,target=/workspaces/chamelio \
+  --mount type=bind,source=/local/mstolet/projects/chamelio-benchmarks/benchmarks,target=/workspaces/benchmarks \
+  --mount type=bind,source=/dev/hugepages,target=/dev/hugepages \
+  chamelio-dev:latest sleep infinity
 ```
 
 Enter the container:
 
 ```bash
-docker exec -it chamelio-dev bash
+docker container exec -it chamelio-dev bash
 ```
 
-Use additional `docker exec -it chamelio-dev bash` shells for the Chamelio,
-TCP slow-path, and application processes.
+Use additional `docker container exec -it chamelio-dev bash` shells for the
+Chamelio, TCP slow-path, and application processes.
 
 ## 2. Build and Install
 
@@ -177,6 +181,12 @@ Stop processes in this order:
 2. server application
 3. TCP slow paths
 4. Chamelio processes
+
+Then remove the container:
+
+```bash
+docker container rm -f chamelio-dev
+```
 
 If Chamelio fails during startup, use
 [Troubleshoot runtime setup](../../how-to/troubleshoot-runtime-setup/README.md).

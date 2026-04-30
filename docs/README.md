@@ -27,11 +27,11 @@
 - [TCP library API](reference/api-tcp-lib/README.md)
 - [Network virtualization config](reference/netvirt-config/README.md)
 
-## Explanation
+## Design
 
-- [Architecture](explanation/architecture/README.md)
-- [Bare metal vs VM](explanation/bare-metal-vs-vm/README.md)
-- [Fast path and slow path](explanation/fast-path-and-slow-path/README.md)
-- [Protocol model](explanation/protocol-model/README.md)
-- [Shared memory and queues](explanation/shared-memory-and-queues/README.md)
-- [Network virtualization](explanation/network-virtualization/README.md)
+- [Architecture](design/architecture/README.md)
+- [Bare metal vs VM](design/bare-metal-vs-vm/README.md)
+- [Fast path and slow path](design/fast-path-and-slow-path/README.md)
+- [Protocol model](design/protocol-model/README.md)
+- [Shared memory and queues](design/shared-memory-and-queues/README.md)
+- [Network virtualization](design/network-virtualization/README.md)

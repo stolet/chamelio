@@ -1,6 +1,6 @@
-# Explanation
+# Design
 
-These pages explain the design behind Chamelio and its protocol implementations.
+These pages describe Chamelio's architecture, runtime model, and protocol internals.
 
 - [Architecture](architecture/README.md)
 - [Bare metal vs VM](bare-metal-vs-vm/README.md)

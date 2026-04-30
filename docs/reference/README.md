@@ -5,8 +5,8 @@ to be looked up, not read front to back.
 
 - [Commands](commands/README.md)
 - [Libraries](libraries/README.md)
-- [Chamelio protocol API](api-cham-lib/README.md)
+- [Chamelio API](api-cham-lib/README.md)
 - [Utility API](api-cham-utils/README.md)
-- [UDP library API](api-udp-lib/README.md)
-- [TCP library API](api-tcp-lib/README.md)
-- [Network virtualization config](netvirt-config/README.md)
+- [UDP API](api-udp-lib/README.md)
+- [TCP API](api-tcp-lib/README.md)
+- [Network Virtualization](netvirt-config/README.md)

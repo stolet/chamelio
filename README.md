@@ -15,14 +15,14 @@ This repository contains:
 
 ## Documentation
 
-The documentation is organized by user task:
+The documentation is organized by the following categories:
 
-- [Tutorials](docs/tutorials/README.md): first successful runs of Chamelio.
+- [Tutorials](docs/tutorials/README.md): guided walkthroughs.
 - [How-to guides](docs/how-to/README.md): focused recipes for setup, running,
   application integration, and protocol development.
 - [Reference](docs/reference/README.md): command options, libraries, public
   APIs, and configuration formats.
-- [Explanation](docs/explanation/README.md): architecture and design context.
+- [Design](docs/design/README.md): architecture, runtime model, and protocol internals.
 
 Common entry points:
 
@@ -43,13 +43,12 @@ libbpf, Meson, Ninja, the eBPF compiler, and the compiler toolchain used by
 this project.
 
 ```bash
-docker build -t chamelio-dev -f .devcontainer/Dockerfile .
-docker run --rm -it --name chamelio-dev --privileged --network=host \
-  -v "$PWD":/workspaces/chamelio \
-  -v /dev/hugepages:/dev/hugepages \
-  chamelio-dev bash
+docker image build -t chamelio-dev:latest -f .devcontainer/Dockerfile .
+docker container run --rm -it \
+  --workdir /workspaces/chamelio \
+  --mount type=bind,source="$PWD",target=/workspaces/chamelio \
+  chamelio-dev:latest bash
 
-cd /workspaces/chamelio
 meson setup build
 ninja -C build
 ```

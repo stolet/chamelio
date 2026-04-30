@@ -15,8 +15,8 @@ protocol-specific library such as `cham_udp` or `cham_tcp`.
 int cham_init_ivshmem(void);
 ```
 
-Mock a QEMU ivshmem client. This is used by the library path that connects a
-VM guest to host Chamelio.
+Mock a QEMU ivshmem client for bare-metal setup.
+This is used by the library path that connects a VM guest to host Chamelio.
 
 ```c
 struct guest_lib *cham_connect_guest(void);

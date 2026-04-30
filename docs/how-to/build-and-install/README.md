@@ -12,15 +12,26 @@ by the build.
 If you use VS Code, install the Dev Containers extension, open this repository,
 and run `Dev Containers: Open Folder in Container`.
 
-You can also start the same environment directly with Docker.
+You can also use the same environment directly with Docker.
 
 Build the image from the repository root:
 
 ```bash
-docker build -t chamelio-dev -f .devcontainer/Dockerfile .
+docker image build -t chamelio-dev:latest -f .devcontainer/Dockerfile .
 ```
 
-Prepare hugepages on the host before starting runtime processes:
+For build-only work, start an interactive container without host networking or
+extra privileges:
+
+```bash
+docker container run --rm -it \
+  --workdir /workspaces/chamelio \
+  --mount type=bind,source="$PWD",target=/workspaces/chamelio \
+  chamelio-dev:latest bash
+```
+
+For runtime work, Chamelio needs access to host networking, hugepages, and DPDK
+devices. Prepare hugepages on the host first:
 
 ```bash
 sudo mkdir -p /dev/hugepages
@@ -28,25 +39,35 @@ sudo mount -t hugetlbfs nodev /dev/hugepages
 echo 1024 | sudo tee /sys/devices/system/node/node*/hugepages/hugepages-2048kB/nr_hugepages
 ```
 
-Start a long-running container:
+Then start a long-running runtime container:
 
 ```bash
-docker run -d --name chamelio-dev \
+docker container rm -f chamelio-dev >/dev/null 2>&1 || true
+docker container run -d \
+  --name chamelio-dev \
   --privileged \
   --network=host \
-  -v "$PWD":/workspaces/chamelio \
-  -v /dev/hugepages:/dev/hugepages \
-  chamelio-dev sleep infinity
+  --ulimit memlock=-1:-1 \
+  --workdir /workspaces/chamelio \
+  --mount type=bind,source="$PWD",target=/workspaces/chamelio \
+  --mount type=bind,source=/dev/hugepages,target=/dev/hugepages \
+  chamelio-dev:latest sleep infinity
 ```
 
 Enter it:
 
 ```bash
-docker exec -it chamelio-dev bash
+docker container exec -it chamelio-dev bash
 ```
 
-Open additional shells with the same `docker exec` command when you need
-separate terminals for Chamelio, a slow path, and an application.
+Open additional shells with the same `docker container exec` command when you
+need separate terminals for Chamelio, a slow path, and an application.
+
+Stop and remove it when done:
+
+```bash
+docker container rm -f chamelio-dev
+```
 
 ## Build
 
