@@ -101,6 +101,8 @@ static inline int deq_handle_bump_tx(struct cham_ebpf_ctx *ctx);
 static inline int deq_handle_bump_rx(struct cham_ebpf_ctx *ctx);
 static inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx);
 static inline int deq_handle_retransmit(struct cham_ebpf_ctx *ctx);
+static inline __u8 deq_is_retransmit_stale(struct tcp_sock *sock,
+    struct tcp_queue_ctl_remit *cmd);
 static inline __u32 deq_get_tx_ip(struct tcp_sock *sock,
     struct tcp_queue_bump_cham_tx *bump);
 static inline __u32 deq_get_tx_port(struct tcp_sock *sock,
@@ -223,8 +225,8 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
   
   /* If ack is duplicate check if we should retransmit */
   should_fast_remit = 0;
-  if (is_ack && is_ack_only && ack_bump == 0 && sock->tx_pending != 0 &&
-      !sock->recovery_active)
+  if (is_ack && is_ack_only && ack_bump == 0 && 
+      sock->tx_pending != 0 && !sock->recovery_active)
   {
     sock->rx_dupack_cnt++;
     should_fast_remit = sock->rx_dupack_cnt >= FAST_REMIT_THRESH;
@@ -1181,10 +1183,18 @@ static inline int deq_handle_retransmit(struct cham_ebpf_ctx *ctx)
   
   /* Rewind socket and schedule retransmission */
   util_spin_lock(&sock->lock);
-  remit(&ctx->sched, sock);
+  if (!deq_is_retransmit_stale(sock, cmd))
+    remit(&ctx->sched, sock);
   util_spin_unlock(&sock->lock);
   
   return 0;
+}
+
+static inline __u8 deq_is_retransmit_stale(struct tcp_sock *sock,
+    struct tcp_queue_ctl_remit *cmd)
+{
+  return sock->tx_pending == 0 || sock->tx_seq != cmd->tx_seq ||
+      sock->tx_pending != cmd->tx_pending;
 }
 
 static inline __u32 deq_get_tx_ip(struct tcp_sock *sock,

@@ -53,6 +53,8 @@ int tcp_tx_retransmit(struct tcp_slow_context *ctx, struct tcp_sock *sock)
     return -1;
 
   sig_qe->data.ctl_remit.sock_id = sock->id;
+  sig_qe->data.ctl_remit.tx_seq = sock->tx_seq;
+  sig_qe->data.ctl_remit.tx_pending = sock->tx_pending;
   ret = queue_enqueue(ctx->slow_fast_sig_q, TCP_QUEUE_TX_RETRANSMIT);
   if (ret != 0)
     return -1;

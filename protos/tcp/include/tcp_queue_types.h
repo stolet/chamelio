@@ -325,6 +325,10 @@ struct tcp_queue_ctl_pkt {
 struct tcp_queue_ctl_remit {
   /* Socket ID used by slow-path */
   __u32 sock_id;
+  /* TX sequence observed by slow-path */
+  __u32 tx_seq;
+  /* Pending TX bytes observed by slow-path */
+  __u32 tx_pending;
 } __attribute__((packed));
 
 /* Message that bumps the app TX head after bytes are ACKed */

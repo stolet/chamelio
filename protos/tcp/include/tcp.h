@@ -134,6 +134,7 @@ struct tcp_sock {
   __u64 tx_ready_tsc;
   /* 1 while recovery limits new sends to the original flight */
   __u8 recovery_active;
+  __u8 recovery_pad[3];
   /* Sequence number that ended the original outstanding region */
   __u32 recovery_end_seq;
 } __attribute__((packed));

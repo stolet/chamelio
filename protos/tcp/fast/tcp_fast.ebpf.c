@@ -93,6 +93,8 @@ static __always_inline int deq_handle_bump_tx(struct cham_ebpf_ctx *ctx);
 static __always_inline int deq_handle_bump_rx(struct cham_ebpf_ctx *ctx);
 static __always_inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx);
 static __always_inline int deq_handle_retransmit(struct cham_ebpf_ctx *ctx);
+static __always_inline __u8 deq_is_retransmit_stale(struct tcp_sock *sock,
+    struct tcp_queue_ctl_remit *cmd);
 static __always_inline __u32 deq_get_tx_ip(struct tcp_sock *sock,
     struct tcp_queue_bump_cham_tx *bump);
 static __always_inline __u32 deq_get_tx_port(struct tcp_sock *sock,
@@ -1173,10 +1175,18 @@ static __always_inline int deq_handle_retransmit(struct cham_ebpf_ctx *ctx)
   
   /* Rewind socket and schedule retransmission */
   ebpf_spin_lock(&sock->lock);
-  remit(&ctx->sched, sock);
+  if (!deq_is_retransmit_stale(sock, cmd))
+    remit(&ctx->sched, sock);
   ebpf_spin_unlock(&sock->lock);
   
   return 0;
+}
+
+static __always_inline __u8 deq_is_retransmit_stale(struct tcp_sock *sock,
+    struct tcp_queue_ctl_remit *cmd)
+{
+  return sock->tx_pending == 0 || sock->tx_seq != cmd->tx_seq ||
+      sock->tx_pending != cmd->tx_pending;
 }
 
 static __always_inline __u32 deq_get_tx_ip(struct tcp_sock *sock,

@@ -93,33 +93,24 @@ int tcp_cc_poll(struct tcp_slow_context *ctx)
 
     sid = ctx->cc_next_sock++;
     sock = &socks[sid];
-    util_spin_lock(&sock->lock);
     if (sock->state != TCP_SOCK_STATE_ESTABLISHED)
-    {
-      util_spin_unlock(&sock->lock);
       continue;
-    }
 
     meta = tcp_sock_meta(ctx, sock);
     if (meta->cc_tsc == 0)
     {
       meta->cc_tsc = now_tsc;
-      util_spin_unlock(&sock->lock);
       continue;
     }
 
     elapsed_us = clock_us_since_tsc(meta->cc_tsc);
     if (elapsed_us < (__u64) meta->cc_rtt * ctx->config.cc_control_interval)
-    {
-      util_spin_unlock(&sock->lock);
       continue;
-    }
 
     cc_stats_read(ctx, sock, meta, &stats);
     cc_stats_commit(ctx, sock, meta, &stats);
     sock_on_cc_tick(ctx, sock, meta, &stats, elapsed_us);
     sock_on_tx_stall(ctx, sock, meta, &stats, now_tsc);
-    util_spin_unlock(&sock->lock);
     
     meta->cc_tsc = now_tsc;
     nr++;
