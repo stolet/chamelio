@@ -19,6 +19,7 @@
 
 /* Length of the TCP header, excluding options. */
 #define TCP_HLEN 20
+/* Length of TCP options */
 #define TCP_TS_OPT_LEN 12
 
 #define TCPH_RAW(phdr) ((__u16) __builtin_bswap16((phdr)->_hdrlen_rsvd_flags))
@@ -51,48 +52,57 @@
 
 #define TCP_BUILD_SACK_OPTION __builtin_bswap32(0x04020101U)
 
+/* TCP header specified by RFC 9293 */
 struct tcp_hdr {
+  /* Src prot */
   beui16_t src;
+  /* Destination port */
   beui16_t dest;
+  /* Sequence number */
   beui32_t seqno;
+  /* Acknowledgment number */
   beui32_t ackno;
+  /* Header length and reserved flags */
   __u16 _hdrlen_rsvd_flags;
+  /* Flow control window */
   beui16_t wnd;
+  /* Checksum */
   __u16 chksum;
+  /* Urgent pointer */
   beui16_t urgp;
 } __attribute__((packed));
 
-#define TCP_OPT_END_OF_OPTIONS 0
-#define TCP_OPT_NO_OP 1
-#define TCP_OPT_MSS 2
 #define TCP_OPT_TIMESTAMP 8
-struct tcp_mss_opt {
-  __u8 kind;
-  __u8 length;
-  beui16_t mss;
-} __attribute__((packed));
 
+/* TCP timestamp option */
 struct tcp_timestamp_opt {
+  /* Option kind */
   __u8 kind;
+  /* Option length */
   __u8 length;
+  /* Current val of the clock of TCP sending the option */
   beui32_t ts_val;
+  /* Echoes recently received ts_val sent by the remote TCP */
   beui32_t ts_ecr;
+  /* Padding because TCP options must be 12 bytes in length */
+  __u16 pad;
 } __attribute__((packed));
 
-struct tcp_timestamp_opt_pad {
-  __u8 nop0;
-  __u8 nop1;
-  struct tcp_timestamp_opt ts;
-} __attribute__((packed));
-
+/* Regular TCP packet */
 struct tcp_pkt {
+  /* Ethernet header */
   struct eth_hdr eth;
+  /* IP header */
   struct ip_hdr ip;
+  /* TCP header */
   struct tcp_hdr tcp;
 } __attribute__ ((packed));
 
+/* Inner layer of encapsulated TCP packet */
 struct tcp_pkt_inner {
+  /* IP header */
   struct ip_hdr ip;
+  /* TCP header */
   struct tcp_hdr tcp;
 } __attribute__ ((packed));
 

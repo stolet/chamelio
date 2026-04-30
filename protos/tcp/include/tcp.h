@@ -5,7 +5,6 @@
 
 #include "utils.h"
 
-/* TODO: Pass MAX_APPS and MAX_CTXS as a parameter to TCP slow-path */
 /* Max number of applications that can register with slow-path */
 #define MAX_APPS 8
 /* Max number of contexts per application */
@@ -134,10 +133,9 @@ struct tcp_sock {
   __u64 tx_ready_tsc;
   /* 1 while recovery limits new sends to the original flight */
   __u8 recovery_active;
-  __u8 recovery_pad[3];
   /* Sequence number that ended the original outstanding region */
   __u32 recovery_end_seq;
-} __attribute__((packed));
+} __attribute__((packed, aligned(64)));
 
 /* Maps a listener port to one or more listening sockets */
 struct tcp_port {

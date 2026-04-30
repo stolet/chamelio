@@ -7,7 +7,6 @@
 
 #define UDP_APP_SOCKET_PATH "/run/chamelio/udp_app_socket"
 
-/* TODO: Pass MAX_APPS and MAX_CTXS as a parameter to UDP slow-path */
 /* Max number of applications that can register with slow-path */
 #define MAX_APPS 8
 /* Max number of contexts per application */
@@ -71,10 +70,7 @@ struct udp_sock {
   __u32 tx_head;
   /* Offset to the start of the TX buffer in shared memory */
   __u64 tx_off;
-  /* Pad to cache line to avoid false sharing between sockets */
-  __u8 __pad[1];
-} __attribute__((packed));
-STATIC_ASSERT(sizeof(struct udp_sock) == 64, udp_sock_cacheline_size);
+} __attribute__((packed, aligned(64)));
 
 /* Maps a port to a socket id */
 struct udp_port {

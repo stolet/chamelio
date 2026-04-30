@@ -125,10 +125,9 @@ static void ctl_pkt_fill(struct tcp_queue_ctl_pkt *pkt,
   if (sock == NULL)
     return;
 
-  pkt->ts_opt.nop0 = TCP_OPT_NO_OP;
-  pkt->ts_opt.nop1 = TCP_OPT_NO_OP;
-  pkt->ts_opt.ts.kind = TCP_OPT_TIMESTAMP;
-  pkt->ts_opt.ts.length = sizeof(pkt->ts_opt.ts);
-  pkt->ts_opt.ts.ts_val = t_beui32(0);
-  pkt->ts_opt.ts.ts_ecr = t_beui32(sock->ts_recent);
+  pkt->ts_opt.kind = TCP_OPT_TIMESTAMP;
+  pkt->ts_opt.length = sizeof(struct tcp_timestamp_opt);
+  pkt->ts_opt.ts_val = t_beui32(0);
+  pkt->ts_opt.ts_ecr = t_beui32(sock->ts_recent);
+  pkt->ts_opt.pad = 0;
 }

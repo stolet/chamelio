@@ -635,26 +635,23 @@ static __always_inline __u8 rx_read_ts(struct tcp_pkt_inner *tcp_pkt,
     void *pkt_end, __u32 *ts_val, __u32 *ts_ecr)
 {
   __u32 hdrlen;
-  struct tcp_timestamp_opt_pad *ts_opt;
+  struct tcp_timestamp_opt *ts_opt;
   void *opt_end;
 
   hdrlen = TCPH_HDRLEN(&tcp_pkt->tcp) * 4;
-  if (hdrlen < TCP_HLEN + TCP_TS_OPT_LEN)
+  if (hdrlen <= TCP_HLEN)
     return 0;
 
-  ts_opt = (struct tcp_timestamp_opt_pad *) ((__u8 *) &tcp_pkt->tcp + TCP_HLEN);
+  ts_opt = (struct tcp_timestamp_opt *) ((__u8 *) &tcp_pkt->tcp + TCP_HLEN);
   opt_end = (__u8 *) ts_opt + sizeof(*ts_opt);
   if (opt_end > pkt_end)
     return 0;
-  if (ts_opt->nop0 != TCP_OPT_NO_OP || ts_opt->nop1 != TCP_OPT_NO_OP ||
-      ts_opt->ts.kind != TCP_OPT_TIMESTAMP ||
-      ts_opt->ts.length != sizeof(ts_opt->ts))
-  {
-    return 0;
-  }
 
-  *ts_val = f_beui32(ts_opt->ts.ts_val);
-  *ts_ecr = f_beui32(ts_opt->ts.ts_ecr);
+  if (ts_opt->kind != TCP_OPT_TIMESTAMP)
+    return 0;
+
+  *ts_val = f_beui32(ts_opt->ts_val);
+  *ts_ecr = f_beui32(ts_opt->ts_ecr);
   return 1;
 }
 
@@ -883,15 +880,24 @@ static __always_inline __u32 tx_get_max_paylen(struct cham_ebpf_ctx *ctx,
 static __always_inline void tx_write_tsopt(struct tcp_pkt_inner *tcp_pkt,
     struct tcp_sock *sock, __u32 now_us)
 {
-  struct tcp_timestamp_opt_pad *ts_opt;
+  struct tcp_timestamp_opt *ts_opt;
 
-  ts_opt = (struct tcp_timestamp_opt_pad *) ((__u8 *) &tcp_pkt->tcp + TCP_HLEN);
-  ts_opt->nop0 = TCP_OPT_NO_OP;
-  ts_opt->nop1 = TCP_OPT_NO_OP;
-  ts_opt->ts.kind = TCP_OPT_TIMESTAMP;
-  ts_opt->ts.length = sizeof(ts_opt->ts);
-  ts_opt->ts.ts_val = t_beui32(now_us);
-  ts_opt->ts.ts_ecr = t_beui32(sock->ts_recent);
+  ts_opt = (struct tcp_timestamp_opt *) ((__u8 *) &tcp_pkt->tcp + TCP_HLEN);
+  ts_opt->kind = TCP_OPT_TIMESTAMP;
+  ts_opt->length = sizeof(struct tcp_timestamp_opt);
+  ts_opt->ts_val = t_beui32(now_us);
+  ts_opt->ts_ecr = t_beui32(sock->ts_recent);
+  ts_opt->pad = 0;
+}
+
+static __always_inline void tx_write_tsopt_val(struct tcp_pkt_inner *tcp_pkt)
+{
+  __u32 now_us;
+  struct tcp_timestamp_opt *ts_opt;
+
+  ts_opt = (struct tcp_timestamp_opt *) ((__u8 *) &tcp_pkt->tcp + TCP_HLEN);
+  now_us = (__u32) ebpf_now_us();
+  ts_opt->ts_val = t_beui32(now_us);
 }
 
 static __always_inline __u32 tx_get_tx_bump(struct tcp_sock *sock,
@@ -1101,13 +1107,11 @@ static __always_inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx)
   int ret;
   __u8 qe_valid, paylen_valid;
   __u32 hdrlen;
-  __u32 now_us;
   struct cham_map *map;
   struct tcp_ctl_cfg *cfg;
   struct dqueue *ctl_pkt_q;
   struct tcp_queue_pkt_entry *ctl_pkt_qe;
   struct tcp_pkt_inner *ctl_pkt;
-  struct tcp_timestamp_opt_pad *ts_opt;
 
   qe_valid = is_qe_ctl_valid(ctx->qe, ctx->shm_end);
   if (!qe_valid)
@@ -1138,12 +1142,7 @@ static __always_inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx)
   ctl_pkt->tcp.chksum = 0;
   ebpf_memcpy(ctx->pkt, ctl_pkt, hdrlen);
   if (TCPH_HDRLEN(&ctl_pkt->tcp) * 4 == TCP_HLEN + TCP_TS_OPT_LEN)
-  {
-    now_us = (__u32) ebpf_now_us();
-    ts_opt = (struct tcp_timestamp_opt_pad *) ((__u8 *) 
-        &((struct tcp_pkt_inner *) ctx->pkt)->tcp + TCP_HLEN);
-    ts_opt->ts.ts_val = t_beui32(now_us);
-  }
+    tx_write_tsopt_val(ctx->pkt);
   
   ret = queue_dequeue(ctl_pkt_q);
   if (ret != 0)

@@ -398,7 +398,6 @@ extern "C"
         options.allow_division_by_zero = true;
         options.strict = false;
         options.big_endian = std::endian::native == std::endian::big;
-        /* TODO: Use check for temination == true */
         options.cfg_opts.check_for_termination = true;
         options.verbosity_opts.simplify = true;
         options.verbosity_opts.print_line_info = true;

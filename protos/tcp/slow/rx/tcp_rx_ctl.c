@@ -69,6 +69,7 @@ int tcp_fast_poll(struct tcp_slow_context *ctx)
 static int ctl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt)
 {
   __u32 listener_id;
+  /* TODO: Extra structure just to parse rx seems unecessary */
   struct tcp_rx_ctl rx;
   struct tcp_sock *listen_sock;
   struct tcp_sock *sock;
@@ -102,7 +103,7 @@ static int ctl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt)
 
 static void ctl_rx_parse(const struct tcp_pkt_inner *pkt, struct tcp_rx_ctl *rx)
 {
-  const struct tcp_timestamp_opt_pad *ts_opt;
+  const struct tcp_timestamp_opt *ts_opt;
   const struct ip_hdr *ip;
   const struct tcp_hdr *tcp;
   __u32 hdrlen;
@@ -122,17 +123,13 @@ static void ctl_rx_parse(const struct tcp_pkt_inner *pkt, struct tcp_rx_ctl *rx)
   if (hdrlen < TCP_HLEN + TCP_TS_OPT_LEN)
     return;
 
-  ts_opt = (const struct tcp_timestamp_opt_pad *) ((__u8 *) tcp + TCP_HLEN);
-  if (ts_opt->nop0 != TCP_OPT_NO_OP || ts_opt->nop1 != TCP_OPT_NO_OP ||
-      ts_opt->ts.kind != TCP_OPT_TIMESTAMP ||
-      ts_opt->ts.length != sizeof(ts_opt->ts))
-  {
+  ts_opt = (const struct tcp_timestamp_opt *) ((__u8 *) tcp + TCP_HLEN);
+  if (ts_opt->kind != TCP_OPT_TIMESTAMP)
     return;
-  }
-
+  
   rx->ts_valid = 1;
-  rx->ts_val = f_beui32(ts_opt->ts.ts_val);
-  rx->ts_ecr = f_beui32(ts_opt->ts.ts_ecr);
+  rx->ts_val = f_beui32(ts_opt->ts_val);
+  rx->ts_ecr = f_beui32(ts_opt->ts_ecr);
 }
 
 static void sock_ts_rx(struct tcp_sock *sock, const struct tcp_rx_ctl *rx)
