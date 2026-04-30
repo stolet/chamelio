@@ -11,6 +11,7 @@
 #include "udp_queue_types.h"
 #include "queue_fns.h"
 #include "udp.h"
+#include "udp_state.h"
 #include "log.h"
 #include <stdio.h>
 #include <unistd.h>
@@ -23,6 +24,7 @@
 int init_udp_slow_context(struct udp_slow_context *ctx);
 
 int poll_apps(struct udp_slow_context *ctx);
+static void udp_state_publish(struct udp_slow_context *ctx);
 
 int handle_new_sock(struct udp_slow_context *ctx, 
   struct udp_app_context_slow *actx, struct udp_queue_entry *qe);
@@ -454,6 +456,8 @@ int main(int argc, char **argv)
     LOG_ERROR("failed to initialise udp slow context");
     abort();
   }
+
+  udp_state_publish(&ctx);
   
   ret = appif_init(&ctx);
   if (ret != 0)
@@ -467,6 +471,35 @@ int main(int argc, char **argv)
     appif_poll(&ctx);
     poll_apps(&ctx);
   }
+}
+
+static void udp_state_publish(struct udp_slow_context *ctx)
+{
+  int fd;
+  struct udp_state state = {
+    .magic = UDP_STATE_MAGIC,
+    .version = UDP_STATE_VERSION,
+    .pid = getpid(),
+    .ctx_addr = (__u64) ctx,
+    .ctx_size = sizeof(*ctx),
+    .sock_size = sizeof(struct udp_sock),
+    .port_size = sizeof(struct udp_port),
+    .cfg_size = sizeof(struct udp_cfg),
+    .app_size = sizeof(struct udp_app_slow),
+    .app_ctx_size = sizeof(struct udp_app_context_slow),
+  };
+
+  mkdir("/run/chamelio", 0777);
+  fd = open(UDP_STATE_PATH, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+  if (fd < 0)
+  {
+    LOG_WARN("failed to publish UDP state");
+    return;
+  }
+
+  if (write(fd, &state, sizeof(state)) != sizeof(state))
+    LOG_WARN("failed to write UDP state");
+  close(fd);
 }
 
 static __u16 find_free_port(struct udp_slow_context *ctx)
