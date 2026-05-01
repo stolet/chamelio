@@ -246,7 +246,7 @@ static inline void log_fast_batch_stats(struct control_context *ctx)
     budg_cur = ctx->budg_stats;
     budg_nr = budg_cur.nr - ctx->budg_last.nr;
     avg_gap = budg_nr == 0 ? 0 : (budg_cur.cyc - ctx->budg_last.cyc) / budg_nr;
-    LOG_INFO("budg refresh_avg=%llu cyc [%llu us] nr=%llu",
+    LOG_INFO_PLAIN("budg refresh_avg=%llu cyc [%llu us] nr=%llu",
         (unsigned long long) avg_gap,
         (unsigned long long) clock_tsc_to_us(avg_gap),
         (unsigned long long) budg_nr);
@@ -267,7 +267,7 @@ static inline void log_fast_batch_stats(struct control_context *ctx)
     queue_calls = cur.queue_calls - prev->queue_calls;
     sched_calls = cur.sched_calls - prev->sched_calls;
 
-    LOG_INFO("fast_batch core=%u fast_rx_poll_avg=%.2f fast_queues_poll_avg=%.2f "
+    LOG_INFO_PLAIN("fast_batch core=%u fast_rx_poll_avg=%.2f fast_queues_poll_avg=%.2f "
         "fast_sched_poll_avg=%.2f",
         i,
         rx_calls == 0 ? 0.0 : (double) (cur.rx_items - prev->rx_items) / rx_calls,
@@ -280,7 +280,7 @@ static inline void log_fast_batch_stats(struct control_context *ctx)
     if (ctx->config->perf_iso)
     {
       avg_core = budg_nr == 0 ? 0 : (cur.budg_cyc - prev->budg_cyc) / budg_nr;
-      LOG_INFO("budg core=%u avg=%llu cyc [%llu us]",
+      LOG_INFO_PLAIN("budg core=%u avg=%llu cyc [%llu us]",
           i,
           (unsigned long long) avg_core,
           (unsigned long long) clock_tsc_to_us(avg_core));
@@ -289,7 +289,7 @@ static inline void log_fast_batch_stats(struct control_context *ctx)
       {
         avg_guest = budg_nr == 0 ? 0 :
             (cur.guest_budg_cyc[gid] - prev->guest_budg_cyc[gid]) / budg_nr;
-        LOG_INFO("budg core=%u gid=%u avg=%llu cyc [%llu us]",
+        LOG_INFO_PLAIN("budg core=%u gid=%u avg=%llu cyc [%llu us]",
             i, gid,
             (unsigned long long) avg_guest,
             (unsigned long long) clock_tsc_to_us(avg_guest));

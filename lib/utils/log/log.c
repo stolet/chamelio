@@ -28,6 +28,18 @@ void log_info(const char *file, int line, const char *func, const char *fmt, ...
   fprintf(stderr, "INFO: [%s:%d] %s(): %s\n", file, line, func, msg);
 }
 
+void log_info_plain(const char *fmt, ...)
+{
+  va_list args;
+  char msg[LOG_MAX_LEN];
+
+  va_start(args, fmt);
+  vsnprintf(msg, LOG_MAX_LEN, fmt, args);
+  va_end(args);
+
+  fprintf(stderr, "INFO: %s\n", msg);
+}
+
 void log_warn(const char *file, int line, const char *func, const char *fmt, ...)
 {
   va_list args;

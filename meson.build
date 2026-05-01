@@ -13,6 +13,15 @@ project('chamelio', ['c', 'cpp'],
 # TODO: Maybe we need to link dpdk statically for better performance
 cc = meson.get_compiler('c')
 cpp = meson.get_compiler('cpp')
+
+src_prefix_map = '-fmacro-prefix-map=../='
+foreach lang : ['c', 'cpp']
+  compiler = meson.get_compiler(lang)
+  if compiler.has_argument(src_prefix_map)
+    add_project_arguments(src_prefix_map, language : lang)
+  endif
+endforeach
+
 dpdk_dep = dependency('libdpdk', required: true)
 threads_dep = dependency('threads', required: true)
 numa_dep = dependency('numa', required: true)

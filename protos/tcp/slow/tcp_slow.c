@@ -54,7 +54,7 @@ int main(int argc, char **argv)
     }
     else if (clock_us_since_tsc(ctx.stats_log_tsc) >= 1000000)
     {
-      LOG_INFO("slow_stats drops=%llu retransmissions=%llu acks_received=%llu",
+      LOG_INFO_PLAIN("slow_stats drops=%llu retransmissions=%llu acks_received=%llu",
           (unsigned long long) ctx.stats_drops,
           (unsigned long long) ctx.stats_retx,
           (unsigned long long) ctx.stats_acks_rx);
