@@ -1142,7 +1142,11 @@ static __always_inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx)
   ctl_pkt->tcp.chksum = 0;
   ebpf_memcpy(ctx->pkt, ctl_pkt, hdrlen);
   if (TCPH_HDRLEN(&ctl_pkt->tcp) * 4 == TCP_HLEN + TCP_TS_OPT_LEN)
+  {
+    if (!is_paylen_valid(ctx->pkt, ctx->pkt_end, tx_get_hdrlen(), 0))
+      return -1;
     tx_write_tsopt_val(ctx->pkt);
+  }
   
   ret = queue_dequeue(ctl_pkt_q);
   if (ret != 0)
