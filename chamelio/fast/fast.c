@@ -330,7 +330,9 @@ static inline int agg_fns_ready(struct fast_context *ctx)
 
 static void stats_init(struct fast_context *ctx)
 {
+#if CHAM_CTL_BUDGET_STATS
   int i;
+#endif
   struct fast_stats *stats;
   
   stats = &ctx->stats;
@@ -340,10 +342,14 @@ static void stats_init(struct fast_context *ctx)
   stats->queue_items = 0;
   stats->sched_calls = 0;
   stats->sched_items = 0;
+#if CHAM_CTL_CYCLES_STATS
   stats->rx_cyc = 0;
   stats->queue_cyc = 0;
   stats->sched_cyc = 0;
+#endif
+#if CHAM_CTL_BUDGET_STATS
   stats->budg_cyc = 0;
   for (i = 0; i < CHAMELIO_MAX_GUESTS; i++)
     stats->guest_budg_cyc[i] = 0;
+#endif
 }
