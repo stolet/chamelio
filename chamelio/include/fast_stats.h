@@ -4,7 +4,7 @@
 #include "config.h"
 #include <linux/types.h>
 
-#define CHAM_CTL_BUDGET_STATS 1
+#define CHAM_CTL_BUDGET_STATS 0
 #define CHAM_CTL_CYCLES_STATS 1
 
 struct fast_context;
