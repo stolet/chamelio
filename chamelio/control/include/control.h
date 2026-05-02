@@ -129,7 +129,7 @@ struct control_context {
   /* Fast-path contexts owned by the top-level process */
   struct fast_context **f_ctxs;
   /* Last sampled fast-path batch counters. One per core */
-  struct fast_batch_counters *fast_batch_last;
+  struct fast_stats *fast_batch_last;
   /* Last time fast-path batch stats were logged */
   __u64 fast_stats_tsc;
 #if CHAM_CTL_BUDGET_STATS

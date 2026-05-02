@@ -162,8 +162,7 @@ static inline int sched_poll_guest(struct fast_context *ctx,
   if (charge_budget && *ntx > ntx_start)
   {
     tsc_spent = clock_rdtsc() - tsc_start;
-    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
-    fast_budg_add(ctx, g->id, tsc_spent);
+    fast_budg_charge(ctx, g, tsc_spent);
   }
 
   if (sched_ret < 0)

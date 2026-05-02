@@ -4,6 +4,7 @@
 
 #include <rte_malloc.h>
 
+#include "fast_stats.h"
 #include "nic.h"
 #include "nic_fast.h"
 #include "fast.h"
@@ -15,12 +16,13 @@
 #include "fast_rx.h"
 #include "fast_sched.h"
 #include "fast_queues.h"
+#include "clock.h"
 
 
-struct guest_fast * init_guest(__u8 id, __u64 shm_len);
-int fast_loop_default(struct fast_context *ctx);
-int fast_loop_comb(struct fast_context *ctx);
+static int loop_fast_default(struct fast_context *ctx);
+static int loop_fast_comb(struct fast_context *ctx);
 static inline int agg_fns_ready(struct fast_context *ctx);
+static void stats_init(struct fast_context *ctx);
 
 
 int fast_context_init(struct fast_context *f_ctx, 
@@ -45,6 +47,7 @@ int fast_context_init(struct fast_context *f_ctx,
   f_ctx->shm_fd_internal = shm_fd_internal;
   f_ctx->shm_base_internal= shm_base_internal;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
+  stats_init(f_ctx);
 
   /* Initialize ARP table with default values */
   arp_table_init(&f_ctx->arp_table);
@@ -104,13 +107,13 @@ int fast_context_init(struct fast_context *f_ctx,
   return 0;
 }
 
-int fast_batch_stats_snapshot(const struct fast_context *ctx,
-    struct fast_batch_counters *stats)
+int fast_stats_snapshot(struct fast_context *ctx,
+    struct fast_stats *stats)
 {
   if (ctx == NULL || stats == NULL)
     return -1;
 
-  *stats = ctx->batch_stats;
+  *stats = ctx->stats;
   return 0;
 }
 
@@ -119,49 +122,101 @@ int fast_loop(struct fast_context *ctx)
   int ret;
   
   if (ctx->fp_jit_combined)
-    ret = fast_loop_comb(ctx);
+    ret = loop_fast_comb(ctx);
   else
-    ret = fast_loop_default(ctx);
+    ret = loop_fast_default(ctx);
     
   return ret;
 }
 
-int fast_loop_default(struct fast_context *ctx)
+int fast_txflush(struct fast_context *ctx)
 {
+  int ret, unsent;
+
+  if (ctx->tx_n == 0)
+    return 0;
+
+  /* Push packets to the NIC */
+  ret = nic_fast_tx(&ctx->nic_ctx, ctx->tx_n, ctx->tx_mbs);
+
+  if (ret == ctx->tx_n)
+  {
+    /* Everything sent */
+    ctx->tx_n = 0;
+  }
+  else if (ret > 0)
+  {
+    /* Move unsent packets to front */
+    unsent = ctx->tx_n - ret;
+    memmove(ctx->tx_mbs, ctx->tx_mbs + ret, unsent * sizeof(ctx->tx_mbs[0]));
+    ctx->tx_n = unsent;
+  }
+
+  return ret;
+}
+
+static int loop_fast_default(struct fast_context *ctx)
+{
+  __u64 start, end;
   int ret;
   
   while (1)
   {
+#if CHAM_CTL_CYCLES_STATS
+    start = clock_rdtsc();
+#endif
     ret = fast_rx_poll(ctx);
+#if CHAM_CTL_CYCLES_STATS
+    end = clock_rdtsc();
+#endif
     if (ret < 0)
     {
       LOG_ERROR("poll_rx failed");
       return -1;
     }
-    ctx->batch_stats.rx_calls++;
-    ctx->batch_stats.rx_items += ret;
+    ctx->stats.rx_calls++;
+    ctx->stats.rx_items += ret;
+#if CHAM_CTL_CYCLES_STATS
+    if (ret > 0)
+      ctx->stats.rx_cyc += end - start;
+#endif
 
+#if CHAM_CTL_CYCLES_STATS
+    start = clock_rdtsc();
+#endif
     ret = fast_queues_poll(ctx);
+#if CHAM_CTL_CYCLES_STATS
+    end = clock_rdtsc();
+#endif
     if (ret < 0)
     {
       LOG_ERROR("poll_queues failed");
     }
-    else
-    {
-      ctx->batch_stats.queue_calls++;
-      ctx->batch_stats.queue_items += ret;
-    }
+    ctx->stats.queue_calls++;
+    ctx->stats.queue_items += ret;
+#if CHAM_CTL_CYCLES_STATS
+    if (ret > 0)
+      ctx->stats.queue_cyc += end - start;
+#endif
 
+#if CHAM_CTL_CYCLES_STATS
+    start = clock_rdtsc();
+#endif
     ret = fast_sched_poll(ctx);
+#if CHAM_CTL_CYCLES_STATS
+    end = clock_rdtsc();
+#endif
     if (ret < 0)
     {
       LOG_ERROR("poll_sched failed");
+      return -1;
     }
-    else
-    {
-      ctx->batch_stats.sched_calls++;
-      ctx->batch_stats.sched_items += ret;
-    }
+    ctx->stats.sched_calls++;
+    ctx->stats.sched_items += ret;
+#if CHAM_CTL_CYCLES_STATS
+    if (ret > 0)
+      ctx->stats.sched_cyc += end - start;
+#endif
 
     ret = controlif_poll(ctx);
     if (ret < 0)
@@ -174,8 +229,11 @@ int fast_loop_default(struct fast_context *ctx)
   }
 }
 
-int fast_loop_comb(struct fast_context *ctx)
+static int loop_fast_comb(struct fast_context *ctx)
 {
+#if CHAM_CTL_CYCLES_STATS
+  __u64 start, end;
+#endif
   int ret;
   
   while (1)
@@ -191,35 +249,65 @@ int fast_loop_comb(struct fast_context *ctx)
       continue;
     }
 
+#if CHAM_CTL_CYCLES_STATS
+    start = clock_rdtsc();
+#endif
     ret = (int) ctx->agg_rx_fn(ctx, sizeof(*ctx));
+#if CHAM_CTL_CYCLES_STATS
+    end = clock_rdtsc();
+#endif
     if (ret < 0)
     {
       LOG_ERROR("poll_rx_comb failed");
       return -1;
     }
-    ctx->batch_stats.rx_calls++;
-    ctx->batch_stats.rx_items += ret;
+    ctx->stats.rx_calls++;
+    ctx->stats.rx_items += ret;
+#if CHAM_CTL_CYCLES_STATS
+    if (ret > 0)
+      ctx->stats.rx_cyc += end - start;
+#endif
 
+#if CHAM_CTL_CYCLES_STATS
+    start = clock_rdtsc();
+#endif
     ret = (int) ctx->agg_deq_fn(ctx, sizeof(*ctx));
+#if CHAM_CTL_CYCLES_STATS
+    end = clock_rdtsc();
+#endif
     if (ret < 0)
     {
       LOG_ERROR("poll_queues_comb failed");
     }
     else
     {
-      ctx->batch_stats.queue_calls++;
-      ctx->batch_stats.queue_items += ret;
+      ctx->stats.queue_calls++;
+      ctx->stats.queue_items += ret;
+#if CHAM_CTL_CYCLES_STATS
+      if (ret > 0)
+        ctx->stats.queue_cyc += end - start;
+#endif
     }
 
+#if CHAM_CTL_CYCLES_STATS
+    start = clock_rdtsc();
+#endif
     ret = (int) ctx->agg_sched_fn(ctx, sizeof(*ctx));
+#if CHAM_CTL_CYCLES_STATS
+    end = clock_rdtsc();
+#endif
     if (ret < 0)
     {
       LOG_ERROR("poll_sched_comb failed");
     }
     else
     {
-      ctx->batch_stats.sched_calls++;
-      ctx->batch_stats.sched_items += ret;
+      ctx->stats.sched_calls++;
+      ctx->stats.sched_items += ret;
+#if CHAM_CTL_CYCLES_STATS
+      if (ret > 0)
+        ctx->stats.sched_cyc += end - start;
+#endif
     }
 
     ret = controlif_poll(ctx);
@@ -240,28 +328,22 @@ static inline int agg_fns_ready(struct fast_context *ctx)
       ctx->agg_sched_fn != NULL;
 }
 
-int fast_txflush(struct fast_context *ctx)
+static void stats_init(struct fast_context *ctx)
 {
-  int ret, unsent;
-
-  if (ctx->tx_n == 0)
-    return 0;
+  int i;
+  struct fast_stats *stats;
   
-  /* Push packets to the NIC */
-  ret = nic_fast_tx(&ctx->nic_ctx, ctx->tx_n, ctx->tx_mbs);
-
-  if (ret == ctx->tx_n)
-  {
-    /* Everything sent */
-    ctx->tx_n = 0;
-  }
-  else if (ret > 0)
-  {
-    /* Move unsent packets to front */
-    unsent = ctx->tx_n - ret;
-    memmove(ctx->tx_mbs, ctx->tx_mbs + ret, unsent * sizeof(ctx->tx_mbs[0]));
-    ctx->tx_n = unsent;
-  }
-
-  return ret;
+  stats = &ctx->stats;
+  stats->rx_calls = 0;
+  stats->rx_items = 0;
+  stats->queue_calls = 0;
+  stats->queue_items = 0;
+  stats->sched_calls = 0;
+  stats->sched_items = 0;
+  stats->rx_cyc = 0;
+  stats->queue_cyc = 0;
+  stats->sched_cyc = 0;
+  stats->budg_cyc = 0;
+  for (i = 0; i < CHAMELIO_MAX_GUESTS; i++)
+    stats->guest_budg_cyc[i] = 0;
 }

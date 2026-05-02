@@ -114,8 +114,8 @@ struct fast_context {
   struct dqueue *ctl_fast_q;
   /* Transmit queue for packets from control-path */
   struct dqueue *ctl_txq;
-  /* Cumulative batch counters sampled by the control-path */
-  struct fast_batch_counters batch_stats;
+  /* Stats sampled by the control-path */
+  struct fast_stats stats;
 
   /* File descriptor for internal shared memory */
   int shm_fd_internal;
@@ -135,6 +135,21 @@ struct fast_context {
   ebpf_jitted_fn agg_deq_fn;
   ebpf_jitted_fn agg_sched_fn;
 };
+
+static inline void fast_budg_charge(struct fast_context *ctx,
+    struct guest_fast *g, __u64 cyc)
+{
+#if CHAM_CTL_BUDGET_STATS
+  __u8 slot;
+#endif
+
+  __atomic_fetch_sub(g->budget, cyc, __ATOMIC_RELAXED);
+#if CHAM_CTL_BUDGET_STATS
+  slot = (__u8) (g - ctx->guests);
+  ctx->stats.budg_cyc += cyc;
+  ctx->stats.guest_budg_cyc[slot] += cyc;
+#endif
+}
 
 /* Initialises the fast-path context when a core is launched */
 int fast_context_init(struct fast_context *f_ctx, 

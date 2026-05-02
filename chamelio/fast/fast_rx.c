@@ -123,8 +123,7 @@ static inline int rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
   if (charge_budget && did_work)
   {
     tsc_spent = clock_rdtsc() - tsc_start;
-    __atomic_fetch_sub(g->budget, tsc_spent, __ATOMIC_RELAXED);
-    fast_budg_add(ctx, g->id, tsc_spent);
+    fast_budg_charge(ctx, g, tsc_spent);
   }
 
   return mb_tx;
