@@ -223,11 +223,8 @@ struct rpc_context_lib *rpc_ctx_new()
   ctx->fast_app_qs = dq_list;
 
   /* Create each queue between app and fast-path core */
-  LOG_DEBUG("rpc_ctx_new: n_fp_cores=%d\n", res->n_fp_cores);
   for (i = 0; i < res->n_fp_cores; i++)
   {
-    LOG_DEBUG("  fa_offs[%d]=%lu\n", i, res->fa_offs[i]);
-
     eq = equeue_new(res->af_nelems, res->af_elsize,
                     rpc->shm_base + res->af_offs[i], res->af_offs[i]);
     if (eq == NULL)
