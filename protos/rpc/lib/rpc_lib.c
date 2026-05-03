@@ -325,6 +325,12 @@ int rpc_poll_calls(struct rpc_context_lib *ctx)
 
     while (n < POLL_BATCH && (qe = queue_head(q)) != NULL)
     {
+      /* Worker RX bumps stay in the queue — rpc_handle_call peeks at them
+         and rpc_return dequeues them once the request is fully handled. */
+      if (qe->type == RPC_QUEUE_BUMP_APP_RX &&
+          qe->data.bump_app_rx.type == 0)
+        break;
+
       n++;
       switch (qe->type)
       {
@@ -834,6 +840,13 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
     return -1;
   }
 
+  /* Dequeue the BUMP_APP_RX that rpc_handle_call peeked at */
+  {
+    struct dqueue *bq = w->ctx->fast_app_qs[w->server->core];
+    queue_dequeue(bq);
+    w->rx_pending = 0;
+  }
+
   return (int)len;
 }
 
@@ -841,6 +854,8 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
                     void *buf, size_t len)
 {
   struct rpc_hdr hdr;
+  struct dqueue *q;
+  struct rpc_queue_bump_entry *qe;
   __u32 n1, n2, new_head;
   int n;
 
@@ -849,11 +864,34 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     LOG_ERROR("null rpc worker or rid pointer");
     return -1;
   }
-  // check if there is something in the RX buffer of the worker
-  if (w->rx_avail == 0)
+  /* rx_pending set: the bump was already peeked; wait for rpc_return
+     to dequeue it before accepting the next request. */
+
+  if (w->rx_pending)
   {
     errno = EAGAIN;
     return -1;
+  }
+
+  if (w->rx_avail == 0)
+  {
+    /* Peek at the queue head to see if the fast path delivered a new request */
+    q = w->ctx->fast_app_qs[w->server->core];
+    // qe = queue_head(q);
+
+    if ((qe = queue_head(q)) == NULL ||
+        qe->type != RPC_QUEUE_BUMP_APP_RX ||
+        qe->data.bump_app_rx.type != 0)
+    {
+      errno = EAGAIN;
+      return -1;
+    }
+
+    /* Read address and size directly from the bump */
+    w->rx_avail = qe->data.bump_app_rx.rx_avail;
+    w->rx_ip    = qe->data.bump_app_rx.rx_ip;
+    w->rx_port  = qe->data.bump_app_rx.rx_port;
+    w->rx_pending = 1;
   }
 
   // Read hdr
