@@ -133,13 +133,10 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
   ctx->n_servers = 0;
   ctx->n_workers = 0;
 
-  // LOG_DEBUG("created port to server map with id=%d", pt_to_ser_map->id);
   // initialize port to server map entries to invalid server id
   ports = ctx->proto->shm_base + ctx->port_map->off;
-  // LOG_DEBUG("initializing port to server map entries");
   for (i = MIN_PORT; i <= MAX_PORT; i++)
   {
-    // LOG_DEBUG("initializing port %d to invalid server id", i);
     ports[i].server_id = INVALID_ID;
     ports[i].client_id = INVALID_ID;
   }
@@ -471,16 +468,11 @@ int handle_new_worker_req(struct rpc_slow_context *ctx,
   res->worker_off = ctx->workers_map->off +
                     ((__u64)ctx->n_workers * sizeof(struct rpc_worker));
   memset(worker, 0, sizeof(struct rpc_worker));
-  // LOG_DEBUG("allocated worker structure in shared memory");
   worker->id = ctx->n_workers;
-  // LOG_DEBUG("set worker ID to %d", worker->id);
   worker->app_bump_qid = actx->app_bump_qs[0]->id;
-  // LOG_DEBUG("set worker app bump queue ID to %d", worker->app_bump_qid);
   worker->opaque = req->opaque;
   worker->jobs_pending = 0;
-  // LOG_DEBUG("set worker opaque to %lu", worker->opaque);
   worker->server_id = req->server_id;
-  // LOG_DEBUG("worker created with ID %d for server ID %d", worker->id, worker->server_id);
 
   // Create queue for RX buffer
   protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
