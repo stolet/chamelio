@@ -22,9 +22,6 @@
 
 #define POLL_BATCH 16
 
-#define RPC_REQ_EMPTY 0
-#define RPC_REQ_USED 1
-#define RPC_REQ_TOMBSTONE 2
 
 static struct rpc_lib *rpc = NULL;
 static __thread struct rpc_context_lib *rpc_thread_ctx = NULL;
@@ -36,9 +33,6 @@ static int handle_new_service_res(struct rpc_queue_entry *qe);
 static int handle_tx_bump(struct rpc_queue_bump_entry *qe);
 static int handle_rx_bump(struct rpc_queue_bump_entry *qe);
 
-static int client_add_req(struct rpc_client_lib *c, __u32 rid);
-static int client_remove_req(struct client_request *req);
-static struct client_request *client_get_req(struct rpc_client_lib *c, __u32 rid);
 
 int rpc_connect_slow()
 {
@@ -617,7 +611,6 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   struct rpc_queue_bump_entry *qe;
   struct rpc_queue_bump_cham_tx *bump;
   struct rpc_hdr hdr;
-  struct client_request *req;
   __u32 tail, n1, n2;
 
   if (!c)
@@ -654,12 +647,12 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   if (tail >= c->tx_len)
     tail -= c->tx_len;
 
-  if (client_add_req(c, ntohl(hdr.rid.x)) != 0)
-  {
-    LOG_ERROR("failed to track pending client request rid=%u",
-              ntohl(hdr.rid.x));
-    return -1;
-  }
+  // if (client_add_req(c, ntohl(hdr.rid.x)) != 0)
+  // {
+  //   LOG_ERROR("failed to track pending client request rid=%u",
+  //             ntohl(hdr.rid.x));
+  //   return -1;
+  // }
 
   // copy hdr + payload to tx ring
   if (tail + sizeof(struct rpc_hdr) > c->tx_len)
@@ -714,9 +707,8 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_TX);
   if (ret != 0)
   {
-    req = client_get_req(c, ntohl(hdr.rid.x));
-    client_remove_req(req);
-
+    // req = client_get_req(c, ntohl(hdr.rid.x));
+    // client_remove_req(req);
     LOG_ERROR("failed to enqueue bump req");
     return -1;
   }
@@ -983,7 +975,6 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
   struct equeue *eq;
   struct rpc_queue_bump_entry *qe;
   struct rpc_queue_bump_cham_rx *bump;
-  struct client_request *req;
   struct rpc_hdr hdr;
   __u32 n1, n2, new_head;
 
@@ -1019,30 +1010,6 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
 
   // payload load calculation
   n = hdr.len.x - sizeof(struct rpc_hdr);
-
-  req = client_get_req(c, hdr.rid.x);
-
-  // if we can't find the req, we do not loop on the same pkt
-  if (req == NULL)
-  {
-    int _di;
-    LOG_ERROR("rpc response: could not find pending request"
-              " client_id=%u rid=%u rx_avail=%u rx_head=%u hdr_len=%u",
-              c->client_id, hdr.rid.x, c->rx_avail, c->rx_head, hdr.len.x);
-    for (_di = 0; _di < MAX_PENDING_RPC; _di++)
-    {
-      if (c->pending_calls[_di].state != RPC_REQ_EMPTY)
-        LOG_ERROR("  pending slot=%d state=%u rid=%u",
-                  _di, c->pending_calls[_di].state, c->pending_calls[_di].rid);
-    }
-    /* Advance past the stuck packet so we don't loop on the same error */
-    c->rx_avail -= hdr.len.x;
-    new_head = c->rx_head + hdr.len.x;
-    if (new_head >= c->rx_len)
-      new_head -= c->rx_len;
-    c->rx_head = new_head;
-    return -1;
-  }
 
   // Check if the entire payload fits in the buffer
   if (len < (size_t)n)
@@ -1098,8 +1065,6 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
     LOG_ERROR("failed to enqueue bump req");
     return -1;
   }
-
-  client_remove_req(req);
 
   return n;
 }
@@ -1251,94 +1216,3 @@ static int handle_rx_bump(struct rpc_queue_bump_entry *qe)
   return 0;
 }
 
-static int client_add_req(struct rpc_client_lib *c, __u32 rid)
-{
-  int first_tomb, i, idx;
-  struct client_request *req;
-
-  if (!c)
-  {
-    LOG_ERROR("add_req: null client");
-    return -1;
-  }
-
-  idx = rid % MAX_PENDING_RPC;
-  first_tomb = -1;
-
-  for (i = 0; i < MAX_PENDING_RPC; i++)
-  {
-    req = &c->pending_calls[(idx + i) % MAX_PENDING_RPC];
-
-    if (req->state == RPC_REQ_USED)
-    {
-      if (req->rid == rid)
-      {
-        LOG_ERROR("add_req: duplicate rid=%u", rid);
-        return -1;
-      }
-      continue;
-    }
-
-    if (req->state == RPC_REQ_TOMBSTONE)
-    {
-      if (first_tomb < 0)
-        first_tomb = (idx + i) % MAX_PENDING_RPC;
-      continue;
-    }
-
-    // empty slot + tombstone slot available
-    if (first_tomb >= 0)
-      req = &c->pending_calls[first_tomb];
-
-    req->state = RPC_REQ_USED;
-    req->rid = rid;
-    return 0;
-  }
-
-  // no empty slots but tombstone slot available
-  if (first_tomb >= 0)
-  {
-    req = &c->pending_calls[first_tomb];
-    req->state = RPC_REQ_USED;
-    req->rid = rid;
-    return 0;
-  }
-
-  LOG_ERROR("add_req: client pending table full");
-  return -1;
-}
-static int client_remove_req(struct client_request *req)
-{
-  if (!req)
-    return -1;
-
-  memset(req, 0, sizeof(struct client_request));
-  req->state = RPC_REQ_TOMBSTONE;
-
-  return 0;
-}
-static struct client_request *client_get_req(struct rpc_client_lib *c,
-                                             __u32 rid)
-{
-  int idx, i;
-  struct client_request *req;
-
-  if (!c)
-    return NULL;
-
-  idx = rid % MAX_PENDING_RPC;
-
-  // do not stop at tombstone b/c the value could be stored after that
-  for (i = 0; i < MAX_PENDING_RPC; i++)
-  {
-    req = &c->pending_calls[(idx + i) % MAX_PENDING_RPC];
-
-    if (req->state == RPC_REQ_EMPTY)
-      return NULL;
-
-    if (req->state == RPC_REQ_USED && req->rid == rid)
-      return req;
-  }
-
-  return NULL;
-}
