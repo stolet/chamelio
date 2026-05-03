@@ -382,7 +382,7 @@ static void uxsocket_receive(struct udp_slow_context *ctx, struct app_event *aev
     actx->fast_bump_qs[i] = q;
 
     /* Enable queue so fast-path can poll it */
-    cham_enable_queue(ctx->proto, q->id, 0);
+    cham_enable_queue(ctx->proto, q->id, i);
   }
     
   /* Initialise rest of app ctx */

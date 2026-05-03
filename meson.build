@@ -10,7 +10,6 @@ project('chamelio', ['c', 'cpp'],
   ]
 )
 
-# TODO: Maybe we need to link dpdk statically for better performance
 cc = meson.get_compiler('c')
 cpp = meson.get_compiler('cpp')
 

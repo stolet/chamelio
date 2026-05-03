@@ -8,7 +8,8 @@
 
 /*** RX Helpers ***************************************************************/
 
-static int ctl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt);
+static int ctl_rx(struct tcp_slow_context *ctx,
+    struct tcp_queue_ctl_pkt *ctl_pkt);
 static void ctl_rx_parse(const struct tcp_pkt_inner *pkt,
     struct tcp_rx_ctl *rx);
 static void sock_ts_rx(struct tcp_sock *sock, const struct tcp_rx_ctl *rx);
@@ -19,62 +20,79 @@ static int sock_ctl_rx(struct tcp_slow_context *ctx, struct tcp_sock *sock,
 
 int tcp_fast_poll(struct tcp_slow_context *ctx)
 {
+  __u8 core;
+  __u8 start_core;
+  int i;
   int nr;
   struct tcp_queue_ctl_entry *sig_qe;
   struct tcp_queue_pkt_entry *pkt_qe;
+  struct dqueue *sig_q;
+  struct dqueue *pkt_q;
 
   nr = 0;
-  while (nr < SLOW_BATCH_SIZE)
+  start_core = ctx->next_fast_slow_core;
+  for (i = 0; i < (int) ctx->proto->n_fp_cores && nr < SLOW_BATCH_SIZE; i++)
   {
-    sig_qe = queue_head(ctx->fast_slow_sig_q);
-    if (sig_qe == NULL)
-      break;
-
-    nr++;
-    switch (sig_qe->type)
+    core = (start_core + i) % ctx->proto->n_fp_cores;
+    sig_q = ctx->fast_slow_sig_qs[core];
+    pkt_q = ctx->fast_slow_pkt_qs[core];
+    while (nr < SLOW_BATCH_SIZE)
     {
-      case TCP_QUEUE_CTL_RX:
-        pkt_qe = queue_head(ctx->fast_slow_pkt_q);
-        if (pkt_qe == NULL)
-        {
-          LOG_WARN("missing fast->slow TCP control packet for signal");
-          queue_dequeue(ctx->fast_slow_sig_q);
-          break;
-        }
-        if (pkt_qe->type != TCP_QUEUE_CTL_RX_PKT)
-        {
-          LOG_WARN("unexpected fast->slow TCP control packet type=%d",
-              pkt_qe->type);
-          queue_dequeue(ctx->fast_slow_sig_q);
-          queue_dequeue(ctx->fast_slow_pkt_q);
-          break;
-        }
+      sig_qe = queue_head(sig_q);
+      if (sig_qe == NULL)
+        break;
 
-        ctl_rx(ctx, &pkt_qe->data.ctl_pkt.pkt);
-        queue_dequeue(ctx->fast_slow_pkt_q);
-        break;
-      default:
-        LOG_WARN("unknown queue entry type from fast to tcp slow-path type=%d",
-            sig_qe->type);
-        break;
+      nr++;
+      switch (sig_qe->type)
+      {
+        case TCP_QUEUE_CTL_RX:
+          pkt_qe = queue_head(pkt_q);
+          if (pkt_qe == NULL)
+          {
+            LOG_WARN("missing fast->slow TCP control packet for signal");
+            queue_dequeue(sig_q);
+            break;
+          }
+          if (pkt_qe->type != TCP_QUEUE_CTL_RX_PKT)
+          {
+            LOG_WARN("unexpected fast->slow TCP control packet type=%d",
+                pkt_qe->type);
+            queue_dequeue(sig_q);
+            queue_dequeue(pkt_q);
+            break;
+          }
+
+          ctl_rx(ctx, &pkt_qe->data.ctl_pkt);
+          queue_dequeue(pkt_q);
+          break;
+        default:
+          LOG_WARN("unknown queue entry type from fast to tcp slow-path type=%d",
+              sig_qe->type);
+          break;
+      }
+      queue_dequeue(sig_q);
     }
-    queue_dequeue(ctx->fast_slow_sig_q);
   }
+  ctx->next_fast_slow_core =
+      (start_core + 1) % ctx->proto->n_fp_cores;
 
   return nr;
 }
 
 /*** RX Helpers ***************************************************************/
 
-static int ctl_rx(struct tcp_slow_context *ctx, struct tcp_pkt_inner *pkt)
+static int ctl_rx(struct tcp_slow_context *ctx,
+    struct tcp_queue_ctl_pkt *ctl_pkt)
 {
   __u32 listener_id;
-  /* TODO: Extra structure just to parse rx seems unecessary */
   struct tcp_rx_ctl rx;
   struct tcp_sock *listen_sock;
   struct tcp_sock *sock;
 
-  ctl_rx_parse(pkt, &rx);
+  ctl_rx_parse(&ctl_pkt->pkt, &rx);
+  rx.core = ctl_pkt->core;
+  if (rx.core >= ctx->proto->n_fp_cores)
+    rx.core = 0;
   sock = tcp_flow_lookup(ctx, rx.local_ip, rx.local_port, rx.remote_ip,
       rx.remote_port);
   if (sock != NULL)

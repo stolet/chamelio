@@ -228,6 +228,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
   struct udp_queue_entry *qe_res;
   struct udp_queue_new_sock_req *req;
   struct udp_queue_new_sock_res *res;
+  __u32 i;
 
   struct udp_sock *socks_map = ctx->proto->shm_base + ctx->socks_map->off;
 
@@ -254,6 +255,9 @@ int handle_new_sock(struct udp_slow_context *ctx,
   sock->core = 0;
   sock->local_ip = ctx->proto->local_ip;
   sock->app_bump_qid = actx->app_bump_qs[0]->id;
+  for (i = 0; i < ctx->proto->n_fp_cores; i++)
+    sock->app_bump_qids[i] = actx->app_bump_qs[i]->id;
+  sock->core_learned = 0;
   sock->opaque = req->opaque;
   sock->local_port = 0;
   sock->reuport = 0;

@@ -1,8 +1,17 @@
 #include "nic.h"
+
+#include <string.h>
+
+#include <rte_flow.h>
+#include <rte_malloc.h>
+
 #include "config.h"
 #include "log.h"
 
-/* TODO: Add flow rule to distribute gre packets with RSS */
+static int gre_rss_flow_setup(__u8 port_id, const __u16 *queues,
+    __u32 nr_queues, enum rte_flow_item_type l4_type, __u64 rss_types);
+static void flow_err_log(const char *op, const struct rte_flow_error *err);
+
 int nic_init(struct nic_context *nic_ctx, struct configuration *config)
 {
   int ret;
@@ -30,7 +39,9 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   /* Setup receive configuration */
   port_conf->rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
   port_conf->rxmode.offloads = 0;
-  port_conf->rx_adv_conf.rss_conf.rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP;
+  port_conf->rx_adv_conf.rss_conf.rss_hf =
+      RTE_ETH_RSS_NONFRAG_IPV4_TCP |
+      RTE_ETH_RSS_NONFRAG_IPV4_UDP;
 
   /* Setup transmit configuration */
   port_conf->txmode.mq_mode = RTE_ETH_MQ_TX_NONE;
@@ -108,10 +119,101 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   return 0;
 }
 
+int nic_gre_rss_setup(struct nic_context *nic_ctx, struct configuration *config)
+{
+  __u16 *queues;
+  __u32 i;
+  int ret;
+
+  queues = rte_calloc("gre rss queues", config->fp_cores_max, sizeof(*queues),
+      0);
+  if (queues == NULL)
+  {
+    LOG_ERROR("failed to allocate GRE RSS queues");
+    return -1;
+  }
+
+  for (i = 0; i < config->fp_cores_max; i++)
+    queues[i] = i;
+
+  ret = gre_rss_flow_setup(nic_ctx->port_id, queues, config->fp_cores_max,
+      RTE_FLOW_ITEM_TYPE_TCP, RTE_ETH_RSS_NONFRAG_IPV4_TCP);
+  if (ret != 0)
+    goto error_exit;
+
+  ret = gre_rss_flow_setup(nic_ctx->port_id, queues, config->fp_cores_max,
+      RTE_FLOW_ITEM_TYPE_UDP, RTE_ETH_RSS_NONFRAG_IPV4_UDP);
+  if (ret != 0)
+    goto error_exit;
+
+  rte_free(queues);
+  return 0;
+
+error_exit:
+  rte_flow_flush(nic_ctx->port_id, NULL);
+  rte_free(queues);
+  return -1;
+}
+
 void nic_cleanup(struct nic_context *nic_ctx)
 {
   struct rte_flow_error error;
 
   rte_flow_flush(nic_ctx->port_id, &error);
   rte_eth_dev_stop(nic_ctx->port_id);
+}
+
+static int gre_rss_flow_setup(__u8 port_id, const __u16 *queues,
+    __u32 nr_queues, enum rte_flow_item_type l4_type, __u64 rss_types)
+{
+  struct rte_flow_attr attr;
+  struct rte_flow_action_rss rss;
+  struct rte_flow_item pattern[] = {
+    { .type = RTE_FLOW_ITEM_TYPE_ETH },
+    { .type = RTE_FLOW_ITEM_TYPE_IPV4 },
+    { .type = RTE_FLOW_ITEM_TYPE_GRE },
+    { .type = RTE_FLOW_ITEM_TYPE_IPV4 },
+    { .type = l4_type },
+    { .type = RTE_FLOW_ITEM_TYPE_END },
+  };
+  struct rte_flow_action actions[] = {
+    { .type = RTE_FLOW_ACTION_TYPE_RSS, .conf = &rss },
+    { .type = RTE_FLOW_ACTION_TYPE_END },
+  };
+  struct rte_flow_error err;
+  struct rte_flow *flow;
+  int ret;
+
+  memset(&attr, 0, sizeof(attr));
+  attr.ingress = 1;
+
+  memset(&rss, 0, sizeof(rss));
+  rss.level = 2;
+  rss.types = rss_types;
+  rss.queue_num = nr_queues;
+  rss.queue = queues;
+
+  ret = rte_flow_validate(port_id, &attr, pattern, actions, &err);
+  if (ret != 0)
+  {
+    flow_err_log("validate GRE RSS flow", &err);
+    return -1;
+  }
+
+  flow = rte_flow_create(port_id, &attr, pattern, actions, &err);
+  if (flow == NULL)
+  {
+    flow_err_log("create GRE RSS flow", &err);
+    return -1;
+  }
+
+  return 0;
+}
+
+static void flow_err_log(const char *op, const struct rte_flow_error *err)
+{
+  if (err != NULL && err->message != NULL)
+    LOG_ERROR("%s failed: %s", op, err->message);
+  else
+    LOG_ERROR("%s failed", op);
 }

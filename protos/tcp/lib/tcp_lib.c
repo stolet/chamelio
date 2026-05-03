@@ -1236,6 +1236,7 @@ static int handle_connect_res(struct tcp_queue_entry *qe)
   sock->op_status = res->status;
   if (res->status == 0)
   {
+    sock->core = res->core;
     sock->local_ip = res->local_ip;
     sock->local_port = res->local_port;
     sock->remote_ip = res->remote_ip;

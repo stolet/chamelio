@@ -567,21 +567,25 @@ static __always_inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
   struct tcp_queue_pkt_entry *pkt_qe;
   struct cham_map *map;
   __u32 hdrlen;
+  __u16 core;
 
   /* Get control configuration containing queue ids */
   map = &ctx->maps[CFG_MAP];
   cfg = ebpf_map_lookup(map->addr, 0, sizeof(struct tcp_ctl_cfg));
   if (cfg == NULL)
     return -1;
+  core = ctx->core;
+  if (core >= MAX_FP_CORES)
+    return -1;
 
   /* Get first available entry in end of pkt queue */
-  pkt_q = &ctx->equeues[cfg->fast_slow_pkt_qid].eq;
+  pkt_q = &ctx->equeues[cfg->fast_slow_pkt_qids[core]].eq;
   pkt_qe = ebpf_queue_tail(pkt_q, sizeof(struct tcp_queue_pkt_entry));
   if (pkt_qe == NULL)
     return -1;
 
   /* Get first available entry in end of signal queue */
-  sig_q = &ctx->equeues[cfg->fast_slow_sig_qid].eq;
+  sig_q = &ctx->equeues[cfg->fast_slow_sig_qids[core]].eq;
   sig_qe = ebpf_queue_tail(sig_q, sizeof(struct tcp_queue_ctl_entry));
   if (sig_qe == NULL)
     return -1;
@@ -592,6 +596,7 @@ static __always_inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
 
   /* Copy header to pkt queue */
   ebpf_memcpy(&pkt_qe->data.ctl_pkt, tcp_pkt, hdrlen);
+  pkt_qe->data.ctl_pkt.core = ctx->core;
   
   /* Set ready field of signal entry */
   sig_qe->data.ctl_sig.ready = 1;

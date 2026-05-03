@@ -317,7 +317,7 @@ static int tcp_appif_bump_qs_init(struct tcp_slow_context *ctx,
     aev->app_res.af_elsize = protoq->elsize;
     aev->app_res.af_offs[i] = protoq->off;
     actx->fast_bump_qs[i] = protoq;
-    cham_enable_queue(ctx->proto, protoq->id, 0);
+    cham_enable_queue(ctx->proto, protoq->id, i);
   }
 
   return 0;

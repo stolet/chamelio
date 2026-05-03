@@ -69,6 +69,7 @@ DEFINE_EVENT_STUB(sched, 3)
     if (!g->proto.has_event_rx)                                               \
       return 0;                                                               \
                                                                               \
+    g->proto.ebpf_ctx.core = ctx->id;                                         \
     fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off,                    \
         comb_virt_gre(ctx));                                                  \
     rx_ret = (int) event_rx_slot_##slot(&g->proto.ebpf_ctx,                   \

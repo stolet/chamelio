@@ -23,5 +23,8 @@ struct nic_context {
 int nic_init(struct nic_context *nic_ctx, struct configuration *config);
 /* Cleanup the NIC port */
 void nic_cleanup(struct nic_context *nic_ctx);
+/* Setup tunnel-aware RSS for GRE network virtualization */
+int nic_gre_rss_setup(struct nic_context *nic_ctx, 
+    struct configuration *config);
 
 #endif

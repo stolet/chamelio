@@ -2,8 +2,8 @@
 
 /*** Close API ****************************************************************/
 
-int tcp_rx_established(struct tcp_slow_context *ctx, struct tcp_sock *sock,
-    const struct tcp_rx_ctl *rx)
+int tcp_rx_established(struct tcp_slow_context *ctx, 
+    struct tcp_sock *sock, const struct tcp_rx_ctl *rx)
 {
   if ((rx->flags & TAS_TCP_RST) != 0)
   {

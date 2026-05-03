@@ -3,6 +3,7 @@
 
 #include <linux/types.h>
 
+#include "cham_fast.h"
 #include "utils.h"
 
 /* Max number of applications that can register with slow-path */
@@ -155,10 +156,10 @@ struct tcp_flow_bucket {
 
 /* Shared protocol configuration visible to the fast-path */
 struct tcp_ctl_cfg {
-  /* Signal queue used by fast-path to punt control packets to slow-path */
-  __u16 fast_slow_sig_qid;
-  /* Packet queue used by fast-path to punt control packets to slow-path */
-  __u16 fast_slow_pkt_qid;
+  /* Signal queues used by each fast-path core to punt control packets */
+  __u16 fast_slow_sig_qids[MAX_FP_CORES];
+  /* Packet queues used by each fast-path core to punt control packets */
+  __u16 fast_slow_pkt_qids[MAX_FP_CORES];
   /* Signal queue used by slow-path to send control packets to fast-path */
   __u16 slow_fast_sig_qid;
   /* Packet queue used by slow-path to send control packets to fast-path */

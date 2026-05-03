@@ -3,6 +3,7 @@ config_inc = include_directories('include', '../include')
 config_srcs = files('udp_config.c')
 
 deps = [
+  dependency('cham'),
   dependency('log_dep'),
 ]
 

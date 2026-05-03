@@ -93,6 +93,7 @@ int tcp_rx_listen_syn(struct tcp_slow_context *ctx, struct tcp_sock *listen_sock
   sock->local_port = rx->local_port;
   sock->remote_ip = rx->remote_ip;
   sock->remote_port = rx->remote_port;
+  sock->core = rx->core;
   sock->tx_seq = 1;
   sock->tx_pending = 1;
   sock->rx_seq = rx->seq + 1;
@@ -149,6 +150,8 @@ static void sock_active_established(struct tcp_slow_context *ctx,
     struct tcp_sock *sock, const struct tcp_rx_ctl *rx)
 {
   tcp_timeout_cancel(ctx, sock);
+  sock->core = rx->core;
+  sock->app_bump_qid = tcp_sock_actx(ctx, sock)->app_bump_qs[sock->core]->id;
   if ((rx->flags & TAS_TCP_ECE) == 0)
     sock->flags &= ~TCP_SOCK_FLAG_ECN;
   sock->rx_seq = rx->seq + 1;

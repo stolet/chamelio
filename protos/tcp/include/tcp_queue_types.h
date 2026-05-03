@@ -189,6 +189,8 @@ struct tcp_queue_connect_res {
   __s32 status;
   /* Opaque pointer to socket in app library */
   __u64 opaque;
+  /* Fast-path core this socket is running */
+  __u16 core;
   /* Local IP address */
   __u32 local_ip;
   /* Local port */
@@ -319,6 +321,8 @@ struct tcp_queue_ctl_pkt {
   struct tcp_pkt_inner pkt;
   /* Fixed timestamp option block carried after the TCP header */
   struct tcp_timestamp_opt ts_opt;
+  /* Fast-path core that received this packet */
+  __u16 core;
 } __attribute__((packed));
 
 /* Fast-path command that targets a socket */

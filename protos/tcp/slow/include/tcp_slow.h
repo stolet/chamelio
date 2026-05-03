@@ -117,13 +117,15 @@ struct tcp_slow_context {
   __u8 n_apps;
   /* Next app to poll */
   __u8 next_app;
+  /* Next fast->slow TCP control queue to poll */
+  __u8 next_fast_slow_core;
   /* Apps that have registered with chamelio */
   struct tcp_app_slow apps[MAX_APPS];
 
-  /* Signal queue used by fast-path to punt TCP control packets */
-  struct dqueue *fast_slow_sig_q;
-  /* Packet queue used by fast-path to punt TCP control packets */
-  struct dqueue *fast_slow_pkt_q;
+  /* Signal queues used by fast-path cores to punt TCP control packets */
+  struct dqueue *fast_slow_sig_qs[MAX_FP_CORES];
+  /* Packet queues used by fast-path cores to punt TCP control packets */
+  struct dqueue *fast_slow_pkt_qs[MAX_FP_CORES];
   /* Signal queue used by slow-path to send TCP control packets */
   struct equeue *slow_fast_sig_q;
   /* Packet queue used by slow-path to send TCP control packets */

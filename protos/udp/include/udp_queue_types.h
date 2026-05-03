@@ -146,6 +146,8 @@ struct udp_queue_setopt_res {
 struct udp_queue_bump_cham_tx {
   /* Socket ID used by slow-path */
   __u32 sock_id;
+  /* Fast-path core selected by the app */
+  __u16 core;
   /* TX port for this bump */
   __u16 tx_port;
   /* TX IP for this bump */
@@ -158,6 +160,8 @@ struct udp_queue_bump_cham_tx {
 struct udp_queue_bump_cham_rx {
   /* Socket ID used by slow-path */
   __u32 sock_id;
+  /* Fast-path core selected by the app */
+  __u16 core;
   /* Bump for RX head */
   __u32 rx_head;
 } __attribute__((packed));
@@ -174,6 +178,8 @@ struct udp_queue_bump_app_tx {
 struct udp_queue_bump_app_rx {
   /* Opaque pointer to struct in app library */
   __u64 opaque;
+  /* Fast-path core this socket is running */
+  __u16 core;
   /* RX port for this bump */
   __u16 rx_port;
   /* RX IP for this bump */

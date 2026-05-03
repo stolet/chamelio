@@ -41,6 +41,7 @@ int tcp_app_connect_res(struct tcp_app_context_slow *actx, __u64 opaque,
   res->opaque = opaque;
   if (sock == NULL)
   {
+    res->core = 0;
     res->local_ip = 0;
     res->local_port = 0;
     res->remote_ip = 0;
@@ -48,6 +49,7 @@ int tcp_app_connect_res(struct tcp_app_context_slow *actx, __u64 opaque,
   }
   else
   {
+    res->core = sock->core;
     res->local_ip = sock->local_ip;
     res->local_port = sock->local_port;
     res->remote_ip = sock->remote_ip;

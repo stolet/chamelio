@@ -90,6 +90,12 @@ int nic_fast_init(struct nic_context *nic_ctx,
       goto error_tx_queue;
     }
 
+    if (config->virt_gre && nic_gre_rss_setup(nic_ctx, config) != 0)
+    {
+      LOG_ERROR("GRE RSS setup failed\n");
+      goto error_tx_queue;
+    }
+
     /* Setting up RETA failed */
     if (reta_setup(nic_ctx->port_id, config->fp_cores_max, 
         nic_ctx->eth_dev_info.reta_size) != 0) 
@@ -110,7 +116,6 @@ error_rx_queue:
 error_tx_queue:
   rte_mempool_free(nic_fast_ctx->pool);
 error_mempool:
-  free(nic_ctx);
   return -1;
 }
 

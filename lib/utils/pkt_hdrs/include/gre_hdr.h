@@ -2,6 +2,8 @@
 #define GRE_HDR_H_
 
 #include "utils.h"
+#include "ip_hdr.h"
+#include "eth_hdr.h"
 
 /* Gets GRE checksum */
 #define GREH_C(hdr) ((hdr)->_c_k_s_ver >> 15)

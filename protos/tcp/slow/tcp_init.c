@@ -37,8 +37,6 @@ static struct tcp_port *tcp_bound_tbl_alloc(void);
 int tcp_init(struct tcp_slow_context *ctx)
 {
   int i;
-  __u16 fast_slow_sig_qid;
-  __u16 fast_slow_pkt_qid;
   __u16 slow_fast_sig_qid;
   __u16 slow_fast_pkt_qid;
   struct proto_lib *proto;
@@ -80,18 +78,6 @@ int tcp_init(struct tcp_slow_context *ctx)
       "TCP control configuration");
 
   protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
-      sizeof(struct tcp_queue_ctl_entry), "fast->slow control signal queue");
-  ctx->fast_slow_sig_q = tcp_dqueue_open(proto, protoq,
-      "fast->slow control signal queue");
-  fast_slow_sig_qid = protoq->id;
-
-  protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
-      sizeof(struct tcp_queue_pkt_entry), "fast->slow control packet queue");
-  ctx->fast_slow_pkt_q = tcp_dqueue_open(proto, protoq,
-      "fast->slow control packet queue");
-  fast_slow_pkt_qid = protoq->id;
-
-  protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
       sizeof(struct tcp_queue_ctl_entry), "slow->fast control signal queue");
   ctx->slow_fast_sig_q = tcp_equeue_open(proto, protoq,
       "slow->fast control signal queue");
@@ -115,8 +101,20 @@ int tcp_init(struct tcp_slow_context *ctx)
   tcp_flow_tbl_init(flows);
 
   cfg = proto->shm_base + ctl_map->off;
-  cfg->fast_slow_sig_qid = fast_slow_sig_qid;
-  cfg->fast_slow_pkt_qid = fast_slow_pkt_qid;
+  for (i = 0; i < (int) proto->n_fp_cores; i++)
+  {
+    protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
+        sizeof(struct tcp_queue_ctl_entry), "fast->slow control signal queue");
+    ctx->fast_slow_sig_qs[i] = tcp_dqueue_open(proto, protoq,
+        "fast->slow control signal queue");
+    cfg->fast_slow_sig_qids[i] = protoq->id;
+
+    protoq = tcp_queue_new(proto, ctx->config.ctlq_len,
+        sizeof(struct tcp_queue_pkt_entry), "fast->slow control packet queue");
+    ctx->fast_slow_pkt_qs[i] = tcp_dqueue_open(proto, protoq,
+        "fast->slow control packet queue");
+    cfg->fast_slow_pkt_qids[i] = protoq->id;
+  }
   cfg->slow_fast_sig_qid = slow_fast_sig_qid;
   cfg->slow_fast_pkt_qid = slow_fast_pkt_qid;
 
@@ -129,6 +127,7 @@ int tcp_init(struct tcp_slow_context *ctx)
   ctx->proto = proto;
   ctx->n_apps = 0;
   ctx->next_app = 0;
+  ctx->next_fast_slow_core = 0;
   ctx->n_socks = 0;
   ctx->tomgr = tomgr;
   ctx->socks_map = socks_map;

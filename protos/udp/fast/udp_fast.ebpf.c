@@ -53,6 +53,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   struct equeue *q;
   struct udp_queue_bump_entry *qe;
   struct udp_queue_bump_app_rx *bump;
+  __u16 core;
 
   __u8 *rx_base;
   __u32 free_bytes;
@@ -102,6 +103,19 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   /* Socket doesn't exist so drop it */
   if (sock == NULL)
     return -1;
+  core = ctx->core;
+  if (core >= MAX_FP_CORES)
+    return -1;
+  if (!sock->core_learned)
+  {
+    sock->core = core;
+    sock->app_bump_qid = sock->app_bump_qids[core];
+    sock->core_learned = 1;
+  }
+  else if (sock->core != core)
+  {
+    return -1;
+  }
 
   /* Copy payload */
   payload_len = (__u16) (udp_len - sizeof(struct udp_hdr));
@@ -138,6 +152,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   bump = &qe->data.bump_app_rx;
   bump->opaque   = sock->opaque;
+  bump->core = sock->core;
   bump->rx_avail = payload_len;
   bump->rx_port = f_beui16(udp->src);
   bump->rx_ip = f_beui32(ip->src);
@@ -188,6 +203,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   struct udp_queue_bump_app_tx *bump_app;
   struct cham_map *map;
   __u16 opt_len, payload_len, local_port;
+  __u16 core;
   __u16 udp_hdrs_len, ip_hdrs_len, pkt_hdrs_len;
   __u32 max_payload;
   __u32 new_head;
@@ -200,6 +216,9 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   qe = (struct udp_queue_bump_entry *) ctx->qe;
   bump_cham = &qe->data.bump_cham_tx;
+  core = bump_cham->core;
+  if (core >= MAX_FP_CORES)
+    return -1;
 
   map = &ctx->maps[SOCK_MAP];
   sock = ebpf_map_lookup(map->addr,
@@ -281,7 +300,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   sock->tx_avail -= payload_len;
 
   /* Send a bump to application */
-  q = &ctx->equeues[sock->app_bump_qid].eq;
+  q = &ctx->equeues[sock->app_bump_qids[core]].eq;
   qe = (struct udp_queue_bump_entry *) ebpf_queue_tail(q,
       sizeof(struct udp_queue_bump_entry));
   if (qe == NULL)
@@ -305,12 +324,16 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   struct udp_queue_bump_cham_rx *bump;
   struct udp_queue_bump_entry *qe;
   struct cham_map *map;
+  __u16 core;
 
   qe = (struct udp_queue_bump_entry *) ctx->qe;
   if ((__u8 *) qe + sizeof(struct udp_queue_bump_entry) >
       (__u8 *) ctx->shm_end)
     return -1;
   bump = &qe->data.bump_cham_rx;
+  core = bump->core;
+  if (core >= MAX_FP_CORES)
+    return -1;
 
   map = &ctx->maps[SOCK_MAP];
   sock = ebpf_map_lookup(map->addr, bump->sock_id, sizeof(struct udp_sock));

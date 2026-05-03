@@ -141,9 +141,9 @@ int main(int argc, char **argv)
       port_map.id, port_map.nelems, (uint64_t) port_map.off,
       flow_map.id, flow_map.nelems, (uint64_t) flow_map.off,
       ctl_map.id, (uint64_t) ctl_map.off);
-  printf("ctl_cfg fast_slow_sig_qid=%u fast_slow_pkt_qid=%u "
+  printf("ctl_cfg fast_slow_sig_qid[0]=%u fast_slow_pkt_qid[0]=%u "
       "slow_fast_sig_qid=%u slow_fast_pkt_qid=%u\n",
-      cfg.fast_slow_sig_qid, cfg.fast_slow_pkt_qid,
+      cfg.fast_slow_sig_qids[0], cfg.fast_slow_pkt_qids[0],
       cfg.slow_fast_sig_qid, cfg.slow_fast_pkt_qid);
 
   printf("\nsocket table\n");

@@ -89,6 +89,7 @@ static inline int rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
   __u64 tsc_spent;
 
   did_work = 0;
+  g->proto.ebpf_ctx.core = ctx->id;
   fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off, virt_gre);
   switch (ctx->fp_proto_mode)
   {

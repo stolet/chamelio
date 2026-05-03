@@ -30,6 +30,7 @@ struct tcp_rx_ctl {
   __u16 remote_port;
   __u16 wnd;
   __u16 flags;
+  __u16 core;
   __u8 ts_valid;
 };
 
