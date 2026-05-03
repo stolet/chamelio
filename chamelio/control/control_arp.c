@@ -7,6 +7,9 @@
 #include "nic.h"
 #include "queue_fns.h"
 
+static int update_arp_fast(struct control_context *ctx,
+    __u32 ip, const __u8 *mac);
+
 void control_arp_timeout(struct control_context *ctx,
     struct to_entry *te)
 {
@@ -77,8 +80,7 @@ void control_arp_lookup(struct control_context *ctx,
 void control_arp_req(struct control_context *ctx,
   struct queue_entry *qe)
 {
-  int ret, i;
-  struct queue_entry *arp_up;
+  int ret;
   struct arp_entry *ae;
   struct queue_arp_rx_req *arp_req = &qe->data.arp_pkt_rx_req;
 
@@ -97,27 +99,9 @@ void control_arp_req(struct control_context *ctx,
       return;
     }
 
-    /* TODO: Don't duplicate this code */
-    /* Tell fast-path to update ARP tables */
-    for (i = 0; i < ctx->config->fp_cores_max; i++)
-    {
-      arp_up = queue_tail(ctx->ctl_fast_qs[i]);
-      if (arp_up == NULL)
-      {
-        LOG_ERROR("failed to get tail of control->fast queue");
-        return;
-      }
-
-      arp_up->data.arp_update.ip = arp_req->spa;
-      memcpy(&arp_up->data.arp_update.mac, &arp_req->sha, ETH_ADDR_LEN);
-
-      ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_ARP_UPDATE);
-      if (ret != 0)
-      {
-        LOG_ERROR("failed to enqueue ARP update to control->fast queue");
-        return;
-      }
-    }
+    ret = update_arp_fast(ctx, arp_req->spa, (__u8 *)&arp_req->sha);
+    if (ret != 0)
+      return;
   }
 
   /* Enqueue ARP reply for fast-path */
@@ -134,8 +118,7 @@ void control_arp_req(struct control_context *ctx,
 void control_arp_rep(struct control_context *ctx,
   struct queue_entry *qe)
 {
-  int i, ret;
-  struct queue_entry *arp_up;
+  int ret;
   struct arp_entry *ae;
   struct queue_arp_rx_rep *arp_rep = &qe->data.arp_pkt_rx_rep;
 
@@ -155,25 +138,36 @@ void control_arp_rep(struct control_context *ctx,
     ae->te = NULL;
   }
 
-  /* TODO: Don't duplicate this code */
-  /* Send message to each fast-path to update their ARP tables */
+  ret = update_arp_fast(ctx, arp_rep->spa, (__u8 *)&arp_rep->sha);
+  if (ret != 0)
+    return;
+}
+
+static int update_arp_fast(struct control_context *ctx,
+    __u32 ip, const __u8 *mac)
+{
+  int ret, i;
+  struct queue_entry *arp_up;
+
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
     arp_up = queue_tail(ctx->ctl_fast_qs[i]);
     if (arp_up == NULL)
     {
       LOG_ERROR("failed to get tail of control->fast queue");
-      return;
+      return -1;
     }
 
-    arp_up->data.arp_update.ip = arp_rep->spa;
-    memcpy(&arp_up->data.arp_update.mac, &arp_rep->sha, ETH_ADDR_LEN);
+    arp_up->data.arp_update.ip = ip;
+    memcpy(&arp_up->data.arp_update.mac, mac, ETH_ADDR_LEN);
 
     ret = queue_enqueue(ctx->ctl_fast_qs[i], QUEUE_ARP_UPDATE);
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue ARP update to control->fast queue");
-      return;
+      return ret;
     }
   }
+
+  return 0;
 }
