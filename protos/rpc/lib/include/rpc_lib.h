@@ -71,6 +71,8 @@ struct rpc_worker_lib
   void *rx_buf;
   /* Total size of the current in-flight request (hdr + payload) */
   __u32 rx_pkt_len;
+  /* Set when BUMP_APP_RX has been peeked but not yet dequeued by rpc_return */
+  __u8 rx_pending;
 
   /* Queue ID used for TX buffer */
   __u16 tx_qid;
