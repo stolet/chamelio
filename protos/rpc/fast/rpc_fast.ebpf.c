@@ -158,7 +158,8 @@ int event_rx(struct cham_ebpf_ctx *ctx)
         continue;
 
       worker = &worker_map[worker_id];
-      if (worker->rx_avail > 0)
+      free_bytes = worker->rx_len - worker->rx_avail;
+      if (payload_len > free_bytes)
         continue;
 
       if (best_worker_id == (__u32)INVALID_ID ||
