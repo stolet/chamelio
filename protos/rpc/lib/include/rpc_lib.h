@@ -14,9 +14,6 @@
 #define SOCK_INACTIVE (-1U)
 /* Invalid server ID */
 #define INVALID_ID -1
-/* Max concurrent in-flight requests per client */
-#define MAX_PENDING_RPC 256
-
 struct rpc_context_lib
 {
   /* ID for this context */
@@ -31,12 +28,6 @@ struct rpc_context_lib
   __u16 ncores;
   struct equeue **app_fast_qs;
   struct dqueue **fast_app_qs;
-};
-
-struct client_request
-{
-  __u8 state;    // indicates if the request slot is in use or not
-  __u32 rid;
 };
 
 /* Worker that handles RPC requests */
@@ -138,8 +129,6 @@ struct rpc_client_lib
   /* Result from bind. Default is -1 and is set
       to 1 on success and 0 on failure */
   int bind_success;
-  /* Pending call RIDs for this client */
-  struct client_request pending_calls[MAX_PENDING_RPC];
 };
 
 /* RPC server that registers different services */
