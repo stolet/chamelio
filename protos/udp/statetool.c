@@ -192,11 +192,12 @@ static void sock_print(const struct udp_sock *sock)
 {
   char lip[INET_ADDRSTRLEN];
 
-  printf("sock[%u] opaque=0x%" PRIx64 " core=%u app_bump_qid=%u "
+  printf("sock[%u] opaque=0x%" PRIx64 " tx_core=%u rx_core=%u app_bump_qid=%u "
       "reuseport=%u local=%s:%u\n",
-      sock->id, (uint64_t) sock->opaque, sock->core, sock->app_bump_qid,
-      sock->reuport, ip_str(sock->local_ip, lip, sizeof(lip)),
-      sock->local_port);
+      sock->id, (uint64_t) sock->opaque, 
+      sock->tx_core, sock->rx_core, 
+      sock->app_bump_qid, sock->reuport, 
+      ip_str(sock->local_ip, lip, sizeof(lip)), sock->local_port);
   printf("  rx len=%u avail=%u head=%u off=%" PRIu64
       " tx len=%u avail=%u head=%u off=%" PRIu64 "\n",
       sock->rx_len, sock->rx_avail, sock->rx_head,

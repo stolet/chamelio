@@ -70,6 +70,8 @@ struct cham_ebpf_ctx {
   struct queue_entry *qe;
   /* End of shared memory region */
   void *shm_end;
+  /* Total number of fast path cores */
+  __u16 ncores;
   /* Fast-path core currently running this event */
   __u16 core;
   /* List of protocol queues available for dequeue access */

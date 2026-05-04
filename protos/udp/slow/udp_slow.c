@@ -134,7 +134,7 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   {
     ports[i].nsocks = 0;
     for (j = 0; j < MAX_FP_CORES; j++)
-      ports[i].next_sock[j] = 0;
+      ports[i].next_sock[j] = j;
   }
 
   cfg = p->shm_base + cfg_map->off;
@@ -257,7 +257,8 @@ int handle_new_sock(struct udp_slow_context *ctx,
 
   sock = &socks_map[res->sock_id];
   sock->id = res->sock_id;
-  sock->core = core;
+  sock->tx_core = core;
+  sock->rx_core = -1;
   sock->local_ip = ctx->proto->local_ip;
   sock->app_bump_qid = actx->app_bump_qs[core]->id;
   for (i = 0; i < ctx->proto->n_fp_cores; i++)

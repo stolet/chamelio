@@ -55,14 +55,10 @@ struct proto_control {
   __u16 nmaps;
 };
 
-#ifndef CHAM_CACHE_LINE_SIZE
-#define CHAM_CACHE_LINE_SIZE 64
-#endif
 
 struct guest_budget_control {
   __s64 val;
-  char __pad[CHAM_CACHE_LINE_SIZE - sizeof(__s64)];
-} __attribute__((aligned(CHAM_CACHE_LINE_SIZE)));
+} __attribute__((aligned(64)));
 
 struct guest_control {
   /* One budget counter per fast-path core shared with that core */
@@ -87,7 +83,7 @@ struct guest_control {
   
   /* Protocol registered for this guest */
   struct proto_control proto;
-} __attribute__((aligned(CHAM_CACHE_LINE_SIZE)));
+};
 
 #if CHAM_CTL_BUDGET_STATS
 struct ctl_budg_stats {

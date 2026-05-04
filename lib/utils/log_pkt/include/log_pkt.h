@@ -12,5 +12,6 @@ void log_udp(const struct udp_hdr *udp);
 void log_arp(const struct arp_hdr *arp);
 void log_arp_pkt(const struct arp_pkt *p);
 void log_udp_pkt(const struct udp_pkt *p);
+void log_udp_pkt_inner(const struct udp_pkt_inner *p);
 
 #endif

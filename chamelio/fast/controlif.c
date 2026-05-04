@@ -119,6 +119,8 @@ static inline void handle_new_guest(struct fast_context *ctx,
   g->proto.has_event_rx = 0;
   g->proto.has_event_sched = 0;
   g->proto.has_event_deq = 0;
+  g->proto.ebpf_ctx.ncores = ctx->config->fp_cores_max;
+  g->proto.ebpf_ctx.core = ctx->id;
   
   g->proto.event_rx_vm = NULL;
   g->proto.event_sched_vm = NULL;

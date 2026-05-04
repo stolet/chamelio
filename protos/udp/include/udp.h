@@ -43,8 +43,10 @@ struct udp_sock {
   __u32 id;
   /* Pointer to socket in application */
   __u64 opaque;
-  /* Fast-path core this socket is currently running on */
-  __u16 core;
+  /* Fast path core used for transmission */
+  int tx_core;
+  /* Fast path core used to receive */
+  int rx_core;
   /* Queue ID to bump app */
   __u16 app_bump_qid;
   /* Queue IDs to bump app, indexed by fast-path core */
@@ -79,7 +81,7 @@ struct udp_sock {
 struct udp_port {
   /* Number of sockets bounded to this port */
   __u32 nsocks;
-  /* Next socket to load balance to, indexed by fast-path core */
+  /* Next socket to load balance to, indexed by fast path core */
   __u32 next_sock[MAX_FP_CORES];
   /* Socket IDs */
   __u32 sids[MAX_REUSOCK_PORT];

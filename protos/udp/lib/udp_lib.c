@@ -433,8 +433,10 @@ int udp_socket(struct udp_context_lib *ctx)
   memset(sock, 0, sizeof(*sock));
   sock->fd = fd;
   sock->ctx = ctx;
+  sock->rx_core = -1;
   sock->rx_avail = 0;
   sock->rx_head = 0;
+  sock->tx_core = -1;
   sock->tx_avail = 0;
   sock->tx_head = 0;
   sock->tx_port = 0;
@@ -602,7 +604,7 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
   n = len;
 
   /* Send bump message to update TX available */
-  q = ctx->app_fast_qs[sock->core];
+  q = ctx->app_fast_qs[sock->tx_core];
   qe = queue_tail(q);
   if (qe == NULL)
   {
@@ -615,7 +617,7 @@ int udp_sendto(struct udp_context_lib *ctx, int sockfd,
 
   bump = &qe->data.bump_cham_tx;
   bump->sock_id = sock->sock_id;
-  bump->core = sock->core;
+  bump->core = sock->tx_core;
   tx_ip = ntohl(sin->sin_addr.s_addr);
   tx_port = ntohs(sin->sin_port);
   bump->tx_ip = tx_ip;
@@ -691,7 +693,7 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
   }
 
   /* Send bump message to update RX head */
-  q = ctx->app_fast_qs[sock->core];
+  q = ctx->app_fast_qs[sock->rx_core];
   qe = queue_tail(q);
   if (qe == NULL)
   {
@@ -701,7 +703,7 @@ int udp_recvfrom(struct udp_context_lib *ctx, int sockfd,
 
   bump = &qe->data.bump_cham_rx;
   bump->sock_id = sock->sock_id;
-  bump->core = sock->core;
+  bump->core = sock->rx_core;
   bump->rx_head = n;
 
   new_head = rx_head + n;
@@ -830,7 +832,7 @@ static int handle_new_sock_res(struct udp_queue_entry *qe)
 
   res = &qe->data.new_sock_res;
   sock = (struct udp_socket_lib *) res->opaque;
-  sock->core = res->core;
+  sock->tx_core = res->core;
   sock->sock_id = res->sock_id;
   sock->rx_qid = res->rx_qid;
   sock->rx_len = res->rx_len;
@@ -892,11 +894,12 @@ static int handle_rx_bump(struct udp_queue_bump_entry *qe)
 
   bump = &qe->data.bump_app_rx;
   sock = (struct udp_socket_lib *) bump->opaque;
-  sock->core = bump->core;
+  sock->rx_core = bump->core;
   utils_prefetch0(sock->rx_buf + sock->rx_head);
   sock->rx_avail += bump->rx_avail;
   sock->rx_port = bump->rx_port;
   sock->rx_ip = bump->rx_ip;
+  sock->rx_core = bump->core;
 
   return 0;  
 }

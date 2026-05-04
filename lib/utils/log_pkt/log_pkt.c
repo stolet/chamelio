@@ -113,6 +113,12 @@ void log_udp_pkt(const struct udp_pkt *p)
   log_udp(&p->udp);
 }
 
+void log_udp_pkt_inner(const struct udp_pkt_inner *p)
+{
+  log_ip(&p->ip);
+  log_udp(&p->udp);
+}
+
 void log_arp_pkt(const struct arp_pkt *p)
 {
   log_eth(&p->eth);

@@ -47,9 +47,11 @@ struct udp_socket_lib {
     __u32 sock_id;
     /* Context that created this socket */
     struct udp_context_lib *ctx;
-    /* Fast-path core of this socket */
-    __u16 core;
-
+    /* Fast path core used to transmit packets */
+    int tx_core;
+    /* Fast path core used to receive packets */
+    int rx_core;
+    
     /* RX port */
     __u16 rx_port;
     /* RX IP address */
