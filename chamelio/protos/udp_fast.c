@@ -395,7 +395,7 @@ static inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
       return NULL;
     sock = (struct udp_sock *) ((__u8 *) sock_map->addr +
         (sock_id * sizeof(struct udp_sock)));
-    if (sock == NULL || sock->core != core)
+    if (sock == NULL)
       return NULL;
     return sock;
   }

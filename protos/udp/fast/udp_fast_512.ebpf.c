@@ -499,7 +499,7 @@ static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
   {
     sock_id = port->sids[0];
     sock = ebpf_map_lookup(sock_map->addr, sock_id, sizeof(struct udp_sock));
-    if (sock == NULL || sock->core != core)
+    if (sock == NULL)
       return NULL;
     return sock;
   }
