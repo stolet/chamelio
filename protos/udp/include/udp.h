@@ -49,8 +49,8 @@ struct udp_sock {
   __u16 app_bump_qid;
   /* Queue IDs to bump app, indexed by fast-path core */
   __u16 app_bump_qids[MAX_FP_CORES];
-  /* Core was learned from first received packet */
-  __u8 core_learned;
+  /* Spin lock */
+  volatile __u32 lock;
   /* Local IP */
   __u32 local_ip;
   /* Local port */

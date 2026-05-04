@@ -11,6 +11,7 @@
 #include "udp.h"
 #include "udp_queue_types.h"
 #include "utils.h"
+#include "utils_sync.h"
 #include "log.h"
 
 #define PORT_MAP 0
@@ -91,25 +92,19 @@ int udp_event_rx(struct cham_ebpf_ctx *ctx)
   core = ctx->core;
   if (core >= MAX_FP_CORES)
     return -1;
-  if (!sock->core_learned)
-  {
-    sock->core = core;
-    sock->app_bump_qid = sock->app_bump_qids[core];
-    sock->core_learned = 1;
-  }
-  else if (sock->core != core)
-  {
-    return -1;
-  }
 
   /* Copy payload */
   payload_len = (__u16) (udp_len - sizeof(struct udp_hdr));
   payload = (void *) ((__u8 *) udp + sizeof(struct udp_hdr));
 
+  util_spin_lock(&sock->lock);
   rx_base = (__u8 *) ctx->shm_base + sock->rx_off;
   free_bytes = sock->rx_len - sock->rx_avail;
   if (payload_len > free_bytes)
+  {
+    util_spin_unlock(&sock->lock);
     return -1;
+  }
   
   tail = sock->rx_head + sock->rx_avail;
   if (tail >= sock->rx_len)
@@ -128,16 +123,17 @@ int udp_event_rx(struct cham_ebpf_ctx *ctx)
 
   /* Update number of available bytes */
   sock->rx_avail += payload_len;
+  util_spin_unlock(&sock->lock);
   
   /* Send bump to application */
-  q = &ctx->equeues[sock->app_bump_qid].eq;
+  q = &ctx->equeues[sock->app_bump_qids[core]].eq;
   qe = queue_tail(q);
   if (qe == NULL)
     return -1;
 
   bump = &qe->data.bump_app_rx;
   bump->opaque   = sock->opaque;
-  bump->core = sock->core;
+  bump->core = core;
   bump->rx_avail = payload_len;
   bump->rx_port = f_beui16(udp->src);
   bump->rx_ip = f_beui32(ip->src);
@@ -324,11 +320,13 @@ static inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   if (sock == NULL)
     return -1;
   
+  util_spin_lock(&sock->lock);
   new_head = sock->rx_head + bump->rx_head;
   if (new_head >= sock->rx_len)
     new_head -= sock->rx_len;
   sock->rx_head = new_head;
   sock->rx_avail -= bump->rx_head;
+  util_spin_unlock(&sock->lock);
 
   return 0;
 }

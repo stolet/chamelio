@@ -124,6 +124,8 @@ static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u64 priority,
 
 static void * (*ebpf_map_get)(void *map_base, __u32 len) = (void *) 1010;
 static void * (*ebpf_map_lookup)(void *map_base, __u64 id, __u64 elsize) = (void *) 1011;
+static void (*ebpf_spin_lock)(volatile __u32 *) = (void *) 1016;
+static void (*ebpf_spin_unlock)(volatile __u32 *) = (void *) 1017;
 
 SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
@@ -191,25 +193,18 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   core = ctx->core;
   if (core >= MAX_FP_CORES)
     return -1;
-  if (!sock->core_learned)
-  {
-    sock->core = core;
-    sock->app_bump_qid = sock->app_bump_qids[core];
-    sock->core_learned = 1;
-  }
-  else if (sock->core != core)
-  {
-    return -1;
-  }
-
   /* Copy payload */
   payload_len = (__u16) (udp_len - sizeof(struct udp_hdr));
   payload = (void *) ((__u8 *) udp + sizeof(struct udp_hdr));
 
+  ebpf_spin_lock(&sock->lock);
   rx_base = ebpf_map_get(ctx->shm_base + sock->rx_off, sock->rx_len);
   free_bytes = sock->rx_len - sock->rx_avail;
   if (payload_len > free_bytes)
+  {
+    ebpf_spin_unlock(&sock->lock);
     return -1;
+  }
 
   tail = sock->rx_head + sock->rx_avail;
   if (tail >= sock->rx_len)
@@ -228,16 +223,17 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   /* Update number of available bytes */
   sock->rx_avail += payload_len;
+  ebpf_spin_unlock(&sock->lock);
 
   /* Send bump to application */
-  q = &ctx->equeues[sock->app_bump_qid].eq;
+  q = &ctx->equeues[sock->app_bump_qids[core]].eq;
   qe = ebpf_queue_tail(q, sizeof(struct udp_queue_bump_entry));
   if (qe == NULL)
     return -1;
 
   bump = &qe->data.bump_app_rx;
   bump->opaque   = sock->opaque;
-  bump->core = sock->core;
+  bump->core = core;
   bump->rx_avail = payload_len;
   bump->rx_port = f_beui16(udp->src);
   bump->rx_ip = f_beui32(ip->src);
@@ -435,11 +431,13 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   if (sock == NULL)
     return -1;
 
+  ebpf_spin_lock(&sock->lock);
   new_head = sock->rx_head + bump->rx_head;
   if (new_head >= sock->rx_len)
     new_head -= sock->rx_len;
   sock->rx_head = new_head;
   sock->rx_avail -= bump->rx_head;
+  ebpf_spin_unlock(&sock->lock);
 
   return 0;
 }
