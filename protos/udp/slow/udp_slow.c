@@ -36,7 +36,7 @@ static __u16 find_free_port(struct udp_slow_context *ctx);
    
 int init_udp_slow_context(struct udp_slow_context *ctx)
 {
-  int fd, ret, i;
+  int fd, ret, i, j;
   struct stat statbuf;
   struct proto_ebpf_lib *ebpf;
   __u8 *ebpf_bytecode;
@@ -133,7 +133,8 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
   for (i = 0; i < MAX_SOCKETS; i++)
   {
     ports[i].nsocks = 0;
-    ports[i].next_sock = 0;
+    for (j = 0; j < MAX_FP_CORES; j++)
+      ports[i].next_sock[j] = 0;
   }
 
   cfg = p->shm_base + cfg_map->off;
@@ -229,6 +230,7 @@ int handle_new_sock(struct udp_slow_context *ctx,
   struct udp_queue_new_sock_req *req;
   struct udp_queue_new_sock_res *res;
   __u32 i;
+  __u16 core;
 
   struct udp_sock *socks_map = ctx->proto->shm_base + ctx->socks_map->off;
 
@@ -248,16 +250,18 @@ int handle_new_sock(struct udp_slow_context *ctx,
   res = &qe_res->data.new_sock_res;
   res->opaque = req->opaque;
   res->sock_id = ctx->n_socks;
-  res->core = 0;
+  core = 0;
+  if (ctx->proto->n_fp_cores != 0)
+    core = ctx->n_socks % ctx->proto->n_fp_cores;
+  res->core = core;
 
   sock = &socks_map[res->sock_id];
   sock->id = res->sock_id;
-  sock->core = 0;
+  sock->core = core;
   sock->local_ip = ctx->proto->local_ip;
-  sock->app_bump_qid = actx->app_bump_qs[0]->id;
+  sock->app_bump_qid = actx->app_bump_qs[core]->id;
   for (i = 0; i < ctx->proto->n_fp_cores; i++)
     sock->app_bump_qids[i] = actx->app_bump_qs[i]->id;
-  sock->lock = 0;
   sock->opaque = req->opaque;
   sock->local_port = 0;
   sock->reuport = 0;
@@ -416,6 +420,16 @@ int handle_bind(struct udp_slow_context *ctx,
   if (port->nsocks != 0 && !sock->reuport)
   {
     LOG_ERROR("socket with this port already in use");
+    res->success = 0;
+    res->opaque = req->opaque;
+    ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_BIND_RES);
+    if (ret != 0)
+      LOG_ERROR("failed to enqueue UDP queue bind response");
+    return -1;
+  }
+  if (port->nsocks >= MAX_REUSOCK_PORT)
+  {
+    LOG_ERROR("too many sockets bound to UDP port");
     res->success = 0;
     res->opaque = req->opaque;
     ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_BIND_RES);

@@ -49,8 +49,6 @@ struct udp_sock {
   __u16 app_bump_qid;
   /* Queue IDs to bump app, indexed by fast-path core */
   __u16 app_bump_qids[MAX_FP_CORES];
-  /* Spin lock */
-  volatile __u32 lock;
   /* Local IP */
   __u32 local_ip;
   /* Local port */
@@ -81,8 +79,8 @@ struct udp_sock {
 struct udp_port {
   /* Number of sockets bounded to this port */
   __u32 nsocks;
-  /* Next socket to load balance to if a message is received */
-  __u32 next_sock;
+  /* Next socket to load balance to, indexed by fast-path core */
+  __u32 next_sock[MAX_FP_CORES];
   /* Socket IDs */
   __u32 sids[MAX_REUSOCK_PORT];
 } __attribute__((packed));

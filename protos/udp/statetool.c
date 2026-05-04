@@ -193,9 +193,9 @@ static void sock_print(const struct udp_sock *sock)
   char lip[INET_ADDRSTRLEN];
 
   printf("sock[%u] opaque=0x%" PRIx64 " core=%u app_bump_qid=%u "
-      "reuseport=%u lock=%u local=%s:%u\n",
+      "reuseport=%u local=%s:%u\n",
       sock->id, (uint64_t) sock->opaque, sock->core, sock->app_bump_qid,
-      sock->reuport, sock->lock, ip_str(sock->local_ip, lip, sizeof(lip)),
+      sock->reuport, ip_str(sock->local_ip, lip, sizeof(lip)),
       sock->local_port);
   printf("  rx len=%u avail=%u head=%u off=%" PRIu64
       " tx len=%u avail=%u head=%u off=%" PRIu64 "\n",
@@ -213,8 +213,10 @@ static void port_print(const struct udp_port *ports, __u32 nr)
   {
     if (ports[i].nsocks == 0)
       continue;
-    printf("port[%u] nsocks=%u next_sock=%u sids=", i, ports[i].nsocks,
-        ports[i].next_sock);
+    printf("port[%u] nsocks=%u next_sock=", i, ports[i].nsocks);
+    for (j = 0; j < MAX_FP_CORES; j++)
+      printf("%s%u", j == 0 ? "" : ",", ports[i].next_sock[j]);
+    printf(" sids=");
     for (j = 0; j < MAX_REUSOCK_PORT; j++)
       printf("%s%u", j == 0 ? "" : ",", ports[i].sids[j]);
     printf("\n");
