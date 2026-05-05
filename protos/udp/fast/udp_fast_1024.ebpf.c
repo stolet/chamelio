@@ -8,6 +8,7 @@
 #include "udp.h"
 #include "udp_queue_types.h"
 #include "utils.h"
+#include "log.h"
 
 static __always_inline void block1(int *sum, int t)
 {
@@ -476,7 +477,7 @@ static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
 static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
     __u32 src_ip, __u16 src_port, __u32 dst_ip, __u16 dst_port)
 {
-  __u32 idx, sock_id, nsocks;
+  __u32 idx, sock_id, nsocks, next;
   struct udp_port *port;
   __u16 core;
   struct udp_sock *sock;
@@ -511,7 +512,12 @@ static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
     return NULL;
 
   if (port->nsocks > 1)
-    port->next_sock[core] = (idx + ctx->ncores) % nsocks;
+  {
+    next = idx + ctx->ncores;
+    if (next >= nsocks)
+      next = core;
+    port->next_sock[core] = next;
+  }
 
   return sock;
 }

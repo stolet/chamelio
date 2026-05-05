@@ -5,6 +5,7 @@ src = meson.project_source_root()
 
 ebpf_incs = [
   src / 'lib/utils/include',
+  src / 'lib/utils/log/include',
   src / 'lib/include',
   src / 'lib/utils/queue/include',
   src / 'lib/utils/scheduler/include',
