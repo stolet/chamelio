@@ -13,4 +13,5 @@ executable(
   udp_slow_srcs,
   include_directories: udp_slow_inc,
   dependencies: deps,
+  link_depends: udp_ebpf_objs,
 )
