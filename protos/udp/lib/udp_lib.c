@@ -19,6 +19,7 @@
 #include "log.h"
 #include "uxsocket.h"
 #include "internal.h"
+#include "utils_sync.h"
 
 #define LIB_BATCH_SIZE 16
 
@@ -109,6 +110,7 @@ int udp_connect_slow()
   u->shm_base = NULL;
   u->next_ctxid = 0;
   u->next_sockfd = 0;
+  u->lock = 0;
   udp = u;
   
   return 0;
@@ -148,11 +150,13 @@ struct udp_context_lib * udp_ctx_new()
     .msg_flags = 0,
   };
 
+  util_spin_lock(&udp->lock);
   sz = sendmsg(udp->uxsocket_fd, &msg, 0);
   if (sz != sizeof(req))
   {
     LOG_ERROR("failed to send msg to register udp app ctx");
     perror("");
+    util_spin_unlock(&udp->lock);
     return NULL;
   }
 
@@ -166,6 +170,7 @@ struct udp_context_lib * udp_ctx_new()
     {
       LOG_ERROR("read failed");
       perror("");
+      util_spin_unlock(&udp->lock);
       return NULL;
     }
     off += sz;
@@ -175,6 +180,7 @@ struct udp_context_lib * udp_ctx_new()
   if (ctx == NULL)
   {
     LOG_ERROR("failed to allocate udp context struct");
+    util_spin_unlock(&udp->lock);
     return NULL;
   }
   
@@ -189,6 +195,7 @@ struct udp_context_lib * udp_ctx_new()
     if (shm_base == (void *) -1) 
     {
       LOG_ERROR("failed to map shm region");
+      util_spin_unlock(&udp->lock);
       return NULL;;
     }
     udp->shm_base = shm_base;
@@ -203,6 +210,7 @@ struct udp_context_lib * udp_ctx_new()
   if (eq == NULL)
   {
     LOG_ERROR("failed to create queue from app to slow-path");
+    util_spin_unlock(&udp->lock);
     return NULL;
   }
   ctx->app_slow_q = eq;
@@ -213,6 +221,7 @@ struct udp_context_lib * udp_ctx_new()
   if (dq == NULL)
   {
     LOG_ERROR("failed to create queue from slow-path to app");
+    util_spin_unlock(&udp->lock);
     return NULL;
   }
   ctx->slow_app_q = dq;
@@ -222,6 +231,7 @@ struct udp_context_lib * udp_ctx_new()
   if (eq_list == NULL)
   {
     LOG_ERROR("failed to allocate list for queues app->fast");
+    util_spin_unlock(&udp->lock);
     return NULL;
   }
   ctx->app_fast_qs = eq_list;
@@ -230,6 +240,7 @@ struct udp_context_lib * udp_ctx_new()
   if (dq_list == NULL)
   {
     LOG_ERROR("failed to allcoate list for queues fast->app");
+    util_spin_unlock(&udp->lock);
     return NULL;
   }
   ctx->fast_app_qs = dq_list;
@@ -242,6 +253,7 @@ struct udp_context_lib * udp_ctx_new()
     if (eq == NULL)
     {
       LOG_ERROR("failed to create app->fast bump queue");
+      util_spin_unlock(&udp->lock);
       return NULL;
     }
     eq_list[i] = eq;
@@ -251,11 +263,13 @@ struct udp_context_lib * udp_ctx_new()
     if (dq == NULL)
     {
       LOG_ERROR("failed to create fast->app bump queue");
+      util_spin_unlock(&udp->lock);
       return NULL;
     }
     dq_list[i] = dq;
   }
 
+  util_spin_unlock(&udp->lock);
   return ctx;
 }
 

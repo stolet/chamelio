@@ -81,7 +81,7 @@ enum tcp_wait_poll_mode {
 int tcp_connect_slow()
 {
   int i;
-  struct tcp_lib *u;
+  struct tcp_lib *t;
   struct sockaddr_un s_un;
   int shm_fd, ret, sock_fd;
   int64_t tmp;
@@ -124,24 +124,24 @@ int tcp_connect_slow()
     goto close_sockfd;
   }
 
-  u = malloc(sizeof(struct tcp_lib));
-  if (u == NULL)
+  t = malloc(sizeof(struct tcp_lib));
+  if (t == NULL)
   {
     LOG_ERROR("failed to allocate tcp_lib struct");
     goto close_sockfd;
   }
 
-  memset(u, 0, sizeof(*u));
+  memset(t, 0, sizeof(*t));
   for (i = 0; i < MAX_SOCKETS; i++)
-    u->socks[i].fd = SOCK_INACTIVE;
+    t->socks[i].fd = SOCK_INACTIVE;
 
-  u->uxsocket_fd = sock_fd;
-  u->shm_fd = shm_fd;
-  u->shm_base = NULL;
-  u->next_ctxid = 0;
-  u->next_sockfd = 0;
-  u->lock = 0;
-  tcp = u;
+  t->uxsocket_fd = sock_fd;
+  t->shm_fd = shm_fd;
+  t->shm_base = NULL;
+  t->next_ctxid = 0;
+  t->next_sockfd = 0;
+  t->lock = 0;
+  tcp = t;
 
   return 0;
 
