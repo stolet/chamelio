@@ -79,10 +79,14 @@ DEFINE_EVENT_STUB(sched, 3)
     if (rx_ret > 0)                                                           \
     {                                                                         \
       ret = infra_tx(ctx, g, mb, rx_ret);                                     \
-      if (ret == 0)                                                           \
+      if (ret == INFRA_RET_OK)                                                \
       {                                                                       \
         ctx->tx_mbs[ctx->tx_n] = mb;                                          \
         ctx->tx_n++;                                                          \
+        mb_tx = 1;                                                            \
+      }                                                                       \
+      else if (ret == INFRA_RET_MBUF)                                         \
+      {                                                                       \
         mb_tx = 1;                                                            \
       }                                                                       \
     }                                                                         \
@@ -138,10 +142,15 @@ DEFINE_EVENT_STUB(sched, 3)
       if (sched_ret <= 0)                                                     \
         break;                                                                \
       ret = infra_tx(ctx, g, mb, sched_ret);                                  \
-      if (ret == 0)                                                           \
+      if (ret == INFRA_RET_OK)                                                \
       {                                                                       \
         ctx->tx_mbs[ctx->tx_n] = mb;                                          \
         ctx->tx_n++;                                                          \
+        (*ntx)++;                                                             \
+        did_work = 1;                                                         \
+      }                                                                       \
+      else if (ret == INFRA_RET_MBUF)                                         \
+      {                                                                       \
         (*ntx)++;                                                             \
         did_work = 1;                                                         \
       }                                                                       \
@@ -217,10 +226,14 @@ DEFINE_EVENT_STUB(sched, 3)
         if (deq_ret > 0)                                                      \
         {                                                                     \
           ret = infra_tx(ctx, g, mb, deq_ret);                                \
-          if (ret == 0)                                                       \
+          if (ret == INFRA_RET_OK)                                            \
           {                                                                   \
             ctx->tx_mbs[ctx->tx_n] = mb;                                      \
             ctx->tx_n++;                                                      \
+            (*ntx)++;                                                         \
+          }                                                                   \
+          else if (ret == INFRA_RET_MBUF)                                     \
+          {                                                                   \
             (*ntx)++;                                                         \
           }                                                                   \
         }                                                                     \

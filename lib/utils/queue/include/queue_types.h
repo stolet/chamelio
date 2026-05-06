@@ -63,10 +63,15 @@ enum queue_type {
   QUEUE_ARP_RX_REQ,
   /* Message from fast to control signalling ARP response received */
   QUEUE_ARP_RX_REP,
-  /* Message from control to fast signalling ARP request ready for transmission */
+  /* Message from control to fast signalling ARP request to be sent */
   QUEUE_ARP_TX_PKT,
   /* Packet data in transmit queue from control-path */
   QUEUE_ARP_PKT,
+
+  /* Message from fast to control signalling this mbuf is waiting on ARP */
+  QUEUE_MBUF_PENDING,
+  /* Message from control to fast signalling that this mbuf should be sent */
+  QUEUE_MBUF_TX,
 };
 
 /* Request for registering new guest */
@@ -299,6 +304,27 @@ struct queue_arp_tx_req {
   __u32 ip;
 } __attribute__((packed));
 
+/* Message sent to control indicating this mbuf is waiting on ARP */
+struct queue_mbuf_pending {
+  /* IP address pending ARP resolution */
+  __u32 ip;
+  /* Guest this packet belongs to */
+  __u8 gid;
+  /* Size of packet pointed to by mbuf */
+  size_t pkt_len;
+  /* Pointer to mbuf */
+  void *mb;
+} __attribute__((packed));
+
+/* Message sent to fast indicating that this mbuf should be sent */
+struct queue_mbuf_tx {
+  /* Guest this packet belongs to */
+  __u8 gid;
+  /* Size of packet pointed to by mbuf */
+  size_t pkt_len;
+  /* Pointer to mbuf */
+  void *mb;
+} __attribute__((packed));
 
 struct queue_entry {
   /* Type of queue entries. Don't update outside of enqueue or dequeue */
@@ -333,6 +359,8 @@ struct queue_entry {
     struct queue_arp_tx_req arp_pkt_tx_req;
     struct queue_arp_update arp_update;
     
+    struct queue_mbuf_pending mbuf_pending;
+    struct queue_mbuf_tx mbuf_tx;
     /* Keeps queue entry the size of a cache line */
     __u8 raw[63];
   } __attribute__((packed)) data;

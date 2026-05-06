@@ -113,10 +113,14 @@ static inline int rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
   if (rx_ret > 0)
   {
     ret = infra_tx(ctx, g, mb, rx_ret);
-    if (ret == 0)
+    if (ret == INFRA_RET_OK)
     {
       ctx->tx_mbs[ctx->tx_n] = mb;
       ctx->tx_n++;
+      mb_tx = 1;
+    }
+    else if (ret == INFRA_RET_MBUF)
+    {
       mb_tx = 1;
     }
   }

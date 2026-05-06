@@ -1,8 +1,11 @@
+#include <rte_mbuf_core.h>
 #include <stdlib.h>
 #include <string.h>
 #include <linux/types.h>
 
 #include "arp.h"
+#include "eth_hdr.h"
+#include "ip_hdr.h"
 #include "log.h"
 #include "queue_types.h"
 #include "queue_fns.h"
@@ -21,7 +24,7 @@ void arp_table_init(struct arp_table *arp_table)
   }
 }
 
-struct arp_entry * arp_lookup(struct arp_table *at, __u32 ip) 
+struct arp_table_entry * arp_lookup(struct arp_table *at, __u32 ip)
 {
   int i;
   __u32 hash, idx; 
@@ -46,7 +49,7 @@ struct arp_entry * arp_lookup(struct arp_table *at, __u32 ip)
   return NULL;
 }
 
-struct arp_entry * arp_insert(struct arp_table *at, __u32 ip, __u8 *mac) 
+struct arp_table_entry * arp_insert(struct arp_table *at, __u32 ip, __u8 *mac)
 {
   int i;
   __u32 hash, idx;
@@ -69,7 +72,7 @@ struct arp_entry * arp_insert(struct arp_table *at, __u32 ip, __u8 *mac)
   return NULL;
 }
 
-struct arp_entry * arp_insert_pending(struct arp_table *at, __u32 ip) 
+struct arp_table_entry * arp_insert_pending(struct arp_table *at, __u32 ip)
 {
   int i;
   __u32 hash, idx;
@@ -89,6 +92,82 @@ struct arp_entry * arp_insert_pending(struct arp_table *at, __u32 ip)
   }
   
   return NULL;
+}
+
+void arp_buf_init(struct arp_buf *buf)
+{
+  int i;
+
+  buf->n = 0;
+  for (i = 0; i < ARP_BUF_SIZE; i++)
+  {
+    buf->entries[i].ip = ARP_IP_EMPTY;
+    buf->entries[i].mb = NULL;
+  }
+}
+
+int arp_buf_insert(struct arp_buf *buf, __u32 ip,
+    __u16 core, __u8 gid, size_t pkt_len, struct rte_mbuf *mb)
+{
+  int i;
+  struct arp_buf_entry *e;
+
+  for (i = 0; i < ARP_BUF_SIZE; i++)
+  {
+    e = &buf->entries[i];
+    if (e->ip == ARP_IP_EMPTY)
+    {
+      e->ip = ip;
+      e->core = core;
+      e->gid = gid;
+      e->pkt_len = pkt_len;
+      e->mb = mb;
+      return 0;
+    }
+  }
+
+  return -1;
+}
+
+int arp_buf_flush(struct arp_buf *buf, __u32 ip, struct equeue **eqs)
+{
+  int i, ret, flushed;
+  struct arp_buf_entry *e;
+  struct queue_entry *qe;
+
+  flushed = 0;
+  for (i = 0; i < ARP_BUF_SIZE; i++)
+  {
+    e = &buf->entries[i];
+    if (e->ip == ip)
+    {
+      flushed = 1;
+      qe = queue_tail(eqs[e->core]);
+      if (qe == NULL)
+      {
+        LOG_ERROR("control to fast path queue is full");
+        return -1;
+      }
+
+      qe->data.mbuf_tx.mb = e->mb;
+      qe->data.mbuf_tx.gid = e->gid;
+      qe->data.mbuf_tx.pkt_len = e->pkt_len;
+      ret = queue_enqueue(eqs[e->core], QUEUE_MBUF_TX);
+      if (ret < 0)
+      {
+        LOG_ERROR("failed to enqueue mbuf to fast path");
+        return -1;
+      }
+
+      e->mb = NULL;
+      e->ip = ARP_IP_EMPTY;
+    }
+  }
+
+  if (flushed)
+    return 0;
+  else
+    return -1;
 }
 
 int arp_request(struct equeue *txq, struct equeue *cfq,  

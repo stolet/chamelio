@@ -16,6 +16,7 @@ struct eth_hdr {
   struct eth_addr dst;
   /* Source MAC address */
   struct eth_addr src;
+  /* Type of next header */
   beui16_t type;
 } __attribute__ ((packed));
 

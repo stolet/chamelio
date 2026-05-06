@@ -187,16 +187,19 @@ static inline int queues_poll_guest_dequeue(struct fast_context *ctx,
   /* Add to transmission buffer if packet processed for TX */
   if (deq_ret > 0)
   {
-    /* Add destination MAC address and run infra processing */
-    ret = infra_tx(ctx, g, mb, deq_ret);
-
     /* Add to TX buffer if infra protos were successful */
-    if (ret == 0)
+    ret = infra_tx(ctx, g, mb, deq_ret);
+    if (ret == INFRA_RET_OK)
     {
       ctx->tx_mbs[ctx->tx_n] = mb;
       ctx->tx_n++;
       (*ntx)++;
     }
+    else if (ret == INFRA_RET_MBUF)
+    {
+      (*ntx)++;
+    }
+
   }
 
   return 0;

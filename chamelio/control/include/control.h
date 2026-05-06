@@ -14,7 +14,7 @@
 #include "tomgr.h"
 
 #define CORE_INVALID UINT16_MAX
-#define CONTROL_BATCH_SIZE 16
+#define CTL_BATCH_SIZE 16
 
 struct comb_bc_blob {
   void *data;
@@ -54,7 +54,6 @@ struct proto_control {
   /* Number of maps created */
   __u16 nmaps;
 };
-
 
 struct guest_budget_control {
   __s64 val;
@@ -142,6 +141,8 @@ struct control_context {
 
   /* ARP table. This is also replicated in fast-path */
   struct arp_table arp_table;
+  /* Buffer for packets that are waiting ARP resolution */
+  struct arp_buf arp_buf;
   
   /* Listening UX sockets for VMs */
   int ivshmem_uxfd;

@@ -100,6 +100,7 @@ struct fast_context {
   __u16 tx_n;
   /* List of mbuf pointers that are processed and ready to be transmitted */
   struct rte_mbuf *tx_mbs[TXBUF_SIZE];
+  /* Buffered */
 
   /* Number of preallocated mbufs for transmission */
   __u16 tx_cache_n;

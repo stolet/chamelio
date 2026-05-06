@@ -78,8 +78,8 @@ int fast_sched_poll(struct fast_context *ctx)
 }
 
 static inline int sched_poll_guest(struct fast_context *ctx,
-    struct guest_fast *g, struct rte_mbuf **mbs, int max, int *ntx,
-    int charge_budget)
+    struct guest_fast *g, struct rte_mbuf **mbs,
+    int max, int *ntx, int charge_budget)
 {
   int exec_ret;
   int ntx_start;
@@ -147,13 +147,15 @@ static inline int sched_poll_guest(struct fast_context *ctx,
 
     /* Add destination MAC address */
     ret = infra_tx(ctx, g, mb, sched_ret);
-
-    /* TODO: Don't drop packet if ARP lookup hasn't resolved */
-    if (ret == 0)
+    if (ret == INFRA_RET_OK)
     {
-      /* Add to transmission buffer if packet processed for TX */
       ctx->tx_mbs[ctx->tx_n] = mb;
       ctx->tx_n++;
+      (*ntx)++;
+      did_work = 1;
+    }
+    else if (ret == INFRA_RET_MBUF)
+    {
       (*ntx)++;
       did_work = 1;
     }

@@ -6,6 +6,10 @@
 
 #include "fast.h"
 
+#define INFRA_RET_OK 0
+#define INFRA_RET_ERR -1
+#define INFRA_RET_MBUF 1
+
 struct guest_fast * infra_rx(struct fast_context *ctx,
     struct rte_mbuf *mb, __u64 *pkt_off);
 int infra_tx(struct fast_context *ctx, 

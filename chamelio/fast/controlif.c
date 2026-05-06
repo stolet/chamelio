@@ -4,6 +4,7 @@
 #include "scheduler_fns.h"
 #include "arp_hdr.h"
 #include "txcache.h"
+#include "infra.h"
 #include "log.h"
 
 static inline void handle_new_guest(struct fast_context *ctx, 
@@ -22,6 +23,9 @@ static inline void handle_upload_ebpf(struct fast_context *ctx,
 static inline void handle_arp_tx_pkt(struct fast_context *ctx, 
     struct queue_entry *qe);
 static inline void handle_arp_update(struct fast_context *ctx, 
+    struct queue_entry *qe);
+
+static inline void handle_mbuf(struct fast_context *ctx,
     struct queue_entry *qe);
 
 int controlif_poll(struct fast_context *ctx)
@@ -80,6 +84,10 @@ int controlif_poll(struct fast_context *ctx)
         break;
       case QUEUE_ARP_UPDATE:
         handle_arp_update(ctx, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_MBUF_TX:
+        handle_mbuf(ctx, qe);
         queue_dequeue(q);
         break;
       default:
@@ -335,7 +343,7 @@ static inline void handle_arp_tx_pkt(struct fast_context *ctx,
 static inline void handle_arp_update(struct fast_context *ctx, 
     struct queue_entry *qe)
 {
-  struct arp_entry *ae;
+  struct arp_table_entry *ae;
   struct queue_arp_update *arp_up = &qe->data.arp_update;
   
   ae = arp_insert(&ctx->arp_table, arp_up->ip, arp_up->mac);
@@ -344,4 +352,33 @@ static inline void handle_arp_update(struct fast_context *ctx,
     LOG_ERROR("failed to insert new entry into ARP table");
     return;
   }
+}
+
+static inline void handle_mbuf(struct fast_context *ctx,
+    struct queue_entry *qe)
+{
+  int ret;
+  struct queue_mbuf_tx *qmb;
+
+  qmb = &qe->data.mbuf_tx;
+  if (ctx->tx_n > TXBUF_SIZE)
+  {
+    txcache_free(ctx, qmb->mb);
+    return;
+  }
+
+  qmb = &qe->data.mbuf_tx;
+  ret = infra_tx(ctx, &ctx->guests[qmb->gid], qmb->mb, qmb->pkt_len);
+  if (ret == INFRA_RET_ERR)
+  {
+    txcache_free(ctx, qmb->mb);
+    return;
+  }
+  else if (ret == INFRA_RET_MBUF)
+  {
+    return;
+  }
+
+  ctx->tx_mbs[ctx->tx_n] = qmb->mb;
+  ctx->tx_n++;
 }

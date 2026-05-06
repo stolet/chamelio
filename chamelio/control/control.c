@@ -67,6 +67,9 @@ int control_context_init(struct control_context *ctl_ctx,
 
   /* Initialize ARP table to default values */
   arp_table_init(&ctl_ctx->arp_table);
+
+  /* Initialize ARP buffer to default values */
+  arp_buf_init(&ctl_ctx->arp_buf);
   
   /* Initialize timeout manager */
   tomgr = tomgr_init();
@@ -336,7 +339,7 @@ static inline int poll_fast(struct control_context *ctx)
   i = 0;
   cores_polled = 0;
   increment_core = 0;
-  while (i < CONTROL_BATCH_SIZE)
+  while (i < CTL_BATCH_SIZE)
   {
     if (cores_polled >= ctx->config->fp_cores_max)
       break;
@@ -361,6 +364,10 @@ static inline int poll_fast(struct control_context *ctx)
         break;
       case QUEUE_ARP_LOOKUP:
         control_arp_lookup(ctx, qe);
+        queue_dequeue(q);
+        break;
+      case QUEUE_MBUF_PENDING:
+        control_arp_mbuf(ctx, qe, ctx->next_core);
         queue_dequeue(q);
         break;
       case QUEUE_ARP_RX_REQ:
@@ -397,7 +404,7 @@ static inline int poll_guests(struct control_context *ctx)
   i = 0;
   guests_polled = 0;
   increment_guest = 0;
-  while (i < CONTROL_BATCH_SIZE)
+  while (i < CTL_BATCH_SIZE)
   {
     if (guests_polled >= ctx->n_guests)
       break;
@@ -470,7 +477,7 @@ static inline int poll_timeouts(struct control_context *ctx)
   int i;
   struct to_entry *te;
   
-  for (i = 0; i < CONTROL_BATCH_SIZE; i++)
+  for (i = 0; i < CTL_BATCH_SIZE; i++)
   {
     te = tomgr_peek(ctx->tomgr);
     if (te == NULL)

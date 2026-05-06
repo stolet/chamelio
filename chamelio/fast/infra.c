@@ -1,3 +1,4 @@
+#include "infra.h"
 #include <stdlib.h>
 #include <linux/types.h>
 
@@ -15,6 +16,7 @@
 #include "queue_types.h"
 #include "queue_fns.h"
 #include "log.h"
+#include "log_pkt.h"
 
 static inline int process_rx_arp(struct fast_context *ctx, struct arp_pkt *pkt);
 static inline struct guest_fast * process_rx_ip(struct fast_context *ctx,
@@ -32,7 +34,8 @@ static inline void process_tx_hdrs_gre(struct fast_context *ctx,
 static inline void process_tx_mbuf_gre(struct rte_mbuf *mb, size_t pkt_len);
 static inline void process_tx_chksum_gre(struct rte_mbuf *mb);
 static inline int process_tx_arp(struct fast_context *ctx, 
-    struct guest_fast *g, struct rte_mbuf *mb, __u32 outer_remote_ip);
+  struct guest_fast *g, size_t pkt_len,
+  struct rte_mbuf *mb, __u32 outer_remote_ip);
 
 struct guest_fast * infra_rx(struct fast_context *ctx,
     struct rte_mbuf *mb, __u64 *pkt_off)
@@ -73,7 +76,7 @@ int infra_tx(struct fast_context *ctx,
     if (e == NULL)
     {
       LOG_WARN("could not find outer ip for destination");
-      return -1;
+      return INFRA_RET_ERR;
     }
     outer_remote_ip = e->outer_ip;
   }
@@ -83,9 +86,9 @@ int infra_tx(struct fast_context *ctx,
     outer_remote_ip = f_beui32(ip->dst);
   }
 
-  ret = process_tx_arp(ctx, g, mb, outer_remote_ip);
+  ret = process_tx_arp(ctx, g, pkt_len, mb, outer_remote_ip);
   if (ret != 0)
-    return -1;
+    return ret;
 
   if (ctx->virt_gre)
   {
@@ -99,7 +102,7 @@ int infra_tx(struct fast_context *ctx,
     process_tx_chksum(mb, pkt);
   }
 
-  return 0;
+  return INFRA_RET_OK;
 }
 
 static inline int process_rx_arp(struct fast_context *ctx, struct arp_pkt *pkt)
@@ -110,7 +113,7 @@ static inline int process_rx_arp(struct fast_context *ctx, struct arp_pkt *pkt)
   if (qe == NULL)
   {
     LOG_ERROR("failed to get tail from fast->control queue");
-    return -1;
+    return INFRA_RET_ERR;
   }
   
   if (f_beui16(pkt->arp.oper) == ARP_OPER_REQUEST)
@@ -118,7 +121,7 @@ static inline int process_rx_arp(struct fast_context *ctx, struct arp_pkt *pkt)
   else if (f_beui16(pkt->arp.oper) == ARP_OPER_REPLY)
     process_arp_rx_rep(ctx, qe, pkt);
   
-  return 0;
+  return INFRA_RET_OK;
 }
 
 static inline struct guest_fast * process_rx_ip(struct fast_context *ctx,
@@ -148,11 +151,12 @@ static inline struct guest_fast * process_rx_ip(struct fast_context *ctx,
 }
 
 static inline int process_tx_arp(struct fast_context *ctx, 
-    struct guest_fast *g, struct rte_mbuf *mb, __u32 outer_remote_ip)
+    struct guest_fast *g, size_t pkt_len,
+    struct rte_mbuf *mb, __u32 outer_remote_ip)
 {
   int ret;
   struct eth_hdr *eth;
-  struct arp_entry *ae;
+  struct arp_table_entry *ae;
   struct queue_entry *qe;
   void *pkt;
   
@@ -163,12 +167,20 @@ static inline int process_tx_arp(struct fast_context *ctx,
   ae = arp_lookup(&ctx->arp_table, outer_remote_ip);
   if (ae == NULL)
   {
+    /* Mark ARP entry as pending */
+    ae = arp_insert_pending(&ctx->arp_table, outer_remote_ip);
+    if (ae == NULL)
+    {
+      LOG_ERROR("failed to insert pending ARP entry");
+      return INFRA_RET_ERR;
+    }
+
     /* ARP entry doesn't exist so send message to control path to resolve */
     qe = queue_tail(ctx->fast_ctl_q);
     if (qe == NULL)
     {
       LOG_ERROR("failed to get tail for fast->control queue");
-      return -1;
+      return INFRA_RET_ERR;
     }
     
     qe->data.arp_lookup.ip = outer_remote_ip;
@@ -176,23 +188,52 @@ static inline int process_tx_arp(struct fast_context *ctx,
     if (ret != 0)
     {
       LOG_ERROR("failed to enqueue ARP lookup to control");
-      return -1;
     }
-    
-    /* Mark ARP entry as pending */
-    ae = arp_insert_pending(&ctx->arp_table, outer_remote_ip);
-    if (ae == NULL)
+
+    qe = queue_tail(ctx->fast_ctl_q);
+    if (qe == NULL)
     {
-      LOG_ERROR("failed to insert pending ARP entry");
-      return -1;
+      LOG_ERROR("failed to get tail for fast->control queue");
+      return INFRA_RET_ERR;
     }
-    
-    return -1;
+
+    qe->data.mbuf_pending.ip = outer_remote_ip;
+    qe->data.mbuf_pending.mb = mb;
+    qe->data.mbuf_pending.pkt_len = pkt_len;
+    qe->data.mbuf_pending.gid = g->id;
+    ret = queue_enqueue(ctx->fast_ctl_q, QUEUE_MBUF_PENDING);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue pending mbuf to control");
+      return INFRA_RET_ERR;
+    }
+
+    return INFRA_RET_MBUF;
   }
   
   /* Return if ARP entry is still pending */
   if (ae->pending)
-    return -1;
+  {
+    qe = queue_tail(ctx->fast_ctl_q);
+    if (qe == NULL)
+    {
+      LOG_ERROR("failed to get tail for fast->control queue");
+      return INFRA_RET_ERR;
+    }
+
+    qe->data.mbuf_pending.ip = outer_remote_ip;
+    qe->data.mbuf_pending.mb = mb;
+    qe->data.mbuf_pending.pkt_len = pkt_len;
+    qe->data.mbuf_pending.gid = g->id;
+    ret = queue_enqueue(ctx->fast_ctl_q, QUEUE_MBUF_PENDING);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue pending mbuf to control");
+      return INFRA_RET_ERR;
+    }
+
+    return INFRA_RET_MBUF;
+  }
   
   /* Copy MAC addresses to packet */
   memcpy(eth->dst.addr, ae->mac, ETH_ADDR_LEN);
@@ -201,7 +242,7 @@ static inline int process_tx_arp(struct fast_context *ctx,
   /* Set type of next header */
   eth->type = t_beui16(ETH_TYPE_IP);
 
-  return 0;
+  return INFRA_RET_OK;
 }
 
 static inline void process_tx_mbuf(struct rte_mbuf *mb, size_t pkt_len)

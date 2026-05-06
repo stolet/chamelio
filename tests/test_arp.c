@@ -17,7 +17,7 @@
 
 static void test_single_insert()
 {
-  struct arp_entry *entry;
+  struct arp_table_entry *entry;
   struct arp_table at = {0};
   __u8 mac1[6] = TEST_MAC_1;
   
@@ -38,7 +38,7 @@ static void test_single_insert()
 
 static void test_multiple_inserts()
 {
-  struct arp_entry *entry1, *entry2;
+  struct arp_table_entry *entry1, *entry2;
   struct arp_table at = {0};
   __u8 mac1[6] = TEST_MAC_1;
   __u8 mac2[6] = TEST_MAC_2;
@@ -71,7 +71,7 @@ static void test_multiple_inserts()
 
 static void test_collision_handling()
 {
-  struct arp_entry *entry1, *entry_collision;
+  struct arp_table_entry *entry1, *entry_collision;
   struct arp_table at = {0};
   __u8 mac1[6] = TEST_MAC_1;
   __u8 mac_collision[6] = TEST_MAC_COLLISION;
@@ -103,7 +103,7 @@ static void test_collision_handling()
 
 static void test_lookup_nonexistent()
 {
-  struct arp_entry *entry;
+  struct arp_table_entry *entry;
   struct arp_table at = {0};
   
   printf(ANSI_COLOR_BLUE "Testing lookup of nonexistent ARP entry..." 
@@ -118,7 +118,7 @@ static void test_lookup_nonexistent()
 
 static void test_insert_and_overwrite()
 {
-  struct arp_entry *entry;
+  struct arp_table_entry *entry;
   struct arp_table at = {0};
   __u8 mac1[6] = TEST_MAC_1;
   __u8 mac2[6] = TEST_MAC_2;
@@ -150,7 +150,7 @@ static void test_insert_and_overwrite()
 
 static void test_insert_pending()
 {
-  struct arp_entry *entry;
+  struct arp_table_entry *entry;
   struct arp_table at = {0};
   
   printf(ANSI_COLOR_BLUE "Testing ARP insert pending.." ANSI_COLOR_RESET "\n");
@@ -170,7 +170,7 @@ static void test_insert_pending()
 
 static void test_insert_pending_overwrite()
 {
-  struct arp_entry *entry;
+  struct arp_table_entry *entry;
   struct arp_table at = {0};
   __u8 mac2[6] = TEST_MAC_2;
   
@@ -202,7 +202,7 @@ static void test_arp_table_full()
 {
   __u32 ip;
   struct arp_table at = {0};
-  struct arp_entry *entry;
+  struct arp_table_entry *entry;
   __u8 mac[6] = TEST_MAC_1;
   
   printf(ANSI_COLOR_BLUE "Testing ARP table full condition..." ANSI_COLOR_RESET "\n");
