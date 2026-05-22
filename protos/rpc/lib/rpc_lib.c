@@ -32,6 +32,9 @@ static int handle_new_worker_res(struct rpc_queue_entry *qe);
 static int handle_new_service_res(struct rpc_queue_entry *qe);
 static int handle_tx_bump(struct rpc_queue_bump_entry *qe);
 static int handle_rx_bump(struct rpc_queue_bump_entry *qe);
+static void ring2ring(__u8 *dst, __u32 dst_pos, __u32 dst_ring_len,
+    const __u8 *src, __u32 src_pos, __u32 src_ring_len, __u32 len);
+//TODO: put the ring reads in a helper function
 
 
 int rpc_connect_slow()
@@ -717,6 +720,7 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
                __u32 rid, void *buf, size_t len)
 {
   struct equeue *eq;
+  struct dqueue *q;
   struct rpc_queue_bump_entry *qe;
   struct rpc_queue_bump_cham_tx *bump_tx;
   struct rpc_queue_bump_cham_rx *bump_rx;
@@ -810,53 +814,51 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
     return -1;
   }
 
-  // notify fast-path that RX space has been freed
-  qe = queue_tail(eq);
-  if (!qe)
+  if (!w->server->app_lb_mode)
   {
-    LOG_ERROR("failed to get queue tail for rx bump req");
-    return -1;
-  }
-  bump_rx = &qe->data.bump_cham_rx;
-  bump_rx->sock_id = w->worker_id;
-  bump_rx->rx_head = w->rx_pkt_len;
-  bump_rx->type = 0; // request
+    // notify fast-path that RX space has been freed
+    qe = queue_tail(eq);
+    if (!qe)
+    {
+      LOG_ERROR("failed to get queue tail for rx bump req");
+      return -1;
+    }
+    bump_rx = &qe->data.bump_cham_rx;
+    bump_rx->sock_id = w->worker_id;
+    bump_rx->rx_head = w->rx_pkt_len;
+    bump_rx->type = 0; // request
 
-  ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_RX);
-  if (ret != 0)
-  {
-    LOG_ERROR("failed to enqueue rx bump req");
-    return -1;
+    ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_RX);
+    if (ret != 0)
+    {
+      LOG_ERROR("failed to enqueue rx bump req");
+      return -1;
+    }
+
+    /* Dequeue the BUMP_APP_RX that rpc_handle_call peeked at */
+    q = w->ctx->fast_app_qs[w->server->core];
+    queue_dequeue(q);
   }
 
-  /* Dequeue the BUMP_APP_RX that rpc_handle_call peeked at */
-  {
-    struct dqueue *bq = w->ctx->fast_app_qs[w->server->core];
-    queue_dequeue(bq);
-    w->rx_pending = 0;
-  }
-
-  return (int)len;
+  return len;
 }
 
 int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
                     void *buf, size_t len)
 {
-  struct rpc_hdr hdr;
+  int n;
   struct dqueue *q;
   struct rpc_queue_bump_entry *qe;
   __u32 n1, n2, new_head;
-  int n;
-
+  struct rpc_hdr hdr = {0};
+  struct rpc_worker *wkr = (struct rpc_worker *)w->shm_worker;
   if (!w || !rid)
   {
     LOG_ERROR("null rpc worker or rid pointer");
     return -1;
   }
-  /* rx_pending set: the bump was already peeked; wait for rpc_return
-     to dequeue it before accepting the next request. */
 
-  if (w->rx_pending)
+  if (wkr->jobs_pending >= JOB_QUEUE_SIZE)
   {
     errno = EAGAIN;
     return -1;
@@ -864,42 +866,130 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 
   if (w->rx_avail == 0)
   {
-    /* Peek at the queue head to see if the fast path delivered a new request */
-    q = w->ctx->fast_app_qs[w->server->core];
-    // qe = queue_head(q);
-
-    if ((qe = queue_head(q)) == NULL ||
-        qe->type != RPC_QUEUE_BUMP_APP_RX ||
-        qe->data.bump_app_rx.type != 0)
+    if (w->server->app_lb_mode)
     {
-      errno = EAGAIN;
-      return -1;
+      /* JBSQ pull: worker claims next entry from the server's shared ring */
+      
+      __u8 *shbuf;
+      __u32 meta_sz, srvr_avail, entry_len, hdr_pos, dst_pos, curr_head;
+      struct rpc_rx_meta md;
+      struct rpc_server *srvr;
+
+      srvr = (struct rpc_server *)w->server->shm_server;
+      shbuf = (__u8 *)w->server->rx_buf;
+      meta_sz    = (__u32)sizeof(struct rpc_rx_meta);
+      curr_head = srvr->rx_head;
+      srvr_avail = srvr->rx_avail;
+
+      while (__sync_lock_test_and_set(&srvr->rx_lock, 1)){}
+
+      //checks if there are enough bytes available to read otw try reading again later
+      if (srvr_avail < meta_sz + (__u32)sizeof(struct rpc_hdr))
+      {
+        __sync_lock_release(&srvr->rx_lock);
+        errno = EAGAIN;
+        return -1;
+      }
+
+      if (curr_head + meta_sz <= srvr->rx_len)
+      {
+        memcpy(&md, shbuf + curr_head, meta_sz);
+      }
+      else
+      {
+        n1 = srvr->rx_len - curr_head;
+        n2 = meta_sz - n1;
+        memcpy(&md, shbuf + curr_head, n1);
+        memcpy((__u8 *)&md + n1, shbuf, n2);
+      }
+
+      hdr_pos = (curr_head + meta_sz) % srvr->rx_len;
+      if (hdr_pos + sizeof(struct rpc_hdr) <= srvr->rx_len)
+      {
+        memcpy(&hdr, shbuf + hdr_pos, sizeof(struct rpc_hdr));
+      }
+      else
+      {
+        n1 = srvr->rx_len - hdr_pos;
+        n2 = (__u32)sizeof(struct rpc_hdr) - n1;
+        memcpy(&hdr, shbuf + hdr_pos, n1);
+        memcpy((__u8 *)&hdr + n1, shbuf, n2);
+      }
+
+      hdr.service.x = ntohs(hdr.service.x);
+      hdr.len.x     = ntohs(hdr.len.x);
+      hdr.rid.x     = ntohl(hdr.rid.x);
+
+      entry_len = meta_sz + hdr.len.x;
+
+      //checks if the whole payload is available to read
+      if (srvr_avail < entry_len)
+      {
+        __sync_lock_release(&srvr->rx_lock);
+        errno = EAGAIN;
+        return -1;
+      }
+
+      if (hdr.len.x > w->rx_len - w->rx_avail)
+      {
+        __sync_lock_release(&srvr->rx_lock);
+        LOG_ERROR("worker rx_buf too small for incoming RPC message");
+        return -1;
+      }
+
+      srvr->rx_head = (curr_head + entry_len) % srvr->rx_len;
+      __sync_fetch_and_sub(&srvr->rx_avail, entry_len);
+
+      __sync_lock_release(&srvr->rx_lock);
+
+      dst_pos = (w->rx_head + w->rx_avail) % w->rx_len;
+      
+      //TODO: see if this helper function has other uses
+      //copy payload from the server's rx buf to worker rx_buf
+      ring2ring((__u8 *)w->rx_buf, dst_pos, w->rx_len, shbuf, hdr_pos,
+                srvr->rx_len, hdr.len.x);
+
+      __sync_fetch_and_add(&wkr->jobs_pending, 1);
+
+      w->rx_ip    = md.rx_ip;
+      w->rx_port  = md.rx_port;
+      w->rx_avail += hdr.len.x;
     }
+    else
+    {
+      /* eBPF: peek at the bump queue */
+      q = w->ctx->fast_app_qs[w->server->core];
 
-    /* Read address and size directly from the bump */
-    w->rx_avail = qe->data.bump_app_rx.rx_avail;
-    w->rx_ip    = qe->data.bump_app_rx.rx_ip;
-    w->rx_port  = qe->data.bump_app_rx.rx_port;
-    w->rx_pending = 1;
-  }
+      if ((qe = queue_head(q)) == NULL ||
+          qe->type != RPC_QUEUE_BUMP_APP_RX ||
+          qe->data.bump_app_rx.type != 0)
+      {
+        errno = EAGAIN;
+        return -1;
+      }
 
-  // Read hdr
-  if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len)
-  {
-    n1 = w->rx_len - w->rx_head;
-    n2 = sizeof(struct rpc_hdr) - n1;
-    memcpy(&hdr, w->rx_buf + w->rx_head, n1);
-    memcpy(((__u8 *)&hdr) + n1, w->rx_buf, n2);
-  }
-  else
-  {
-    memcpy(&hdr, w->rx_buf + w->rx_head, sizeof(struct rpc_hdr));
-  }
+      /* Read address and size directly from the bump */
+      w->rx_avail = qe->data.bump_app_rx.rx_avail;
+      w->rx_ip    = qe->data.bump_app_rx.rx_ip;
+      w->rx_port  = qe->data.bump_app_rx.rx_port;
+      __sync_fetch_and_add(&wkr->jobs_pending, 1);
 
-  // convert fields from network to host order
-  hdr.service.x = ntohs(hdr.service.x);
-  hdr.len.x = ntohs(hdr.len.x);
-  hdr.rid.x = ntohl(hdr.rid.x);
+      if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len)
+      {
+        n1 = w->rx_len - w->rx_head;
+        n2 = sizeof(struct rpc_hdr) - n1;
+        memcpy(&hdr, w->rx_buf + w->rx_head, n1);
+        memcpy(((__u8 *)&hdr) + n1, w->rx_buf, n2);
+      }
+      else
+      {
+        memcpy(&hdr, w->rx_buf + w->rx_head, sizeof(struct rpc_hdr));
+      }
+      hdr.service.x = ntohs(hdr.service.x);
+      hdr.len.x     = ntohs(hdr.len.x);
+      hdr.rid.x     = ntohl(hdr.rid.x);
+    }
+  }
 
   // store metadata so the application can read it immediately after this call
   // w->last_rid = hdr.rid.x;
@@ -941,27 +1031,28 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     new_head -= w->rx_len;
   w->rx_head = new_head;
 
-  // // TODO: store some information about the call in the worker struct?
+  // TODO: store some information about the call in the worker struct?
 
-  // // bump fast path
-  // eq = w->ctx->app_fast_qs[w->server->core];
-  // qe = queue_tail(eq);
-  // if (!qe)
-  // {
-  //   LOG_ERROR("failed to get queue tail for bump req");
-  //   return -1;
-  // }
-  // bump = &qe->data.bump_cham_rx;
-  // bump->sock_id = w->worker_id;
-  // bump->rx_head = hdr.len.x;
-  // bump->type = 0; // request
+  // bump fast path
+  /*
+  eq = w->ctx->app_fast_qs[w->server->core];
+  qe = queue_tail(eq);
+  if (!qe)
+  {
+    LOG_ERROR("failed to get queue tail for bump req");
+    return -1;
+  }
+  bump = &qe->data.bump_cham_rx;
+  bump->sock_id = w->worker_id;
+  bump->rx_head = hdr.len.x;
+  bump->type = 0; // request
 
-  // ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_RX);
-  // if (ret != 0)
-  // {
-  //   LOG_ERROR("failed to enqueue bump req");
-  //   return -1;
-  // }
+  ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_RX);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to enqueue bump req");
+    return -1;
+  }*/
 
   return n;
 }
@@ -1084,6 +1175,67 @@ int rpc_call_complete(struct rpc_worker_lib *w)
   return 0;
 }
 
+int rpc_set_app_lb(struct rpc_server_lib *server)
+{
+  struct rpc_server *serv;
+  // int i;
+
+  if (!server || !server->shm_server)
+  {
+    LOG_ERROR("null server in rpc_set_app_lb");
+    return -1;
+  }
+
+  serv = (struct rpc_server *)server->shm_server;
+  serv->app_lb_mode = 1;
+  server->app_lb_mode = 1;
+
+  // for (i = 0; i < server->nworkers; i++)
+  //   server->workers[i].app_lb_mode = 1;
+
+  return 0;
+}
+
+/* Copy `len` bytes from a circular ring of size `src_ring_len` starting at
+   `src_pos` into a circular ring of size `dst_ring_len` starting at `dst_pos` */
+static void ring2ring(__u8 *dst, __u32 dst_pos, __u32 dst_ring_len,
+    const __u8 *src, __u32 src_pos, __u32 src_ring_len, __u32 len)
+{
+  while (len > 0)
+  {
+    __u32 src_chunk = src_ring_len - src_pos;
+    __u32 dst_chunk = dst_ring_len - dst_pos;
+    __u32 chunk = len;
+
+    if (chunk > src_chunk) chunk = src_chunk;
+    if (chunk > dst_chunk) chunk = dst_chunk;
+    memcpy(dst + dst_pos, src + src_pos, chunk);
+    src_pos = (src_pos + chunk) % src_ring_len;
+    dst_pos = (dst_pos + chunk) % dst_ring_len;
+    len -= chunk;
+  }
+}
+
+static int ring_read(void *dst, const __u8 *ring, __u32 pos,
+                    __u32 ring_len, __u32 len)
+{
+    __u32 first;
+
+    if (!dst || !ring || ring_len == 0 || pos >= ring_len)
+        return -1;
+
+    if (pos + len <= ring_len) {
+        memcpy(dst, ring + pos, len);
+        return 0;
+    }
+
+    first = ring_len - pos;
+    memcpy(dst, ring + pos, first);
+    memcpy((__u8 *)dst + first, ring, len - first);
+
+    return 0;
+}
+
 static int handle_new_client_res(struct rpc_queue_entry *qe)
 {
   struct rpc_queue_new_client_res *res;
@@ -1114,6 +1266,10 @@ static int handle_new_server_res(struct rpc_queue_entry *qe)
   server->core = res->core;
   server->id = res->server_id;
   server->bind_success = res->success;
+  server->shm_server = rpc->shm_base + res->server_off;
+  server->rx_buf = rpc->shm_base + res->rx_off;
+  server->rx_len = res->rx_len;
+  server->app_lb_mode = 0;
   return 0;
 }
 static int handle_new_worker_res(struct rpc_queue_entry *qe)

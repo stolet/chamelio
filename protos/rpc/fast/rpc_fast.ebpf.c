@@ -58,6 +58,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   struct rpc_queue_bump_app_rx *bump;
   struct rpc_client *client_map, *client;
   __u32 best_worker_id, fewest_jobs, worker_id;
+  struct rpc_rx_meta meta;
 
   pkt = ctx->pkt;
   worker_map = ctx->maps[WORKERS_MAP].addr;
@@ -141,10 +142,55 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       return -1;
 
     if (service >= MAX_SERVICE_NUMBER || !server->service_table[service])
-    {
       return -1;
+
+    if (server->app_lb_mode)
+    {
+      /* App-layer dispatch: write [meta][rpc_msg] to server's shared RX ring.
+         The dispatcher polls shared_rx_avail and applies JSQ in userspace. */
+      __u32 entry_len = (__u32)sizeof(struct rpc_rx_meta) + payload_len;
+      rx_base = (__u8 *)ctx->shm_base + server->rx_off;
+      free_bytes = server->rx_len - server->rx_avail;
+      if (entry_len > free_bytes)
+        return -1;
+
+      tail = server->rx_head + server->rx_avail;
+      if (tail >= server->rx_len)
+        tail -= server->rx_len;
+
+      meta.rx_ip   = f_beui32(ip->src);
+      meta.rx_port = f_beui16(udp->src);
+      meta._pad    = 0;
+
+      if (tail + sizeof(meta) <= server->rx_len)
+      {
+        bpf_memcpy(rx_base + tail, &meta, sizeof(meta));
+      }
+      else
+      {
+        part = server->rx_len - tail;
+        bpf_memcpy(rx_base + tail, &meta, part);
+        bpf_memcpy(rx_base, (__u8 *)(&meta) + part, sizeof(meta) - part);
+      }
+      tail += (__u32)sizeof(struct rpc_rx_meta);
+      if (tail >= server->rx_len)
+        tail -= server->rx_len;
+
+      if (tail + payload_len <= server->rx_len)
+      {
+        bpf_memcpy(rx_base + tail, payload, payload_len);
+      }
+      else
+      {
+        part = server->rx_len - tail;
+        bpf_memcpy(rx_base + tail, payload, part);
+        bpf_memcpy(rx_base, payload + part, payload_len - part);
+      }
+      server->rx_avail += entry_len;
+      return 0;
     }
 
+    /* eBPF JSQ path: pick worker with fewest pending jobs */
     best_worker_id = (__u32)INVALID_ID;
     fewest_jobs = (__u32)-1;
 #pragma unroll

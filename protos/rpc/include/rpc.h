@@ -29,6 +29,8 @@
 /* Location where ebpf bytecode is located */
 #define RPC_EBPF_BYTECODE "protos/rpc/fast/rpc_fast.bpf.o"
 
+#define JOB_QUEUE_SIZE 1
+
 /* Entry for the client map */
 struct rpc_client
 {
@@ -74,6 +76,15 @@ struct rpc_port_entry
   __u32 client_id;
 };
 
+/* Metadata prepended to each entry in server's shared RX ring (app-lb mode).
+   eBPF writes this before the RPC message so the dispatcher knows the source. */
+struct rpc_rx_meta
+{
+  __u32 rx_ip;   /* source IP, host byte order */
+  __u16 rx_port; /* source port, host byte order */
+  __u16 _pad;
+} __attribute__((packed));
+
 struct rpc_server
 {
   /* Server ID */
@@ -88,6 +99,20 @@ struct rpc_server
   __u16 local_port;
   /* Registered services for the server */
   __u8 service_table[MAX_SERVICE_NUMBER];
+
+  /* App layer LB mode flag: 0: eBPF (default) */
+  __u8 app_lb_mode;
+  /* Shared RX ring used when app_lb_mode == 1 */
+  /* Length of RX buffer */
+  __u32 rx_len;
+  /* Pointer to start of RX buffer in shared memory */
+  __u64 rx_off;
+  /* # bytes written by eBPF; decremented by dispatcher */
+  __u32 rx_avail; 
+  /* head advanced by dispatcher after consuming an entry */
+  __u32 rx_head;
+  /* spinlock protecting rx_head/rx_avail for multi-worker pull (0=free, 1=held) */
+  __u32 rx_lock;
 };
 
 struct rpc_worker
