@@ -429,10 +429,10 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
     return -1;
   }
 
-  res->rx_len = sv->rx_len;
-  res->rx_off = sv->rx_off;
+  res->rx_len = protoq->nelems * protoq->elsize;
+  res->rx_off = protoq->off;
 
-  sv->rx_len = ((__u32)protoq->nelems) * ((__u32)protoq->elsize);
+  sv->rx_len = protoq->nelems * protoq->elsize;
   sv->rx_off = protoq->off;
 
   res->success = 1;
