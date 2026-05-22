@@ -838,6 +838,7 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
     /* Dequeue the BUMP_APP_RX that rpc_handle_call peeked at */
     q = w->ctx->fast_app_qs[w->server->core];
     queue_dequeue(q);
+    w->rx_pending = 0;
   }
 
   return len;
@@ -851,14 +852,22 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
   struct rpc_queue_bump_entry *qe;
   __u32 n1, n2, new_head;
   struct rpc_hdr hdr = {0};
-  struct rpc_worker *wkr = (struct rpc_worker *)w->shm_worker;
+  struct rpc_worker *wkr;
   if (!w || !rid)
   {
     LOG_ERROR("null rpc worker or rid pointer");
     return -1;
   }
 
+  wkr = (struct rpc_worker *)w->shm_worker;
+
   if (w->server->app_lb_mode && wkr->jobs_pending >= JOB_QUEUE_SIZE)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  if (!w->server->app_lb_mode && w->rx_pending)
   {
     errno = EAGAIN;
     return -1;
@@ -878,10 +887,10 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
       srvr = (struct rpc_server *)w->server->shm_server;
       shbuf = (__u8 *)w->server->rx_buf;
       meta_sz    = (__u32)sizeof(struct rpc_rx_meta);
+      while (__sync_lock_test_and_set(&srvr->rx_lock, 1)){}
+
       curr_head = srvr->rx_head;
       srvr_avail = srvr->rx_avail;
-
-      while (__sync_lock_test_and_set(&srvr->rx_lock, 1)){}
 
       //checks if there are enough bytes available to read otw try reading again later
       if (srvr_avail < meta_sz + (__u32)sizeof(struct rpc_hdr))
@@ -937,17 +946,17 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
         return -1;
       }
 
-      srvr->rx_head = (curr_head + entry_len) % srvr->rx_len;
-      __sync_fetch_and_sub(&srvr->rx_avail, entry_len);
-
-      __sync_lock_release(&srvr->rx_lock);
-
       dst_pos = (w->rx_head + w->rx_avail) % w->rx_len;
       
       //TODO: see if this helper function has other uses
       //copy payload from the server's rx buf to worker rx_buf
       ring2ring((__u8 *)w->rx_buf, dst_pos, w->rx_len, shbuf, hdr_pos,
                 srvr->rx_len, hdr.len.x);
+
+      srvr->rx_head = (curr_head + entry_len) % srvr->rx_len;
+      __sync_fetch_and_sub(&srvr->rx_avail, entry_len);
+
+      __sync_lock_release(&srvr->rx_lock);
 
       __sync_fetch_and_add(&wkr->jobs_pending, 1);
 
@@ -972,6 +981,7 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
       w->rx_avail = qe->data.bump_app_rx.rx_avail;
       w->rx_ip    = qe->data.bump_app_rx.rx_ip;
       w->rx_port  = qe->data.bump_app_rx.rx_port;
+      w->rx_pending = 1;
 
       if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len)
       {
