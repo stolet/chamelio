@@ -139,6 +139,9 @@ int tcp_init(struct tcp_slow_context *ctx)
   ctx->bound_ports = bound_ports;
   ctx->cc_poll_tsc = clock_rdtsc();
   ctx->cc_next_sock = 0;
+  ctx->stats_drops = 0;
+  ctx->stats_retx = 0;
+  ctx->stats_acks_rx = 0;
   for (i = 0; i < MAX_SOCKETS; i++)
     ctx->sock_meta[i].listener_id = ID_INVALID;
 

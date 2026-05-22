@@ -59,6 +59,7 @@ struct tcp_sock_meta_slow {
   /* Listener this socket belongs to before accept() attaches it */
   __u32 listener_id;
   /* 1 if connect() auto-selected the local port */
+  /* TODO: Remove this and its associated machinery. We don't need it. */
   __u8 auto_bound;
   /* Retransmission timer entry for this socket */
   struct to_entry *timer;
@@ -94,7 +95,7 @@ struct tcp_sock_meta_slow {
   __u32 dctcp_unproc_drops;
   /* DCTCP ECN EWMA scaled by UINT_MAX */
   __u32 dctcp_ecn_rate;
-  /* Smoothed actual rate in kbps */
+  /* Actual measure rate between dctcp rate update intervals in kbps */
   __u32 dctcp_act_rate;
   /* 1 while DCTCP is in slow start */
   __u8 dctcp_slowstart;

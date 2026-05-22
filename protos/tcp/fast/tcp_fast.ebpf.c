@@ -544,7 +544,9 @@ static __always_inline __u8 rx_is_ack_valid(__u32 seqno,
 {
   __u32 max_ack;
 
-  max_ack = seqno + pending + avail;
+  /* TODO: Delete this comment */
+  // max_ack = seqno + pending + avail;
+  max_ack = seqno + pending;
   if (seqno <= max_ack) {
     if (ackno < seqno || ackno > max_ack)
       return 0;
@@ -717,19 +719,20 @@ static __always_inline void rx_sock_bump_ack(struct tcp_pkt_inner *tcp_pkt,
 {
   __u32 extra;
 
-  extra = ack_bump > sock->tx_pending ? ack_bump - sock->tx_pending : 0;
-  if (extra > sock->tx_avail)
-    extra = sock->tx_avail;
+  /* TODO: Delete this comment */
+  // extra = ack_bump > sock->tx_pending ? ack_bump - sock->tx_pending : 0;
+  // if (extra > sock->tx_avail)
+  //   extra = sock->tx_avail;
   sock->tx_seq += ack_bump;
-  if (ack_bump <= sock->tx_pending)
-  {
+  // if (ack_bump <= sock->tx_pending)
+  // {
     sock->tx_pending -= ack_bump;
-  }
-  else
-  {
-    sock->tx_pending = 0;
-    sock->tx_avail -= extra;
-  }
+  // }
+  // else
+  // {
+    // sock->tx_pending = 0;
+    // sock->tx_avail -= extra;
+  // }
   sock->cc_ackb += ack_bump;
   if ((TCPH_FLAGS(&tcp_pkt->tcp) & TAS_TCP_ECE) != 0)
     sock->cc_ecnb += ack_bump;

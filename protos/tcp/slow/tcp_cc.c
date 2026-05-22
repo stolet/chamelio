@@ -33,7 +33,7 @@ static __u32 cc_rtt(const struct tcp_slow_context *ctx,
 static void cc_sock_reset(struct tcp_sock *sock, struct tcp_sock_meta_slow *meta);
 static __u32 cc_init_rate(const struct tcp_slow_context *ctx,
     struct tcp_sock_meta_slow *meta);
-static void sock_on_const_rate(struct tcp_slow_context *ctx,
+static void sock_on_const_rate_tick(struct tcp_slow_context *ctx,
     struct tcp_sock *sock, struct tcp_sock_meta_slow *meta,
     const struct tcp_cc_stats *stats);
 static void sock_on_tx_stall(struct tcp_slow_context *ctx, struct tcp_sock *sock,
@@ -217,7 +217,7 @@ static __u32 cc_init_rate(const struct tcp_slow_context *ctx,
   }
 }
 
-static void sock_on_const_rate(struct tcp_slow_context *ctx, struct tcp_sock *sock,
+static void sock_on_const_rate_tick(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     struct tcp_sock_meta_slow *meta, const struct tcp_cc_stats *stats)
 {
   sock->cc_rate = ctx->config.cc_const_rate;
@@ -269,7 +269,7 @@ static void sock_on_cc_tick(struct tcp_slow_context *ctx, struct tcp_sock *sock,
   switch (ctx->config.cc_algorithm)
   {
     case TCP_CC_ALGO_CONST_RATE:
-      sock_on_const_rate(ctx, sock, meta, stats);
+      sock_on_const_rate_tick(ctx, sock, meta, stats);
       break;
     case TCP_CC_ALGO_DCTCP_RATE:
       sock_on_dctcp_tick(ctx, sock, meta, stats, elapsed_us);
@@ -292,7 +292,8 @@ static __u32 dctcp_act_rate(__u32 ackb, __u64 elapsed_us)
     return 0;
 
   rate = ((__u64) ackb * 8 * 1000) / elapsed_us;
-  return rate > UINT_MAX ? UINT_MAX : rate;
+  return rate;
+  // return rate > UINT_MAX ? UINT_MAX : rate;
 }
 
 static __u32 dctcp_ecn_rate(const struct tcp_slow_context *ctx, __u32 prev,
@@ -339,10 +340,18 @@ static void sock_on_dctcp_tick(struct tcp_slow_context *ctx,
   meta->dctcp_unproc_ackb = 0;
   meta->dctcp_unproc_drops = 0;
 
+  /* Calculate actual throughput between update periods for this conn */
   rate = sock->cc_rate;
   act_rate = dctcp_act_rate(ackb, elapsed_us);
+  
+  /* Apply a moving average */
   meta->dctcp_act_rate = (7 * meta->dctcp_act_rate + act_rate) / 8;
-
+  act_rate = (act_rate >= meta->dctcp_act_rate ? act_rate : meta->dctcp_act_rate);
+  
+  /* Clamp rate to actual throughput * 1.2 */
+  if (rate > (__u64) act_rate * 12 / 10)
+    rate = (__u64) act_rate * 12 / 10;
+  
   if (meta->dctcp_slowstart)
   {
     if (drops == 0 && ecnb == 0 && meta->cc_rexmits == 0)
