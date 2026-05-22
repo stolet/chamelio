@@ -858,7 +858,7 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     return -1;
   }
 
-  if (wkr->jobs_pending >= JOB_QUEUE_SIZE)
+  if (w->server->app_lb_mode && wkr->jobs_pending >= JOB_QUEUE_SIZE)
   {
     errno = EAGAIN;
     return -1;
@@ -972,7 +972,6 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
       w->rx_avail = qe->data.bump_app_rx.rx_avail;
       w->rx_ip    = qe->data.bump_app_rx.rx_ip;
       w->rx_port  = qe->data.bump_app_rx.rx_port;
-      __sync_fetch_and_add(&wkr->jobs_pending, 1);
 
       if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len)
       {
@@ -1215,7 +1214,7 @@ static void ring2ring(__u8 *dst, __u32 dst_pos, __u32 dst_ring_len,
     len -= chunk;
   }
 }
-
+/*
 static int ring_read(void *dst, const __u8 *ring, __u32 pos,
                     __u32 ring_len, __u32 len)
 {
@@ -1235,7 +1234,7 @@ static int ring_read(void *dst, const __u8 *ring, __u32 pos,
 
     return 0;
 }
-
+*/
 static int handle_new_client_res(struct rpc_queue_entry *qe)
 {
   struct rpc_queue_new_client_res *res;
