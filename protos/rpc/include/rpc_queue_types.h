@@ -122,6 +122,12 @@ struct rpc_queue_new_server_res
   __u16 core;
   /* Signals if bind was successful */
   __u8 success;
+  /* Offset of rpc_server struct in shared memory */
+  __u64 server_off;
+  /* Shared RX ring length for app-layer LB */
+  __u32 rx_len;
+  /* Offset of shared RX ring in shared memory */
+  __u64 rx_off;
 } __attribute__((packed));
 
 /* Request to create new client in slow-path */

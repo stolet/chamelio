@@ -62,8 +62,6 @@ struct rpc_worker_lib
   void *rx_buf;
   /* Total size of the current in-flight request (hdr + payload) */
   __u32 rx_pkt_len;
-  /* Set when BUMP_APP_RX has been peeked but not yet dequeued by rpc_return */
-  __u8 rx_pending;
 
   /* Queue ID used for TX buffer */
   __u16 tx_qid;
@@ -77,6 +75,9 @@ struct rpc_worker_lib
   void *tx_buf;
   /* Pointer to the worker state in shared memory */
   void *shm_worker;
+
+  /* App-layer LB fields (used when server->app_lb_mode == 1) */
+  // __u8 app_lb_mode;
 };
 
 /* RPC client that makes calls */
@@ -156,6 +157,15 @@ struct rpc_server_lib
   /* Result from bind. Default is -1 and is set
       to 1 on success and 0 on failure */
   int bind_success;
+
+  /* App-layer LB fields */
+  __u8 app_lb_mode;
+  /* Pointer to server state in shared memory */
+  void *shm_server;
+  /* Pointer to the server-level shared RX ring in shared memory */
+  void *rx_buf;
+  /* Length of the shared RX ring */
+  __u32 rx_len;
 };
 
 struct rpc_lib
@@ -212,7 +222,11 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 /* Parses the response from a worker */
 int rpc_response(struct rpc_client_lib *c, void *buf, size_t len);
 
-/* Removes a pending job from the given worker */
+/* Removes a pending job from the given worker. 
+Information used by FP during LB of workers */
 int rpc_call_complete(struct rpc_worker_lib *w);
+
+/* Switch server to app-layer LB mode */
+int rpc_set_app_lb(struct rpc_server_lib *server);
 
 #endif

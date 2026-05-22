@@ -355,11 +355,12 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
                           struct rpc_app_context_slow *actx, struct rpc_queue_entry *qe_req)
 {
   LOG_DEBUG("handling new server request");
+  int ret;
   struct rpc_queue_new_server_req *req;
   struct rpc_queue_new_server_res *res;
   struct rpc_queue_entry *qe_res;
   struct rpc_server *sv;
-  int ret;
+  struct proto_queue_lib *protoq;
   struct rpc_port_entry *pt_sers_map, *port;
   struct rpc_server *server_map = ctx->proto->shm_base + ctx->servers_map->off;
 
@@ -383,6 +384,8 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   res->server_id = ctx->n_servers;
 
   sv = &server_map[res->server_id];
+  res->server_off = ctx->servers_map->off +
+                  ((__u64)res->server_id * sizeof(struct rpc_server));
   memset(sv, 0, sizeof(struct rpc_server));
 
   sv->id = res->server_id;
@@ -417,6 +420,20 @@ int handle_new_server_req(struct rpc_slow_context *ctx,
   }
 
   port->server_id = res->server_id;
+
+  /* Allocate shared RX ring for app. LB */
+  protoq = cham_new_queue(ctx->proto, (size_t)MAX_WORKERS * RXBUF_SZ, 1);
+  if (protoq == NULL)
+  {
+    LOG_ERROR("failed to allocate shared RX ring for server");
+    return -1;
+  }
+
+  res->rx_len = sv->rx_len;
+  res->rx_off = sv->rx_off;
+
+  sv->rx_len = ((__u32)protoq->nelems) * ((__u32)protoq->elsize);
+  sv->rx_off = protoq->off;
 
   res->success = 1;
   ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_SERVER_RES);
