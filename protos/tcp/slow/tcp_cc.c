@@ -293,7 +293,6 @@ static __u32 dctcp_act_rate(__u32 ackb, __u64 elapsed_us)
 
   rate = ((__u64) ackb * 8 * 1000) / elapsed_us;
   return rate;
-  // return rate > UINT_MAX ? UINT_MAX : rate;
 }
 
 static __u32 dctcp_ecn_rate(const struct tcp_slow_context *ctx, __u32 prev,

@@ -14,7 +14,7 @@
 #define SID_BUCK_MAP 2
 #define CFG_MAP 3
 #define TCP_MAX_PAYLOAD (FAST_L3_PKT_ROOM - sizeof(struct tcp_pkt_inner))
-#define FAST_REMIT_THRESH 3
+#define FAST_REMIT_THRESH 5
 
 /* Miscelaneous helpers */
 static __always_inline __u8 is_qe_valid(struct queue_entry *qe, void *shm_end);  
@@ -714,25 +714,24 @@ static __always_inline __u32 rx_get_rx_bump(struct tcp_sock *sock, __u32 paylen)
   return rx_bump;
 }
 
-static __always_inline void rx_sock_bump_ack(struct tcp_pkt_inner *tcp_pkt,
+static inline void rx_sock_bump_ack(struct tcp_pkt_inner *tcp_pkt,
     struct tcp_sock *sock, __u32 ack_bump)
 {
   __u32 extra;
 
-  /* TODO: Delete this comment */
-  // extra = ack_bump > sock->tx_pending ? ack_bump - sock->tx_pending : 0;
-  // if (extra > sock->tx_avail)
-  //   extra = sock->tx_avail;
+  extra = ack_bump > sock->tx_pending ? ack_bump - sock->tx_pending : 0;
+  if (extra > sock->tx_avail)
+    extra = sock->tx_avail;
   sock->tx_seq += ack_bump;
-  // if (ack_bump <= sock->tx_pending)
-  // {
+  if (ack_bump <= sock->tx_pending)
+  {
     sock->tx_pending -= ack_bump;
-  // }
-  // else
-  // {
-    // sock->tx_pending = 0;
-    // sock->tx_avail -= extra;
-  // }
+  }
+  else
+  {
+    sock->tx_pending = 0;
+    sock->tx_avail -= extra;
+  }
   sock->cc_ackb += ack_bump;
   if ((TCPH_FLAGS(&tcp_pkt->tcp) & TAS_TCP_ECE) != 0)
     sock->cc_ecnb += ack_bump;
