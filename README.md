@@ -1,9 +1,11 @@
 # <img src="docs/assets/chamelio.svg" alt="Chamelio logo" height="80" style="vertical-align: middle;"> Chamelio
 
-Chamelio is a shared, high-performance network stack that lets guests and
-applications use protocol implementations registered with a host fast path.
+Chamelio is a flexible high-performance network stack 
+shared between applications and guests
+that lets users define custom transport protocol 
+implementations registered with a host fast path.
 A protocol in Chamelio is split into a slow path, an application library, and
-fast-path code that Chamelio can run while processing packets.
+a fast-path.
 
 This repository contains:
 
