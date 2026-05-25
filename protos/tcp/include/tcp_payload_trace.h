@@ -81,6 +81,8 @@ static inline struct tcp_payload_trace *tcp_payload_trace_find_msg(
       tr->version != TCP_PAYLOAD_TRACE_VERSION ||
       tr->capacity != TCP_PAYLOAD_TRACE_MAX_EVENTS)
     return NULL;
+  if ((__u32) tr->orig_bodylen + sizeof(*tr) != bodylen)
+    return NULL;
 
   return tr;
 }
