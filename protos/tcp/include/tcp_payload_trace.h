@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 #define TCP_PAYLOAD_TRACE_MAGIC 0x4b565354U
-#define TCP_PAYLOAD_TRACE_VERSION 1
+#define TCP_PAYLOAD_TRACE_VERSION 2
 #define TCP_PAYLOAD_TRACE_MAX_EVENTS 22
 
 enum tcp_payload_trace_event_type {
@@ -34,13 +34,14 @@ struct tcp_payload_trace_event {
 
 struct tcp_payload_trace {
   __u32 magic;
-  __u32 trace_id;
   __u16 orig_bodylen;
   __u8 count;
   __u8 capacity;
   __u8 version;
   __u8 flags;
   __u16 reserved;
+  __u32 opaque;
+  __u64 trace_id;
   struct tcp_payload_trace_event events[TCP_PAYLOAD_TRACE_MAX_EVENTS];
 } __attribute__((packed));
 
