@@ -13,6 +13,7 @@
 #include "tcp_hdr.h"
 #include "ip_hdr.h"
 #include "tcp.h"
+#include "tcp_payload_trace.h"
 #include "tcp_queue_types.h"
 #include "utils.h"
 
@@ -281,6 +282,8 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
   /* Copy payload to rx buf and enqueue bump */
   if (rx_bump > 0)
   {
+    tcp_payload_trace_add_to_msg(payload, rx_bump,
+        TCP_PAYLOAD_TRACE_TCP_RX_DELIVERED, sock->id, rx_bump, ctx->core);
     rx_copy_payload(ctx->shm_base, sock, payload, rx_bump);
     rx_sock_bump_rx(sock, rx_bump);
     ret = rx_enqueue_rx_bump(&ctx->equeues[sock->app_bump_qid].eq, sock, rx_bump,
@@ -358,6 +361,8 @@ int tcp_event_sched(struct cham_ebpf_ctx *ctx)
     /* Copy payload from TX buffer to packet and update socket */
     payload = ctx->pkt + hdrlen;
     tx_copy_payload(ctx->shm_base, sock, payload, tx_bump);
+    tcp_payload_trace_add_to_msg(payload, tx_bump,
+        TCP_PAYLOAD_TRACE_TCP_TX_SCHED_SENT, sock->id, tx_bump, ctx->core);
     tx_sock_tx_bump(sock, tx_bump);
     tx_sock_sched_next(sock, hdrlen + tx_bump, now_tsc);
     avail = sock_sched_avail(sock);

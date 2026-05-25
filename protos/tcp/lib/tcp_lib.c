@@ -16,6 +16,7 @@
 
 #include "tcp_lib.h"
 #include "queue_fns.h"
+#include "tcp_payload_trace.h"
 #include "tcp_queue_types.h"
 #include "log.h"
 #include "uxsocket.h"
@@ -910,6 +911,8 @@ int tcp_sendto(struct tcp_context_lib *ctx, int sockfd,
   else
   {
     memcpy(tx_buf + tail, src, n);
+    tcp_payload_trace_add_to_msg(tx_buf + tail, n,
+        TCP_PAYLOAD_TRACE_TCP_APP_TX_ACCEPTED, sockfd, n, sock->core);
   }
 
   sock->tx_avail = tx_avail + n;
@@ -992,6 +995,8 @@ int tcp_recvfrom(struct tcp_context_lib *ctx, int sockfd,
   {
     memcpy(buf, rx_buf + rx_head, n);
   }
+  tcp_payload_trace_add_to_msg(buf, n, TCP_PAYLOAD_TRACE_TCP_RX_DELIVERED,
+      sockfd, n, sock->core);
 
   sock->rx_avail = rx_avail - n;
   sock->rx_head = new_head;
