@@ -544,9 +544,7 @@ static __always_inline __u8 rx_is_ack_valid(__u32 seqno,
 {
   __u32 max_ack;
 
-  /* TODO: Delete this comment */
-  // max_ack = seqno + pending + avail;
-  max_ack = seqno + pending;
+  max_ack = seqno + pending + avail;
   if (seqno <= max_ack) {
     if (ackno < seqno || ackno > max_ack)
       return 0;

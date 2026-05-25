@@ -393,7 +393,7 @@ struct tcp_queue_bump_entry {
     /* Keeps bump queue entries compact */
     __u8 raw[31];
   } __attribute__((packed)) data;
-} __attribute__((packed));
+} __attribute__((packed, aligned(32)));
 
 struct tcp_queue_ctl_entry {
   /* Type of queue entry. Don't update outside of enqueue or dequeue */
@@ -405,7 +405,7 @@ struct tcp_queue_ctl_entry {
     /* Keeps control signal entries compact */
     __u8 raw[31];
   } __attribute__((packed)) data;
-} __attribute__((packed));
+} __attribute__((packed, aligned(32)));
 
 struct tcp_queue_pkt_entry {
   /* Type of queue entry. Don't update outside of enqueue or dequeue */
@@ -416,7 +416,7 @@ struct tcp_queue_pkt_entry {
     /* Keeps packet queue entries the size of a cache line */
     __u8 raw[63];
   } __attribute__((packed)) data;
-} __attribute__((packed));
+} __attribute__((packed, aligned(64)));
 
 /* Keep queue entry sizes explicit because different queues use different layouts */
 STATIC_ASSERT(sizeof(struct tcp_queue_entry) == 512, tcp_queue_entry_size);

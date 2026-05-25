@@ -158,9 +158,7 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
 
   is_ip = rx_is_ip(tcp_pkt);
   if (!is_ip)
-  {
     return -1;
-  }
 
   /* Send control packets to slow path */
   is_control = rx_is_flags_ctl(tcp_pkt);

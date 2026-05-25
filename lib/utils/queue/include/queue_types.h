@@ -364,7 +364,7 @@ struct queue_entry {
     /* Keeps queue entry the size of a cache line */
     __u8 raw[63];
   } __attribute__((packed)) data;
-} __attribute__((packed));
+} __attribute__((packed, aligned(64)));
 
 /* We want queue entries to be cache line sized for faster retrieval */
 STATIC_ASSERT(sizeof(struct queue_entry) == 64, queue_entry_size);

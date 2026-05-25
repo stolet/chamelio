@@ -215,12 +215,12 @@ struct udp_queue_bump_entry {
     struct udp_queue_bump_cham_tx bump_cham_tx;
     struct udp_queue_bump_cham_rx bump_cham_rx;
     /* Keeps queue entry the size of a cache line */
-    __u8 raw[63];
+    __u8 raw[31];
   } __attribute__((packed)) data;
-} __attribute__((packed));
+} __attribute__((packed, aligned(32)));
 
 /* We want queue entries to be cache line sized for faster retrieval */
 STATIC_ASSERT(sizeof(struct udp_queue_entry) == 512, udp_queue_entry_size);
-STATIC_ASSERT(sizeof(struct udp_queue_bump_entry) == 64, udp_bump_queue_entry_size);
+STATIC_ASSERT(sizeof(struct udp_queue_bump_entry) == 32, udp_bump_queue_entry_size);
 
 #endif
