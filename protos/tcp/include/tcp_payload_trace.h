@@ -6,7 +6,7 @@
 
 #define TCP_PAYLOAD_TRACE_MAGIC 0x4b565354U
 #define TCP_PAYLOAD_TRACE_VERSION 2
-#define TCP_PAYLOAD_TRACE_MAX_EVENTS 22
+#define TCP_PAYLOAD_TRACE_MAX_EVENTS 48
 
 enum tcp_payload_trace_event_type {
   TCP_PAYLOAD_TRACE_TCP_APP_TX_ACCEPTED = 16,
@@ -21,6 +21,8 @@ enum tcp_payload_trace_event_type {
   TCP_PAYLOAD_TRACE_TCP_QUEUE_FULL = 25,
 };
 
+#define TCP_PAYLOAD_TRACE_WHERE_CLIENT_TCP 2
+#define TCP_PAYLOAD_TRACE_WHERE_SERVER_TCP 4
 #define TCP_PAYLOAD_TRACE_WHERE_CHAMELIO_TCP 5
 
 struct tcp_payload_trace_event {
@@ -87,8 +89,8 @@ static inline struct tcp_payload_trace *tcp_payload_trace_find_msg(
   return tr;
 }
 
-static inline void tcp_payload_trace_add(struct tcp_payload_trace *tr,
-    __u8 type, int sock, __u16 arg0, __u16 arg1)
+static inline void tcp_payload_trace_add_where(struct tcp_payload_trace *tr,
+    __u8 type, __u8 where, int sock, __u16 arg0, __u16 arg1)
 {
   struct tcp_payload_trace_event *ev;
 
@@ -99,17 +101,54 @@ static inline void tcp_payload_trace_add(struct tcp_payload_trace *tr,
   ev = &tr->events[tr->count++];
   ev->tsc = tcp_payload_trace_rdtsc();
   ev->type = type;
-  ev->where = TCP_PAYLOAD_TRACE_WHERE_CHAMELIO_TCP;
+  ev->where = where;
   ev->sock = (sock < -32768 || sock > 32767) ? -1 : (__s16) sock;
   ev->arg0 = arg0;
   ev->arg1 = arg1;
 }
 
+static inline __u8 tcp_payload_trace_infer_where(const __u8 *msg, __u8 type)
+{
+  int is_request = msg[0] == 0x80;
+
+  switch (type) {
+    case TCP_PAYLOAD_TRACE_TCP_APP_TX_ACCEPTED:
+    case TCP_PAYLOAD_TRACE_TCP_TX_SCHED_SENT:
+    case TCP_PAYLOAD_TRACE_TCP_FLOW_BLOCKED:
+      return is_request ? TCP_PAYLOAD_TRACE_WHERE_CLIENT_TCP :
+          TCP_PAYLOAD_TRACE_WHERE_SERVER_TCP;
+
+    case TCP_PAYLOAD_TRACE_TCP_RX_DELIVERED:
+    case TCP_PAYLOAD_TRACE_TCP_ACK_PROCESSED:
+    case TCP_PAYLOAD_TRACE_TCP_INVALID_ACK:
+    case TCP_PAYLOAD_TRACE_TCP_DUPACK_THRESHOLD:
+    case TCP_PAYLOAD_TRACE_TCP_OUT_OF_ORDER:
+    case TCP_PAYLOAD_TRACE_TCP_DUP_PAYLOAD:
+    case TCP_PAYLOAD_TRACE_TCP_QUEUE_FULL:
+      return is_request ? TCP_PAYLOAD_TRACE_WHERE_SERVER_TCP :
+          TCP_PAYLOAD_TRACE_WHERE_CLIENT_TCP;
+
+    default:
+      return TCP_PAYLOAD_TRACE_WHERE_CHAMELIO_TCP;
+  }
+}
+
+static inline void tcp_payload_trace_add(struct tcp_payload_trace *tr,
+    __u8 type, int sock, __u16 arg0, __u16 arg1)
+{
+  tcp_payload_trace_add_where(tr, type, TCP_PAYLOAD_TRACE_WHERE_CHAMELIO_TCP,
+      sock, arg0, arg1);
+}
+
 static inline void tcp_payload_trace_add_to_msg(void *buf, size_t len,
     __u8 type, int sock, __u16 arg0, __u16 arg1)
 {
-  tcp_payload_trace_add(tcp_payload_trace_find_msg(buf, len), type, sock,
-      arg0, arg1);
+  struct tcp_payload_trace *tr = tcp_payload_trace_find_msg(buf, len);
+
+  tcp_payload_trace_add_where(tr, type,
+      tr == NULL ? TCP_PAYLOAD_TRACE_WHERE_CHAMELIO_TCP :
+          tcp_payload_trace_infer_where((const __u8 *) buf, type),
+      sock, arg0, arg1);
 }
 
 #endif

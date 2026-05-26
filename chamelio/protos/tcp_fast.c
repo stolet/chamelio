@@ -143,13 +143,13 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
   int ret;
   __u8 is_control, is_ack, is_ack_only, is_ack_dup, is_ip, is_out_of_order;
   __u8 is_payload_dup;
-  __u8 should_fast_remit;
+  __u8 ack_valid, should_fast_remit;
   __u8 pktlen_valid, paylen_valid;
   __u16 paylen, hdrlen;
   __u32 ack_bump, avail_before, avail_after, overlap, rx_bump;
   struct tcp_sock *sock;
   struct tcp_pkt_inner *tcp_pkt;
-  void *payload;
+  void *full_payload, *payload;
   
   /* Do pkt len check to make ebpf verifier happy */
   pktlen_valid = is_pktlen_valid(ctx->pkt, ctx->pkt_end);
@@ -190,6 +190,9 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
     util_spin_unlock(&sock->lock);
     return ret;
   }
+  paylen = rx_get_paylen(tcp_pkt);
+  paylen_valid = is_paylen_valid(ctx->pkt, ctx->pkt_end, hdrlen, paylen);
+  full_payload = ctx->pkt + hdrlen;
 
   /* Get current state before processing ack */
   avail_before = sock_sched_avail(sock);
@@ -205,7 +208,18 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
   sock_ts_rx(sock, tcp_pkt, ctx->pkt_end);
   
   /* Process ACK bump */
+  ack_valid = rx_is_ack_valid(sock->tx_seq, sock->tx_pending, sock->tx_avail,
+      f_beui32(tcp_pkt->tcp.ackno));
   ack_bump = rx_get_ack_bump(tcp_pkt, sock);
+  if (paylen_valid && paylen > 0)
+  {
+    if (is_ack && !ack_valid)
+      tcp_payload_trace_add_to_msg(full_payload, paylen,
+          TCP_PAYLOAD_TRACE_TCP_INVALID_ACK, sock->id, 0, ctx->core);
+    else if (is_ack && ack_bump > 0)
+      tcp_payload_trace_add_to_msg(full_payload, paylen,
+          TCP_PAYLOAD_TRACE_TCP_ACK_PROCESSED, sock->id, ack_bump, ctx->core);
+  }
   if (is_ack)
     rx_sock_bump_ack(tcp_pkt, sock, ack_bump);
   avail_after = sock_sched_avail(sock);
@@ -249,6 +263,9 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
   /* Fully duplicate payload still needs an ACK */
   if (is_payload_dup && !should_fast_remit)
   {
+    if (paylen_valid && paylen > 0)
+      tcp_payload_trace_add_to_msg(full_payload, paylen,
+          TCP_PAYLOAD_TRACE_TCP_DUP_PAYLOAD, sock->id, paylen, ctx->core);
     ret = tx_fill_ack(ctx, sock);
     util_spin_unlock(&sock->lock);
     return ret;
@@ -257,14 +274,15 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
   /* Out-of-order payload still triggers a pure ACK. */
   if (is_out_of_order)
   {
+    if (paylen_valid && paylen > 0)
+      tcp_payload_trace_add_to_msg(full_payload, paylen,
+          TCP_PAYLOAD_TRACE_TCP_OUT_OF_ORDER, sock->id, paylen, ctx->core);
     ret = tx_fill_ack(ctx, sock);
     util_spin_unlock(&sock->lock);
     return ret;
   }
   
   /* Check if payload len valid so ebpf verifier is happy */
-  paylen = rx_get_paylen(tcp_pkt);
-  paylen_valid = is_paylen_valid(ctx->pkt, ctx->pkt_end, hdrlen, paylen);
   if (!paylen_valid)
   {
     ret = tx_fill_ack(ctx, sock);
@@ -278,6 +296,9 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
   
   /* Calculate bump for rx ring */
   rx_bump = rx_get_rx_bump(sock, paylen);
+  if (rx_bump < paylen)
+    tcp_payload_trace_add_to_msg(payload, paylen,
+        TCP_PAYLOAD_TRACE_TCP_QUEUE_FULL, sock->id, rx_bump, ctx->core);
   
   /* Copy payload to rx buf and enqueue bump */
   if (rx_bump > 0)
