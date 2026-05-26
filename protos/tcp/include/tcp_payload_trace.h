@@ -19,6 +19,18 @@ enum tcp_payload_trace_event_type {
   TCP_PAYLOAD_TRACE_TCP_DUP_PAYLOAD = 23,
   TCP_PAYLOAD_TRACE_TCP_FLOW_BLOCKED = 24,
   TCP_PAYLOAD_TRACE_TCP_QUEUE_FULL = 25,
+  TCP_PAYLOAD_TRACE_TCP_RX_ENQUEUED = 26,
+  TCP_PAYLOAD_TRACE_TCP_APP_RX_COPY_START = 27,
+  TCP_PAYLOAD_TRACE_TCP_APP_RX_COPIED = 28,
+  TCP_PAYLOAD_TRACE_TCP_APP_TX_COPY_START = 29,
+  TCP_PAYLOAD_TRACE_TCP_APP_TX_COPIED = 30,
+  TCP_PAYLOAD_TRACE_TCP_TX_BUMP_MARKED = 31,
+  TCP_PAYLOAD_TRACE_TCP_TX_BUMPS_FLUSHED = 32,
+  TCP_PAYLOAD_TRACE_TCP_SCHED_COPY_START = 33,
+  TCP_PAYLOAD_TRACE_TCP_SCHED_COPY_END = 34,
+  TCP_PAYLOAD_TRACE_TCP_SCHED_RESCHEDULED = 35,
+  TCP_PAYLOAD_TRACE_TCP_RX_RING_COPY_START = 36,
+  TCP_PAYLOAD_TRACE_TCP_RX_RING_COPIED = 37,
 };
 
 #define TCP_PAYLOAD_TRACE_WHERE_CLIENT_TCP 2
@@ -89,8 +101,8 @@ static inline struct tcp_payload_trace *tcp_payload_trace_find_msg(
   return tr;
 }
 
-static inline void tcp_payload_trace_add_where(struct tcp_payload_trace *tr,
-    __u8 type, __u8 where, int sock, __u16 arg0, __u16 arg1)
+static inline void tcp_payload_trace_add_tsc_where(struct tcp_payload_trace *tr,
+    __u8 type, __u8 where, int sock, __u16 arg0, __u16 arg1, __u64 tsc)
 {
   struct tcp_payload_trace_event *ev;
 
@@ -99,12 +111,19 @@ static inline void tcp_payload_trace_add_where(struct tcp_payload_trace *tr,
     return;
 
   ev = &tr->events[tr->count++];
-  ev->tsc = tcp_payload_trace_rdtsc();
+  ev->tsc = tsc;
   ev->type = type;
   ev->where = where;
   ev->sock = (sock < -32768 || sock > 32767) ? -1 : (__s16) sock;
   ev->arg0 = arg0;
   ev->arg1 = arg1;
+}
+
+static inline void tcp_payload_trace_add_where(struct tcp_payload_trace *tr,
+    __u8 type, __u8 where, int sock, __u16 arg0, __u16 arg1)
+{
+  tcp_payload_trace_add_tsc_where(tr, type, where, sock, arg0, arg1,
+      tcp_payload_trace_rdtsc());
 }
 
 static inline __u8 tcp_payload_trace_infer_where(const __u8 *msg, __u8 type)
@@ -115,6 +134,13 @@ static inline __u8 tcp_payload_trace_infer_where(const __u8 *msg, __u8 type)
     case TCP_PAYLOAD_TRACE_TCP_APP_TX_ACCEPTED:
     case TCP_PAYLOAD_TRACE_TCP_TX_SCHED_SENT:
     case TCP_PAYLOAD_TRACE_TCP_FLOW_BLOCKED:
+    case TCP_PAYLOAD_TRACE_TCP_APP_TX_COPY_START:
+    case TCP_PAYLOAD_TRACE_TCP_APP_TX_COPIED:
+    case TCP_PAYLOAD_TRACE_TCP_TX_BUMP_MARKED:
+    case TCP_PAYLOAD_TRACE_TCP_TX_BUMPS_FLUSHED:
+    case TCP_PAYLOAD_TRACE_TCP_SCHED_COPY_START:
+    case TCP_PAYLOAD_TRACE_TCP_SCHED_COPY_END:
+    case TCP_PAYLOAD_TRACE_TCP_SCHED_RESCHEDULED:
       return is_request ? TCP_PAYLOAD_TRACE_WHERE_CLIENT_TCP :
           TCP_PAYLOAD_TRACE_WHERE_SERVER_TCP;
 
@@ -125,6 +151,11 @@ static inline __u8 tcp_payload_trace_infer_where(const __u8 *msg, __u8 type)
     case TCP_PAYLOAD_TRACE_TCP_OUT_OF_ORDER:
     case TCP_PAYLOAD_TRACE_TCP_DUP_PAYLOAD:
     case TCP_PAYLOAD_TRACE_TCP_QUEUE_FULL:
+    case TCP_PAYLOAD_TRACE_TCP_RX_ENQUEUED:
+    case TCP_PAYLOAD_TRACE_TCP_APP_RX_COPY_START:
+    case TCP_PAYLOAD_TRACE_TCP_APP_RX_COPIED:
+    case TCP_PAYLOAD_TRACE_TCP_RX_RING_COPY_START:
+    case TCP_PAYLOAD_TRACE_TCP_RX_RING_COPIED:
       return is_request ? TCP_PAYLOAD_TRACE_WHERE_SERVER_TCP :
           TCP_PAYLOAD_TRACE_WHERE_CLIENT_TCP;
 
@@ -149,6 +180,17 @@ static inline void tcp_payload_trace_add_to_msg(void *buf, size_t len,
       tr == NULL ? TCP_PAYLOAD_TRACE_WHERE_CHAMELIO_TCP :
           tcp_payload_trace_infer_where((const __u8 *) buf, type),
       sock, arg0, arg1);
+}
+
+static inline void tcp_payload_trace_add_tsc_to_msg(void *buf, size_t len,
+    __u8 type, int sock, __u16 arg0, __u16 arg1, __u64 tsc)
+{
+  struct tcp_payload_trace *tr = tcp_payload_trace_find_msg(buf, len);
+
+  tcp_payload_trace_add_tsc_where(tr, type,
+      tr == NULL ? TCP_PAYLOAD_TRACE_WHERE_CHAMELIO_TCP :
+          tcp_payload_trace_infer_where((const __u8 *) buf, type),
+      sock, arg0, arg1, tsc);
 }
 
 #endif

@@ -147,6 +147,7 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
   __u8 pktlen_valid, paylen_valid;
   __u16 paylen, hdrlen;
   __u32 ack_bump, avail_before, avail_after, overlap, rx_bump;
+  __u64 copy_start_tsc, copied_tsc;
   struct tcp_sock *sock;
   struct tcp_pkt_inner *tcp_pkt;
   void *full_payload, *payload;
@@ -305,7 +306,15 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
   {
     tcp_payload_trace_add_to_msg(payload, rx_bump,
         TCP_PAYLOAD_TRACE_TCP_RX_DELIVERED, sock->id, rx_bump, ctx->core);
+    copy_start_tsc = tcp_payload_trace_rdtsc();
     rx_copy_payload(ctx->shm_base, sock, payload, rx_bump);
+    copied_tsc = tcp_payload_trace_rdtsc();
+    tcp_payload_trace_add_tsc_to_msg(payload, rx_bump,
+        TCP_PAYLOAD_TRACE_TCP_RX_RING_COPY_START, sock->id, rx_bump, ctx->core,
+        copy_start_tsc);
+    tcp_payload_trace_add_tsc_to_msg(payload, rx_bump,
+        TCP_PAYLOAD_TRACE_TCP_RX_RING_COPIED, sock->id, rx_bump, ctx->core,
+        copied_tsc);
     rx_sock_bump_rx(sock, rx_bump);
     ret = rx_enqueue_rx_bump(&ctx->equeues[sock->app_bump_qid].eq, sock, rx_bump,
         f_beui16(tcp_pkt->tcp.src), f_beui32(tcp_pkt->ip.src));
@@ -314,6 +323,8 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
       util_spin_unlock(&sock->lock);
       return -1;
     }
+    tcp_payload_trace_add_to_msg(payload, rx_bump,
+        TCP_PAYLOAD_TRACE_TCP_RX_ENQUEUED, sock->id, rx_bump, ctx->core);
   }
   
   ret = tx_fill_ack(ctx, sock);
@@ -326,7 +337,7 @@ int tcp_event_sched(struct cham_ebpf_ctx *ctx)
 {
   int ret;
   __u8 pktlen_valid, paylen_valid;
-  __u64 now_tsc;
+  __u64 copy_start_tsc, copied_tsc, now_tsc;
   __u32 hdrlen, max_paylen, tx_bump, avail, sid;
   void *payload;
   struct cham_map *map;
@@ -381,7 +392,15 @@ int tcp_event_sched(struct cham_ebpf_ctx *ctx)
   {
     /* Copy payload from TX buffer to packet and update socket */
     payload = ctx->pkt + hdrlen;
+    copy_start_tsc = tcp_payload_trace_rdtsc();
     tx_copy_payload(ctx->shm_base, sock, payload, tx_bump);
+    copied_tsc = tcp_payload_trace_rdtsc();
+    tcp_payload_trace_add_tsc_to_msg(payload, tx_bump,
+        TCP_PAYLOAD_TRACE_TCP_SCHED_COPY_START, sock->id, tx_bump, ctx->core,
+        copy_start_tsc);
+    tcp_payload_trace_add_tsc_to_msg(payload, tx_bump,
+        TCP_PAYLOAD_TRACE_TCP_SCHED_COPY_END, sock->id, tx_bump, ctx->core,
+        copied_tsc);
     tcp_payload_trace_add_to_msg(payload, tx_bump,
         TCP_PAYLOAD_TRACE_TCP_TX_SCHED_SENT, sock->id, tx_bump, ctx->core);
     tx_sock_tx_bump(sock, tx_bump);
@@ -394,6 +413,8 @@ int tcp_event_sched(struct cham_ebpf_ctx *ctx)
       ret = sched_add(&ctx->sched, sock->id, tx_sched_tsc(sock), avail);
       if (ret < 0)
         return -1;
+      tcp_payload_trace_add_to_msg(payload, tx_bump,
+          TCP_PAYLOAD_TRACE_TCP_SCHED_RESCHEDULED, sock->id, avail, ctx->core);
     }
   }
   

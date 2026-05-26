@@ -837,6 +837,7 @@ int tcp_sendto(struct tcp_context_lib *ctx, int sockfd,
   __u32 tail, n, n1, n2;
   __u32 tx_len, tx_avail, tx_head;
   __u32 tx_ip;
+  __u64 copy_start_tsc, copied_tsc;
   __u16 tx_port;
   __u8 *tx_buf;
   const __u8 *src;
@@ -910,7 +911,15 @@ int tcp_sendto(struct tcp_context_lib *ctx, int sockfd,
   }
   else
   {
+    copy_start_tsc = tcp_payload_trace_rdtsc();
     memcpy(tx_buf + tail, src, n);
+    copied_tsc = tcp_payload_trace_rdtsc();
+    tcp_payload_trace_add_tsc_to_msg(tx_buf + tail, n,
+        TCP_PAYLOAD_TRACE_TCP_APP_TX_COPY_START, sockfd, n, sock->core,
+        copy_start_tsc);
+    tcp_payload_trace_add_tsc_to_msg(tx_buf + tail, n,
+        TCP_PAYLOAD_TRACE_TCP_APP_TX_COPIED, sockfd, n, sock->core,
+        copied_tsc);
     tcp_payload_trace_add_to_msg(tx_buf + tail, n,
         TCP_PAYLOAD_TRACE_TCP_APP_TX_ACCEPTED, sockfd, n, sock->core);
   }
@@ -920,10 +929,20 @@ int tcp_sendto(struct tcp_context_lib *ctx, int sockfd,
   sock->remote_port = tx_port;
   sock->tx_bump_pending += n;
   sock_mark_bump(ctx, sock);
+  if (tail + n <= tx_len)
+    tcp_payload_trace_add_to_msg(tx_buf + tail, n,
+        TCP_PAYLOAD_TRACE_TCP_TX_BUMP_MARKED, sockfd,
+        sock->tx_bump_pending, sock->core);
 
   tx_inflight = tx_avail - sock->tx_bump_pending + n;
   if (tx_inflight == 0 || sock->tx_bump_pending >= TCP_TX_BUMP_THRESH)
+  {
     sock_flush_bumps(ctx, sock);
+    if (tail + n <= tx_len)
+      tcp_payload_trace_add_to_msg(tx_buf + tail, n,
+          TCP_PAYLOAD_TRACE_TCP_TX_BUMPS_FLUSHED, sockfd,
+          sock->tx_bump_pending, sock->core);
+  }
 
   return n;
 }
@@ -936,6 +955,7 @@ int tcp_recvfrom(struct tcp_context_lib *ctx, int sockfd,
   __u32 n1, n2, new_head;
   __u32 rx_len, rx_avail, rx_head;
   __u32 rx_was_full;
+  __u64 copy_start_tsc, copied_tsc;
   __u8 *rx_buf;
   struct tcp_socket_lib *sock;
   struct sockaddr_in *sin = (struct sockaddr_in *) addr;
@@ -988,13 +1008,23 @@ int tcp_recvfrom(struct tcp_context_lib *ctx, int sockfd,
   {
     n1 = rx_len - rx_head;
     n2 = n - n1;
+    copy_start_tsc = tcp_payload_trace_rdtsc();
     memcpy(buf, rx_buf + rx_head, n1);
     memcpy((__u8 *) buf + n1, rx_buf, n2);
+    copied_tsc = tcp_payload_trace_rdtsc();
   }
   else
   {
+    copy_start_tsc = tcp_payload_trace_rdtsc();
     memcpy(buf, rx_buf + rx_head, n);
+    copied_tsc = tcp_payload_trace_rdtsc();
   }
+  tcp_payload_trace_add_tsc_to_msg(buf, n,
+      TCP_PAYLOAD_TRACE_TCP_APP_RX_COPY_START, sockfd, n, sock->core,
+      copy_start_tsc);
+  tcp_payload_trace_add_tsc_to_msg(buf, n,
+      TCP_PAYLOAD_TRACE_TCP_APP_RX_COPIED, sockfd, n, sock->core,
+      copied_tsc);
   tcp_payload_trace_add_to_msg(buf, n, TCP_PAYLOAD_TRACE_TCP_RX_DELIVERED,
       sockfd, n, sock->core);
 
