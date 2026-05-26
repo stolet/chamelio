@@ -14,7 +14,7 @@
 #define SID_BUCK_MAP 2
 #define CFG_MAP 3
 #define TCP_MAX_PAYLOAD (FAST_L3_PKT_ROOM - sizeof(struct tcp_pkt_inner))
-#define FAST_REMIT_THRESH 5
+#define FAST_REMIT_THRESH 3
 
 /* Miscelaneous helpers */
 static __always_inline __u8 is_qe_valid(struct queue_entry *qe, void *shm_end);  
