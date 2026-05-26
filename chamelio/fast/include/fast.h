@@ -18,12 +18,12 @@
 #define FAST_RX_BATCH_SIZE 16
 #define FAST_SCHED_BATCH_SIZE 16
 #define FAST_DEQ_BATCH_SIZE 32
-#define FAST_CTL_BATCH_SIZE 16
+#define FAST_CTL_BATCH_SIZE 32
 
 /* We want the TXBUF_SIZE to be the larger or the batch sizes */
 #define TXBUF_SIZE 2 * FAST_DEQ_BATCH_SIZE
 /* Size of cache for preallocated mbufs used for transmission */
-#define TX_CACHE_SIZE 128
+#define TX_CACHE_SIZE 256
 
 struct proto_fast {
   /* Registered protocol type for handwritten fast path */
