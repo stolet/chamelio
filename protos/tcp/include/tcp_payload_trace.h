@@ -182,6 +182,27 @@ static inline void tcp_payload_trace_add_to_msg(void *buf, size_t len,
       sock, arg0, arg1);
 }
 
+static inline void tcp_payload_trace_add_to_msgs(void *buf, size_t len,
+    __u8 type, int sock, __u16 arg0, __u16 arg1)
+{
+  __u8 *msg = (__u8 *) buf;
+  size_t off = 0;
+
+  while (off + 24 <= len) {
+    __u32 bodylen;
+    size_t msg_len;
+
+    if (msg[off] != 0x80 && msg[off] != 0x81)
+      return;
+    bodylen = tcp_payload_trace_bodylen(msg + off);
+    msg_len = 24 + (size_t) bodylen;
+    if (msg_len > len - off)
+      return;
+    tcp_payload_trace_add_to_msg(msg + off, msg_len, type, sock, arg0, arg1);
+    off += msg_len;
+  }
+}
+
 static inline void tcp_payload_trace_add_tsc_to_msg(void *buf, size_t len,
     __u8 type, int sock, __u16 arg0, __u16 arg1, __u64 tsc)
 {
@@ -191,6 +212,28 @@ static inline void tcp_payload_trace_add_tsc_to_msg(void *buf, size_t len,
       tr == NULL ? TCP_PAYLOAD_TRACE_WHERE_CHAMELIO_TCP :
           tcp_payload_trace_infer_where((const __u8 *) buf, type),
       sock, arg0, arg1, tsc);
+}
+
+static inline void tcp_payload_trace_add_tsc_to_msgs(void *buf, size_t len,
+    __u8 type, int sock, __u16 arg0, __u16 arg1, __u64 tsc)
+{
+  __u8 *msg = (__u8 *) buf;
+  size_t off = 0;
+
+  while (off + 24 <= len) {
+    __u32 bodylen;
+    size_t msg_len;
+
+    if (msg[off] != 0x80 && msg[off] != 0x81)
+      return;
+    bodylen = tcp_payload_trace_bodylen(msg + off);
+    msg_len = 24 + (size_t) bodylen;
+    if (msg_len > len - off)
+      return;
+    tcp_payload_trace_add_tsc_to_msg(msg + off, msg_len, type, sock, arg0,
+        arg1, tsc);
+    off += msg_len;
+  }
 }
 
 #endif

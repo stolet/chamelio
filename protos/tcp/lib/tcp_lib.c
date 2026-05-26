@@ -61,6 +61,8 @@ static int validate_sockaddr_in(const struct sockaddr *addr,
 static int validate_nonblock_flags(int flags);
 static void fill_sockaddr(struct tcp_socket_lib *sock, struct sockaddr *addr,
     socklen_t *addrlen);
+static void tcp_add_tx_trace(__u8 *tx_buf, __u32 tx_len, __u32 tail, __u32 len,
+    __u8 type, int sockfd, __u16 arg0, __u16 arg1, __u64 tsc);
 
 static __u32 sock_rx_bump_thresh(const struct tcp_socket_lib *sock)
 {
@@ -71,6 +73,67 @@ static __u32 sock_rx_bump_thresh(const struct tcp_socket_lib *sock)
     thresh = 1;
 
   return thresh;
+}
+
+static inline __u8 tx_ring_u8(__u8 *tx_buf, __u32 tx_len, __u32 off)
+{
+  return tx_buf[off < tx_len ? off : off - tx_len];
+}
+
+static struct tcp_payload_trace *tcp_payload_trace_find_ring_msg(__u8 *tx_buf,
+    __u32 tx_len, __u32 tail, __u32 len)
+{
+  __u32 bodylen, msg_len, tr_off;
+  struct tcp_payload_trace *tr;
+
+  if (len < 24 + sizeof(*tr))
+    return NULL;
+  if (tx_ring_u8(tx_buf, tx_len, tail) != 0x80 &&
+      tx_ring_u8(tx_buf, tx_len, tail) != 0x81)
+    return NULL;
+
+  bodylen = ((__u32) tx_ring_u8(tx_buf, tx_len, tail + 8) << 24) |
+      ((__u32) tx_ring_u8(tx_buf, tx_len, tail + 9) << 16) |
+      ((__u32) tx_ring_u8(tx_buf, tx_len, tail + 10) << 8) |
+      (__u32) tx_ring_u8(tx_buf, tx_len, tail + 11);
+  msg_len = 24 + bodylen;
+  if (msg_len > len || bodylen < sizeof(*tr))
+    return NULL;
+
+  tr_off = tail + msg_len - sizeof(*tr);
+  while (tr_off >= tx_len)
+    tr_off -= tx_len;
+  if (tr_off + sizeof(*tr) > tx_len)
+    return NULL;
+
+  tr = (struct tcp_payload_trace *) (tx_buf + tr_off);
+  if (tr->magic != TCP_PAYLOAD_TRACE_MAGIC ||
+      tr->version != TCP_PAYLOAD_TRACE_VERSION ||
+      tr->capacity != TCP_PAYLOAD_TRACE_MAX_EVENTS)
+    return NULL;
+  if ((__u32) tr->orig_bodylen + sizeof(*tr) != bodylen)
+    return NULL;
+
+  return tr;
+}
+
+static void tcp_add_tx_trace(__u8 *tx_buf, __u32 tx_len, __u32 tail, __u32 len,
+    __u8 type, int sockfd, __u16 arg0, __u16 arg1, __u64 tsc)
+{
+  struct tcp_payload_trace *tr;
+  __u8 where;
+
+  if (tail + len <= tx_len)
+  {
+    tcp_payload_trace_add_tsc_to_msg(tx_buf + tail, len, type, sockfd, arg0,
+        arg1, tsc);
+    return;
+  }
+
+  tr = tcp_payload_trace_find_ring_msg(tx_buf, tx_len, tail, len);
+  where = tx_ring_u8(tx_buf, tx_len, tail) == 0x80 ?
+      TCP_PAYLOAD_TRACE_WHERE_CLIENT_TCP : TCP_PAYLOAD_TRACE_WHERE_SERVER_TCP;
+  tcp_payload_trace_add_tsc_where(tr, type, where, sockfd, arg0, arg1, tsc);
 }
 
 enum tcp_wait_poll_mode {
@@ -901,6 +964,7 @@ int tcp_sendto(struct tcp_context_lib *ctx, int sockfd,
     tail -= tx_len;
   tx_ip = ntohl(sin->sin_addr.s_addr);
   tx_port = ntohs(sin->sin_port);
+  copy_start_tsc = tcp_payload_trace_rdtsc();
 
   if (tail + n > tx_len)
   {
@@ -911,37 +975,34 @@ int tcp_sendto(struct tcp_context_lib *ctx, int sockfd,
   }
   else
   {
-    copy_start_tsc = tcp_payload_trace_rdtsc();
     memcpy(tx_buf + tail, src, n);
-    copied_tsc = tcp_payload_trace_rdtsc();
-    tcp_payload_trace_add_tsc_to_msg(tx_buf + tail, n,
-        TCP_PAYLOAD_TRACE_TCP_APP_TX_COPY_START, sockfd, n, sock->core,
-        copy_start_tsc);
-    tcp_payload_trace_add_tsc_to_msg(tx_buf + tail, n,
-        TCP_PAYLOAD_TRACE_TCP_APP_TX_COPIED, sockfd, n, sock->core,
-        copied_tsc);
-    tcp_payload_trace_add_to_msg(tx_buf + tail, n,
-        TCP_PAYLOAD_TRACE_TCP_APP_TX_ACCEPTED, sockfd, n, sock->core);
   }
+  copied_tsc = tcp_payload_trace_rdtsc();
+  tcp_add_tx_trace(tx_buf, tx_len, tail, n,
+      TCP_PAYLOAD_TRACE_TCP_APP_TX_COPY_START, sockfd, n, sock->core,
+      copy_start_tsc);
+  tcp_add_tx_trace(tx_buf, tx_len, tail, n,
+      TCP_PAYLOAD_TRACE_TCP_APP_TX_COPIED, sockfd, n, sock->core, copied_tsc);
+  tcp_add_tx_trace(tx_buf, tx_len, tail, n,
+      TCP_PAYLOAD_TRACE_TCP_APP_TX_ACCEPTED, sockfd, n, sock->core,
+      tcp_payload_trace_rdtsc());
 
   sock->tx_avail = tx_avail + n;
   sock->remote_ip = tx_ip;
   sock->remote_port = tx_port;
   sock->tx_bump_pending += n;
   sock_mark_bump(ctx, sock);
-  if (tail + n <= tx_len)
-    tcp_payload_trace_add_to_msg(tx_buf + tail, n,
-        TCP_PAYLOAD_TRACE_TCP_TX_BUMP_MARKED, sockfd,
-        sock->tx_bump_pending, sock->core);
+  tcp_add_tx_trace(tx_buf, tx_len, tail, n,
+      TCP_PAYLOAD_TRACE_TCP_TX_BUMP_MARKED, sockfd, sock->tx_bump_pending,
+      sock->core, tcp_payload_trace_rdtsc());
 
   tx_inflight = tx_avail - sock->tx_bump_pending + n;
   if (tx_inflight == 0 || sock->tx_bump_pending >= TCP_TX_BUMP_THRESH)
   {
     sock_flush_bumps(ctx, sock);
-    if (tail + n <= tx_len)
-      tcp_payload_trace_add_to_msg(tx_buf + tail, n,
-          TCP_PAYLOAD_TRACE_TCP_TX_BUMPS_FLUSHED, sockfd,
-          sock->tx_bump_pending, sock->core);
+    tcp_add_tx_trace(tx_buf, tx_len, tail, n,
+        TCP_PAYLOAD_TRACE_TCP_TX_BUMPS_FLUSHED, sockfd,
+        sock->tx_bump_pending, sock->core, tcp_payload_trace_rdtsc());
   }
 
   return n;
@@ -1019,13 +1080,13 @@ int tcp_recvfrom(struct tcp_context_lib *ctx, int sockfd,
     memcpy(buf, rx_buf + rx_head, n);
     copied_tsc = tcp_payload_trace_rdtsc();
   }
-  tcp_payload_trace_add_tsc_to_msg(buf, n,
+  tcp_payload_trace_add_tsc_to_msgs(buf, n,
       TCP_PAYLOAD_TRACE_TCP_APP_RX_COPY_START, sockfd, n, sock->core,
       copy_start_tsc);
-  tcp_payload_trace_add_tsc_to_msg(buf, n,
+  tcp_payload_trace_add_tsc_to_msgs(buf, n,
       TCP_PAYLOAD_TRACE_TCP_APP_RX_COPIED, sockfd, n, sock->core,
       copied_tsc);
-  tcp_payload_trace_add_to_msg(buf, n, TCP_PAYLOAD_TRACE_TCP_RX_DELIVERED,
+  tcp_payload_trace_add_to_msgs(buf, n, TCP_PAYLOAD_TRACE_TCP_RX_DELIVERED,
       sockfd, n, sock->core);
 
   sock->rx_avail = rx_avail - n;
