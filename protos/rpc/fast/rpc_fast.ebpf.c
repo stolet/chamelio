@@ -39,7 +39,7 @@ SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
 {
   int ret, i;
-  __u32 free_bytes, tail, part;
+  __u32 free_bytes, used_bytes, head, tail, part;
   __u16 payload_len, ip_hdrs_len, ip_total_len;
   __u16 udp_len, rpc_len, service;
   struct eth_hdr *eth;
@@ -146,17 +146,20 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
     if (server->app_lb_mode)
     {
-      /* App-layer dispatch: write [meta][rpc_msg] to server's shared RX ring.
-         The dispatcher polls shared_rx_avail and applies JSQ in userspace. */
+      /* write entry to server's shared RX ring. */
       __u32 entry_len = (__u32)sizeof(struct rpc_rx_meta) + payload_len;
       rx_base = (__u8 *)ctx->shm_base + server->rx_off;
-      free_bytes = server->rx_len - server->rx_avail;
+      head = server->rx_head;
+      tail = server->rx_tail;
+      if (tail >= head)
+        used_bytes = tail - head;
+      else
+        used_bytes = server->rx_len - head + tail;
+
+      /* Keep one byte free so rx_head == rx_tail always means empty. */
+      free_bytes = server->rx_len - used_bytes - 1;
       if (entry_len > free_bytes)
         return -1;
-
-      tail = server->rx_head + server->rx_avail;
-      if (tail >= server->rx_len)
-        tail -= server->rx_len;
 
       meta.rx_ip   = f_beui32(ip->src);
       meta.rx_port = f_beui16(udp->src);
@@ -186,7 +189,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
         bpf_memcpy(rx_base + tail, payload, part);
         bpf_memcpy(rx_base, payload + part, payload_len - part);
       }
-      server->rx_avail += entry_len;
+      tail += payload_len;
+      if (tail >= server->rx_len)
+        tail -= server->rx_len;
+      server->rx_tail = tail;
       return 0;
     }
 
