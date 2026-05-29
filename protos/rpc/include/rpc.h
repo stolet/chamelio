@@ -107,11 +107,11 @@ struct rpc_server
   __u32 rx_len;
   /* Pointer to start of RX buffer in shared memory */
   __u64 rx_off;
-  /* # bytes written by eBPF; decremented by dispatcher */
-  __u32 rx_avail; 
-  /* head advanced by dispatcher after consuming an entry */
+  /* head advanced by app workers after consuming an entry */
   __u32 rx_head;
-  /* spinlock protecting rx_head/rx_avail for multi-worker pull (0=free, 1=held) */
+  /* start of unused bytes in RX buffer; advanced by fast path after publishing an entry */
+  __u32 rx_tail;
+  /* spinlock protecting app-LB consumer rx_head for multi-worker pull (0=free, 1=held) */
   __u32 rx_lock;
 };
 

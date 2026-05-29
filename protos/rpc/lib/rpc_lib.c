@@ -878,28 +878,31 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     if (w->server->app_lb_mode)
     {
       /* JBSQ pull: worker claims next entry from the server's shared ring */
-      
+      //TODO: remove entry_len var
       __u8 *shbuf;
-      __u32 meta_sz, srvr_avail, entry_len, hdr_pos, dst_pos, curr_head;
+      __u32 meta_sz, tail, avail, entry_len, hdr_pos, dst_pos, curr_head;
       struct rpc_rx_meta md;
       struct rpc_server *srvr;
 
       srvr = (struct rpc_server *)w->server->shm_server;
       shbuf = (__u8 *)w->server->rx_buf;
       meta_sz    = (__u32)sizeof(struct rpc_rx_meta);
+
       while (__sync_lock_test_and_set(&srvr->rx_lock, 1)){}
 
       curr_head = srvr->rx_head;
-      srvr_avail = srvr->rx_avail;
+      tail = srvr->rx_tail;
+      if (tail >= curr_head) avail = tail - curr_head;
+      else avail = srvr->rx_len - curr_head + tail;
 
-      //checks if there are enough bytes available to read otw try reading again later
-      if (srvr_avail < meta_sz + (__u32)sizeof(struct rpc_hdr))
+      //check if enough space for metadata & hdr
+      if (avail < meta_sz + (__u32)sizeof(struct rpc_hdr))
       {
         __sync_lock_release(&srvr->rx_lock);
         errno = EAGAIN;
         return -1;
       }
-
+      //copy the metadata with ip/port info
       if (curr_head + meta_sz <= srvr->rx_len)
       {
         memcpy(&md, shbuf + curr_head, meta_sz);
@@ -911,7 +914,7 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
         memcpy(&md, shbuf + curr_head, n1);
         memcpy((__u8 *)&md + n1, shbuf, n2);
       }
-
+      //copy hdr 
       hdr_pos = (curr_head + meta_sz) % srvr->rx_len;
       if (hdr_pos + sizeof(struct rpc_hdr) <= srvr->rx_len)
       {
@@ -931,13 +934,12 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 
       entry_len = meta_sz + hdr.len.x;
 
-      //checks if the whole payload is available to read
-      if (srvr_avail < entry_len)
-      {
-        __sync_lock_release(&srvr->rx_lock);
-        errno = EAGAIN;
-        return -1;
-      }
+      // if (avail < entry_len)
+      // {
+      //   __sync_lock_release(&srvr->rx_lock);
+      //   errno = EAGAIN;
+      //   return -1;
+      // }
 
       if (hdr.len.x > w->rx_len - w->rx_avail)
       {
@@ -954,7 +956,6 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
                 srvr->rx_len, hdr.len.x);
 
       srvr->rx_head = (curr_head + entry_len) % srvr->rx_len;
-      __sync_fetch_and_sub(&srvr->rx_avail, entry_len);
 
       __sync_lock_release(&srvr->rx_lock);
 
