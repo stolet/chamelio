@@ -19,7 +19,7 @@
 /* Maximum number of servers */
 #define MAX_SERVERS 6
 /* Maximum number of clients */
-#define MAX_CLIENTS 16
+#define MAX_CLIENTS 256
 /* Maximum number of workers */
 #define MAX_WORKERS 16
 /* Invalid server/worker ID */
