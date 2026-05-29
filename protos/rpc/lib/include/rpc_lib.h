@@ -9,7 +9,7 @@
 /* TODO: Fix this because it's duplicated */
 #define MAX_SOCKETS 8192
 #define MAX_SERVERS 6
-#define MAX_CLIENTS 16
+#define MAX_CLIENTS 256
 #define MAX_WORKERS 16
 #define SOCK_INACTIVE (-1U)
 /* Invalid server ID */
