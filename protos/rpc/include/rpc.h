@@ -29,7 +29,7 @@
 /* Location where ebpf bytecode is located */
 #define RPC_EBPF_BYTECODE "protos/rpc/fast/rpc_fast.bpf.o"
 
-#define JOB_QUEUE_SIZE 1
+// #define JOB_QUEUE_SIZE 1
 
 /* Entry for the client map */
 struct rpc_client
@@ -102,6 +102,9 @@ struct rpc_server
 
   /* App layer LB mode flag: 0: eBPF (default) */
   __u8 app_lb_mode;
+  /* Max in-flight jobs per worker when app_lb_mode == 1.
+   * 0 = JSQ; > 0 = JBSQ with that bound */
+  __u32 job_queue_bound;
   /* Shared RX ring used when app_lb_mode == 1 */
   /* Length of RX buffer */
   __u32 rx_len;

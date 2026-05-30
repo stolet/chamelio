@@ -162,6 +162,8 @@ struct rpc_server_lib
 
   /* App-layer LB fields */
   __u8 app_lb_mode;
+  /* 0 = JSQ (unbounded); > 0 = bounded queue (use JOB_QUEUE_SIZE to revert) */
+  __u32 job_queue_bound;
   /* Pointer to server state in shared memory */
   void *shm_server;
   /* Pointer to the server-level shared RX ring in shared memory */
@@ -228,7 +230,14 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len);
 Information used by FP during LB of workers */
 int rpc_call_complete(struct rpc_worker_lib *w);
 
-/* Switch server to app-layer LB mode */
+/* Switch server to app-layer pull mode (JBSQ when job_queue_bound > 0, else unbounded) */
 int rpc_set_app_lb(struct rpc_server_lib *server);
+
+/* Switch server to app-layer JSQ dispatcher mode */
+int rpc_set_app_jsq(struct rpc_server_lib *server);
+
+/* Dispatch one pending request from the shared ring to the worker with fewest
+ * jobs_pending. Call in a tight loop from the dispatcher thread. */
+int rpc_app_dispatch(struct rpc_server_lib *server);
 
 #endif
