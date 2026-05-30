@@ -844,6 +844,9 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
   return len;
 }
 
+//TODO: need to handle multi-client scenarios for application layer 
+//JSQ in which we may have the wrong rx_ip/port being set in the worker
+
 int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
                     void *buf, size_t len)
 {
@@ -861,7 +864,9 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 
   wkr = (struct rpc_worker *)w->shm_worker;
 
-  if (w->server->app_lb_mode && wkr->jobs_pending >= JOB_QUEUE_SIZE)
+  if (w->server->app_lb_mode &&
+      w->server->job_queue_bound > 0 &&
+      wkr->jobs_pending >= w->server->job_queue_bound)
   {
     errno = EAGAIN;
     return -1;
@@ -875,7 +880,18 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 
   if (w->rx_avail == 0)
   {
-    if (w->server->app_lb_mode)
+    if (w->server->app_lb_mode == 2)
+    {
+      /* App-layer JSQ: dispatcher pushes to private ring; worker just waits */
+      if (!__atomic_load_n(&w->rx_avail, __ATOMIC_ACQUIRE))
+      {
+        errno = EAGAIN;
+        return -1;
+      }
+      /* data arrived between non-atomic check and atomic load — fall through
+       * to header read below */
+    }
+    else if (w->server->app_lb_mode == 1)
     {
       /* JBSQ pull: worker claims next entry from the server's shared ring */
       //TODO: remove entry_len var
@@ -1000,6 +1016,30 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
       hdr.rid.x     = ntohl(hdr.rid.x);
     }
   }
+  
+  /* Mode 2: read header now
+    * hdr.len: how many bytes how many bytes to copy from rx_buf into
+     the application's buf, and how far to advance
+     hdr.rid: returned as *rid to the caller, so the application can 
+     match the response to the right request
+     hdr.service: tells the application which service handler to invoke */
+  if (w->server->app_lb_mode == 2)
+  {
+    if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len)
+    {
+      n1 = w->rx_len - w->rx_head;
+      n2 = sizeof(struct rpc_hdr) - n1;
+      memcpy(&hdr, (__u8 *)w->rx_buf + w->rx_head, n1);
+      memcpy((__u8 *)&hdr + n1, w->rx_buf, n2);
+    }
+    else
+    {
+      memcpy(&hdr, (__u8 *)w->rx_buf + w->rx_head, sizeof(struct rpc_hdr));
+    }
+    hdr.service.x = ntohs(hdr.service.x);
+    hdr.len.x     = ntohs(hdr.len.x);
+    hdr.rid.x     = ntohl(hdr.rid.x);
+  }
 
   // store metadata so the application can read it immediately after this call
   // w->last_rid = hdr.rid.x;
@@ -1034,8 +1074,11 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     memcpy(buf, w->rx_buf + new_head, n);
   }
 
-  // advance rx head and avail 
-  w->rx_avail -= hdr.len.x;
+  // advance rx head and avail
+  if (w->server->app_lb_mode == 2)
+    __atomic_fetch_sub(&w->rx_avail, hdr.len.x, __ATOMIC_RELEASE);
+  else
+    w->rx_avail -= hdr.len.x;
   new_head = w->rx_head + hdr.len.x;
   if (new_head >= w->rx_len)
     new_head -= w->rx_len;
@@ -1199,9 +1242,148 @@ int rpc_set_app_lb(struct rpc_server_lib *server)
   serv = (struct rpc_server *)server->shm_server;
   serv->app_lb_mode = 1;
   server->app_lb_mode = 1;
+  //TO CHANGE for testing with JBSQ
+  /* JBSQ: > 0: set to the size of bounded queue */
+  server->job_queue_bound = 0; 
+
 
   // for (i = 0; i < server->nworkers; i++)
   //   server->workers[i].app_lb_mode = 1;
+
+  return 0;
+}
+
+int rpc_set_app_jsq(struct rpc_server_lib *server)
+{
+  struct rpc_server *serv;
+
+  if (!server || !server->shm_server)
+  {
+    LOG_ERROR("null server in rpc_set_app_jsq");
+    return -1;
+  }
+
+  serv = (struct rpc_server *)server->shm_server;
+  serv->app_lb_mode = 2;
+  server->app_lb_mode = 2;
+  server->job_queue_bound = 0;
+
+  return 0;
+}
+
+int rpc_app_dispatch(struct rpc_server_lib *server)
+{
+  struct rpc_server *srvr;
+  struct rpc_worker_lib *best_w;
+  struct rpc_worker *best_wkr;
+  __u8 *shbuf;
+  __u32 meta_sz, curr_head, tail, avail, entry_len, hdr_pos, dst_pos;
+  __u32 min_pending, n1, n2, i;
+  struct rpc_rx_meta md;
+  struct rpc_hdr hdr = {0};
+
+  if (!server || !server->shm_server)
+    return -1;
+
+  srvr = (struct rpc_server *)server->shm_server;
+  shbuf = (__u8 *)server->rx_buf;
+  meta_sz = (__u32)sizeof(struct rpc_rx_meta);
+
+  while (__sync_lock_test_and_set(&srvr->rx_lock, 1)) {}
+
+  curr_head = srvr->rx_head;
+  tail = srvr->rx_tail;
+  avail = (tail >= curr_head) ? tail - curr_head
+                              : srvr->rx_len - curr_head + tail;
+
+  if (avail < meta_sz + (__u32)sizeof(struct rpc_hdr))
+  {
+    __sync_lock_release(&srvr->rx_lock);
+    errno = EAGAIN;
+    return -1;
+  }
+
+  /* Read metadata */
+  if (curr_head + meta_sz <= srvr->rx_len)
+  {
+    memcpy(&md, shbuf + curr_head, meta_sz);
+  }
+  else
+  {
+    n1 = srvr->rx_len - curr_head;
+    n2 = meta_sz - n1;
+    memcpy(&md, shbuf + curr_head, n1);
+    memcpy((__u8 *)&md + n1, shbuf, n2);
+  }
+
+  /* Read RPC header */
+  hdr_pos = (curr_head + meta_sz) % srvr->rx_len;
+  if (hdr_pos + sizeof(struct rpc_hdr) <= srvr->rx_len)
+  {
+    memcpy(&hdr, shbuf + hdr_pos, sizeof(struct rpc_hdr));
+  }
+  else
+  {
+    n1 = srvr->rx_len - hdr_pos;
+    n2 = (__u32)sizeof(struct rpc_hdr) - n1;
+    memcpy(&hdr, shbuf + hdr_pos, n1);
+    memcpy((__u8 *)&hdr + n1, shbuf, n2);
+  }
+  hdr.service.x = ntohs(hdr.service.x);
+  hdr.len.x     = ntohs(hdr.len.x);
+  hdr.rid.x     = ntohl(hdr.rid.x);
+
+  entry_len = meta_sz + hdr.len.x;
+
+  /* JSQ: pick worker with fewest jobs_pending that has enough rx_buf space */
+  best_w   = NULL;
+  best_wkr = NULL;
+  min_pending = (__u32)-1;
+  for (i = 0; i < server->nworkers; i++)
+  {
+    struct rpc_worker_lib *w   = &server->workers[i];
+    struct rpc_worker *wkr;
+    __u32 space, pending;
+
+    // if (!w->shm_worker)
+    //   continue;
+    wkr   = (struct rpc_worker *)w->shm_worker;
+    space = w->rx_len - __atomic_load_n(&w->rx_avail, __ATOMIC_ACQUIRE);
+    if (hdr.len.x > space)
+      continue;
+
+    pending = wkr->jobs_pending;
+    if (pending < min_pending)
+    {
+      min_pending = pending;
+      best_w      = w;
+      best_wkr    = wkr;
+    }
+  }
+
+  if (!best_w)
+  {
+    __sync_lock_release(&srvr->rx_lock);
+    errno = EAGAIN;
+    return -1;
+  }
+
+  /* Copy payload into the chosen worker's private rx_buf */
+  dst_pos = (best_w->rx_head + __atomic_load_n(&best_w->rx_avail, __ATOMIC_ACQUIRE))
+            % best_w->rx_len;
+  ring2ring((__u8 *)best_w->rx_buf, dst_pos, best_w->rx_len,
+            shbuf, hdr_pos, srvr->rx_len, hdr.len.x);
+
+  srvr->rx_head = (curr_head + entry_len) % srvr->rx_len;
+  __sync_fetch_and_add(&best_wkr->jobs_pending, 1);
+
+  __sync_lock_release(&srvr->rx_lock);
+
+  best_w->rx_ip   = md.rx_ip;
+  best_w->rx_port = md.rx_port;
+
+  /* Release store: worker must see the payload before it sees rx_avail > 0 */
+  __atomic_fetch_add(&best_w->rx_avail, hdr.len.x, __ATOMIC_RELEASE);
 
   return 0;
 }
