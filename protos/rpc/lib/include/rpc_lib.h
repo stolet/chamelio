@@ -237,6 +237,9 @@ int rpc_set_app_lb(struct rpc_server_lib *server);
 /* Switch server to app-layer JSQ dispatcher mode */
 int rpc_set_app_jsq(struct rpc_server_lib *server);
 
+/* Switch server to eBPF round-robin mode (fast-path LB, no app-layer dispatcher) */
+int rpc_set_ebpf_rr(struct rpc_server_lib *server);
+
 /* Dispatch one pending request from the shared ring to the worker with fewest
  * jobs_pending. Call in a tight loop from the dispatcher thread. */
 int rpc_app_dispatch(struct rpc_server_lib *server);

@@ -196,29 +196,57 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       return 0;
     }
 
-    /* eBPF JSQ path: pick worker with fewest pending jobs */
     best_worker_id = (__u32)INVALID_ID;
-    fewest_jobs = (__u32)-1;
-#pragma unroll
-    for (i = 0; i < MAX_WORKERS; i++)
+
+    if (server->ebpf_lb_mode == 1)
     {
-      if (i >= server->n_workers)
-        break;
-
-      worker_id = server->workers[i];
-      if (worker_id == (__u32)INVALID_ID)
-        continue;
-
-      worker = &worker_map[worker_id];
-      free_bytes = worker->rx_len - worker->rx_avail;
-      if (payload_len > free_bytes)
-        continue;
-
-      if (best_worker_id == (__u32)INVALID_ID ||
-          worker->jobs_pending < fewest_jobs)
+      /* Round-robin: start from rr_next, skip workers whose buffer is full */
+      __u32 rr_start = server->rr_next % server->n_workers;
+#pragma unroll
+      for (i = 0; i < MAX_WORKERS; i++)
       {
+        __u32 idx;
+        if (i >= server->n_workers)
+          break;
+        idx = (rr_start + (__u32)i) % server->n_workers;
+        worker_id = server->workers[idx];
+        if (worker_id == (__u32)INVALID_ID)
+          continue;
+        worker = &worker_map[worker_id];
+        free_bytes = worker->rx_len - worker->rx_avail;
+        if (payload_len > free_bytes)
+          continue;
         best_worker_id = worker_id;
-        fewest_jobs = worker->jobs_pending;
+        /* Advance so the next request starts from the worker after this one */
+        server->rr_next = (idx + 1) % server->n_workers;
+        break;
+      }
+    }
+    else
+    {
+      /* eBPF JSQ: pick worker with fewest pending jobs */
+      fewest_jobs = (__u32)-1;
+#pragma unroll
+      for (i = 0; i < MAX_WORKERS; i++)
+      {
+        if (i >= server->n_workers)
+          break;
+
+        worker_id = server->workers[i];
+        if (worker_id == (__u32)INVALID_ID)
+          continue;
+
+        worker = &worker_map[worker_id];
+        free_bytes = worker->rx_len - worker->rx_avail;
+        if (payload_len > free_bytes)
+          continue;
+
+        if (best_worker_id == (__u32)INVALID_ID ||
+            worker->jobs_pending < fewest_jobs)
+        {
+          best_worker_id = worker_id;
+          fewest_jobs = worker->jobs_pending;
+        }
       }
     }
 

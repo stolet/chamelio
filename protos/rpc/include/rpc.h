@@ -102,6 +102,10 @@ struct rpc_server
 
   /* App layer LB mode flag: 0: eBPF (default) */
   __u8 app_lb_mode;
+  /* eBPF LB policy when app_lb_mode == 0: 0 = JSQ (default), 1 = round-robin */
+  __u8 ebpf_lb_mode;
+  /* Round-robin next worker index; written exclusively by the eBPF fast path */
+  __u32 rr_next;
   /* Max in-flight jobs per worker when app_lb_mode == 1.
    * 0 = JSQ; > 0 = JBSQ with that bound */
   __u32 job_queue_bound;
