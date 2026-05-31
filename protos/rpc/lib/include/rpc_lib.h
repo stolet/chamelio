@@ -78,8 +78,9 @@ struct rpc_worker_lib
   /* Pointer to the worker state in shared memory */
   void *shm_worker;
 
-  /* App-layer LB fields (used when server->app_lb_mode == 1) */
-  // __u8 app_lb_mode;
+  /* Dispatcher write pointer for mode 2 (app-layer JSQ).
+   * Only the dispatcher thread advances this; the worker only reads rx_head. */
+  __u32 rx_disp_tail;
 };
 
 /* RPC client that makes calls */
