@@ -1074,15 +1074,22 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     memcpy(buf, w->rx_buf + new_head, n);
   }
 
+  /* rx_head must be updated before rx_avail in mode 2: the dispatcher computes
+  dst_pos = rx_head + rx_avail, so if rx_avail is decremented first the
+  dispatcher can race and write the next packet to the wrong position.
+  The RELEASE on rx_avail carries the rx_head update to the dispatcher's
+  paired ACQUIRE load. */
+
   // advance rx head and avail
-  if (w->server->app_lb_mode == 2)
-    __atomic_fetch_sub(&w->rx_avail, hdr.len.x, __ATOMIC_RELEASE);
-  else
-    w->rx_avail -= hdr.len.x;
+
   new_head = w->rx_head + hdr.len.x;
   if (new_head >= w->rx_len)
     new_head -= w->rx_len;
   w->rx_head = new_head;
+  if (w->server->app_lb_mode == 2)
+    __atomic_fetch_sub(&w->rx_avail, hdr.len.x, __ATOMIC_RELEASE);
+  else
+    w->rx_avail -= hdr.len.x;
 
   // TODO: store some information about the call in the worker struct?
 
@@ -1368,11 +1375,13 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
     return -1;
   }
 
-  /* Copy payload into the chosen worker's private rx_buf */
-  dst_pos = (best_w->rx_head + __atomic_load_n(&best_w->rx_avail, __ATOMIC_ACQUIRE))
-            % best_w->rx_len;
+  /* Copy payload into the chosen worker's private rx_buf.
+   * Use rx_disp_tail (dispatcher-owned write pointer) — never read rx_head,
+   * which belongs to the worker and would create a race. */
+  dst_pos = best_w->rx_disp_tail;
   ring2ring((__u8 *)best_w->rx_buf, dst_pos, best_w->rx_len,
             shbuf, hdr_pos, srvr->rx_len, hdr.len.x);
+  best_w->rx_disp_tail = (best_w->rx_disp_tail + hdr.len.x) % best_w->rx_len;
 
   srvr->rx_head = (curr_head + entry_len) % srvr->rx_len;
   __sync_fetch_and_add(&best_wkr->jobs_pending, 1);
