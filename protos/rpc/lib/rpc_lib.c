@@ -1278,6 +1278,24 @@ int rpc_set_app_jsq(struct rpc_server_lib *server)
   return 0;
 }
 
+int rpc_set_ebpf_rr(struct rpc_server_lib *server)
+{
+  struct rpc_server *serv;
+
+  if (!server || !server->shm_server)
+  {
+    LOG_ERROR("null server in rpc_set_ebpf_rr");
+    return -1;
+  }
+
+  serv = (struct rpc_server *)server->shm_server;
+  /* Stay in eBPF fast-path mode (app_lb_mode = 0) but switch eBPF policy */
+  serv->ebpf_lb_mode = 1;
+  serv->rr_next = 0;
+
+  return 0;
+}
+
 int rpc_app_dispatch(struct rpc_server_lib *server)
 {
   struct rpc_server *srvr;
