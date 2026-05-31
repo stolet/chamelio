@@ -240,6 +240,13 @@ int rpc_set_app_jsq(struct rpc_server_lib *server);
 /* Switch server to eBPF round-robin mode (fast-path LB, no app-layer dispatcher) */
 int rpc_set_ebpf_rr(struct rpc_server_lib *server);
 
+/* Switch server to eBPF LWL mode; cost_table[service_id] = cost units per request */
+int rpc_set_ebpf_lwl(struct rpc_server_lib *server,
+                     const __u32 *cost_table, __u16 n_costs);
+
+/* Complete a request and subtract its service cost from work_remaining */
+int rpc_call_complete_svc(struct rpc_worker_lib *w, __u8 service_id);
+
 /* Dispatch one pending request from the shared ring to the worker with fewest
  * jobs_pending. Call in a tight loop from the dispatcher thread. */
 int rpc_app_dispatch(struct rpc_server_lib *server);

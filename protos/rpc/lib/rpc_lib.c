@@ -1278,6 +1278,60 @@ int rpc_set_app_jsq(struct rpc_server_lib *server)
   return 0;
 }
 
+int rpc_set_ebpf_lwl(struct rpc_server_lib *server,
+                     const __u32 *cost_table, __u16 n_costs)
+{
+  struct rpc_server *serv;
+  __u16 i;
+
+  if (!server || !server->shm_server)
+  {
+    LOG_ERROR("null server in rpc_set_ebpf_lwl");
+    return -1;
+  }
+  if (!cost_table || n_costs == 0)
+  {
+    LOG_ERROR("null or empty cost_table in rpc_set_ebpf_lwl");
+    return -1;
+  }
+
+  serv = (struct rpc_server *)server->shm_server;
+  for (i = 0; i < n_costs && i < MAX_SERVICE_NUMBER; i++)
+    serv->service_cost[i] = cost_table[i];
+
+  serv->ebpf_lb_mode = 2;
+
+  return 0;
+}
+
+int rpc_call_complete_svc(struct rpc_worker_lib *w, __u8 service_id)
+{
+  struct rpc_server *shm_serv;
+  struct rpc_worker *shm_worker;
+  __u32 cost;
+
+  if (!w || !w->shm_worker || !w->server || !w->server->shm_server)
+  {
+    LOG_ERROR("null worker or server in rpc_call_complete_svc");
+    return -1;
+  }
+
+  shm_serv   = (struct rpc_server *)w->server->shm_server;
+  shm_worker = (struct rpc_worker *)w->shm_worker;
+
+  cost = (service_id < MAX_SERVICE_NUMBER) ? shm_serv->service_cost[service_id] : 1;
+
+  if (shm_worker->work_remaining >= cost)
+    __sync_fetch_and_sub(&shm_worker->work_remaining, cost);
+  else
+    shm_worker->work_remaining = 0;
+
+  if (shm_worker->jobs_pending > 0)
+    __sync_fetch_and_sub(&shm_worker->jobs_pending, 1);
+
+  return 0;
+}
+
 int rpc_set_ebpf_rr(struct rpc_server_lib *server)
 {
   struct rpc_server *serv;

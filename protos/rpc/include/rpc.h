@@ -120,6 +120,8 @@ struct rpc_server
   __u32 rx_tail;
   /* spinlock protecting app-LB consumer rx_head for multi-worker pull (0=free, 1=held) */
   __u32 rx_lock;
+  /* LWL cost table: cost_units per service ID; set at startup, read by eBPF at dispatch */
+  __u32 service_cost[MAX_SERVICE_NUMBER];
 };
 
 struct rpc_worker
@@ -134,6 +136,8 @@ struct rpc_worker
   __u32 server_id;
   /* Number of pending jobs */
   __u32 jobs_pending;
+  /* Total cost units of in-flight jobs; used by LWL routing */
+  __u32 work_remaining;
 
   /* Length of RX buffer */
   __u32 rx_len;

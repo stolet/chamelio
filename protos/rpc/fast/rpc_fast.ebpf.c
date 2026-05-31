@@ -217,10 +217,38 @@ int event_rx(struct cham_ebpf_ctx *ctx)
         if (payload_len > free_bytes)
           continue;
         best_worker_id = worker_id;
-        /* Advance so the next request starts from the worker after this one */
         server->rr_next = (idx + 1) % server->n_workers;
         break;
       }
+    }
+    else if (server->ebpf_lb_mode == 2)
+    {
+      /* LWL: pick worker with least total remaining work (cost-weighted) */
+      __u32 min_work = (__u32)-1;
+      __u32 req_cost = (service < MAX_SERVICE_NUMBER)
+                       ? server->service_cost[service] : 1;
+#pragma unroll
+      for (i = 0; i < MAX_WORKERS; i++)
+      {
+        if (i >= server->n_workers)
+          break;
+        worker_id = server->workers[i];
+        if (worker_id == (__u32)INVALID_ID)
+          continue;
+        worker = &worker_map[worker_id];
+        free_bytes = worker->rx_len - worker->rx_avail;
+        if (payload_len > free_bytes)
+          continue;
+        if (best_worker_id == (__u32)INVALID_ID ||
+            worker->work_remaining < min_work)
+        {
+          best_worker_id = worker_id;
+          min_work = worker->work_remaining;
+        }
+      }
+      /* Charge the cost to the chosen worker */
+      if (best_worker_id != (__u32)INVALID_ID)
+        worker_map[best_worker_id].work_remaining += req_cost;
     }
     else
     {
