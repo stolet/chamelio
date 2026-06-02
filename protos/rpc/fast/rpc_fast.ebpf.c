@@ -248,7 +248,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       }
       /* Charge the cost to the chosen worker */
       if (best_worker_id != (__u32)INVALID_ID)
-        worker_map[best_worker_id].work_remaining += req_cost;
+        __sync_fetch_and_add(&worker_map[best_worker_id].work_remaining, req_cost);
     }
     else
     {
@@ -304,7 +304,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       bpf_memcpy(rx_base, payload + part, payload_len - part);
     }
     worker->rx_avail += payload_len;
-    worker->jobs_pending += 1;
+    __sync_fetch_and_add(&worker->jobs_pending, 1);
 
     q = &ctx->equeues[worker->app_bump_qid].eq;
     qe = queue_tail(q);
