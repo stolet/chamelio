@@ -1324,7 +1324,7 @@ int rpc_call_complete_svc(struct rpc_worker_lib *w, __u8 service_id)
   if (shm_worker->work_remaining >= cost)
     __sync_fetch_and_sub(&shm_worker->work_remaining, cost);
   else
-    shm_worker->work_remaining = 0;
+    __atomic_store_n(&shm_worker->work_remaining, 0, __ATOMIC_RELAXED);
 
   if (shm_worker->jobs_pending > 0)
     __sync_fetch_and_sub(&shm_worker->jobs_pending, 1);
