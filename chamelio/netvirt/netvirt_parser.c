@@ -59,9 +59,10 @@ int netvirt_parser(struct netvirt_table *inner_table,
     outer_ip = parse_ipv4(outer_ip_str);
     inner_ip = parse_ipv4(inner_ip_str);
 
-    if (outer_ip == 0 || inner_ip == 0)
     LOG_INFO("netvirt_parser: gid=%u gre_key=%u outer_ip_str='%s'=%08x inner_ip_str='%s'=%08x",
         guest_id, gre_key, outer_ip_str, outer_ip, inner_ip_str, inner_ip);
+
+    if (outer_ip == 0 || inner_ip == 0 || outer_ip == (__u32)-1 || inner_ip == (__u32)-1)
     {
       LOG_ERROR("failed to parse outer ip or inner ip");
       fclose(fp);
