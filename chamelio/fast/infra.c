@@ -281,6 +281,7 @@ static inline void process_tx_mbuf(struct rte_mbuf *mb, size_t pkt_len)
     mb->pkt_len  = pkt_len + sizeof(struct eth_hdr);
     mb->data_len = mb->pkt_len;
     mb->l2_len   = sizeof(struct eth_hdr);
+    mb->l3_len   = sizeof(struct ip_hdr);
     mb->ol_flags = 0;
 }
 
