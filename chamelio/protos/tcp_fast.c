@@ -153,12 +153,24 @@ int tcp_event_rx(struct cham_ebpf_ctx *ctx)
   /* Do pkt len check to make ebpf verifier happy */
   pktlen_valid = is_pktlen_valid(ctx->pkt, ctx->pkt_end);
   if (!pktlen_valid)
+  {
+    LOG_DEBUG("tcp_event_rx: pktlen invalid pkt=%p pkt_end=%p", ctx->pkt, ctx->pkt_end);
     return -1;
+  }
   tcp_pkt = (struct tcp_pkt_inner *) ctx->pkt;
+
+  {
+    const __u8 *_b = (const __u8 *)ctx->pkt;
+    LOG_DEBUG("tcp_event_rx: pkt=%p bytes=%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+        ctx->pkt, _b[0], _b[1], _b[2], _b[3], _b[4], _b[5], _b[6], _b[7], _b[8], _b[9]);
+  }
 
   is_ip = rx_is_ip(tcp_pkt);
   if (!is_ip)
+  {
+    LOG_DEBUG("tcp_event_rx: not IP proto=%u", tcp_pkt->ip.proto);
     return -1;
+  }
 
   /* Send control packets to slow path */
   is_control = rx_is_flags_ctl(tcp_pkt);
@@ -572,24 +584,41 @@ static inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
   map = &ctx->maps[CFG_MAP];
   cfg = (struct tcp_ctl_cfg *) map->addr;
   if (cfg == NULL)
+  {
+    LOG_DEBUG("rx_punt_ctl: cfg NULL (map not registered yet)");
     return -1;
+  }
   core = ctx->core;
   if (core >= MAX_FP_CORES)
     return -1;
+
+  LOG_DEBUG("rx_punt_ctl: cfg=%p core=%u pkt_qid=%u sig_qid=%u",
+      cfg, core, cfg->fast_slow_pkt_qids[core], cfg->fast_slow_sig_qids[core]);
 
   /* Get first available entry in end of pkt queue */
   pkt_q = &ctx->equeues[cfg->fast_slow_pkt_qids[core]].eq;
   pkt_qe = queue_tail(pkt_q);
   if (pkt_qe == NULL)
+  {
+    LOG_DEBUG("rx_punt_ctl: pkt queue full or invalid (qid=%u)", cfg->fast_slow_pkt_qids[core]);
     return -1;
+  }
 
   /* Get first available entry in end of signal queue */
   sig_q = &ctx->equeues[cfg->fast_slow_sig_qids[core]].eq;
   sig_qe = queue_tail(sig_q);
   if (sig_qe == NULL)
+  {
+    LOG_DEBUG("rx_punt_ctl: sig queue full or invalid (qid=%u)", cfg->fast_slow_sig_qids[core]);
     return -1;
+  }
 
   hdrlen = rx_get_hdrlen(tcp_pkt);
+  LOG_DEBUG("rx_punt_ctl: hdrlen=%u ip_dst_bytes=%02x%02x%02x%02x tcp_src=%02x%02x",
+      hdrlen,
+      ((const __u8*)&tcp_pkt->ip.dst)[0], ((const __u8*)&tcp_pkt->ip.dst)[1],
+      ((const __u8*)&tcp_pkt->ip.dst)[2], ((const __u8*)&tcp_pkt->ip.dst)[3],
+      ((const __u8*)&tcp_pkt->tcp.src)[0], ((const __u8*)&tcp_pkt->tcp.src)[1]);
   if (!is_paylen_valid(ctx->pkt, ctx->pkt_end, hdrlen, 0))
     return -1;
 
@@ -1146,17 +1175,35 @@ static inline int deq_handle_ctl_tx(struct cham_ebpf_ctx *ctx)
   
   /* Copy control packet for transmission */
   hdrlen = f_beui16(ctl_pkt->ip.len);
+  LOG_DEBUG("deq_handle_ctl_tx: hdrlen=%u proto=%u ip_bytes=%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+      hdrlen, ctl_pkt->ip.proto,
+      ((const __u8*)ctl_pkt)[0], ((const __u8*)ctl_pkt)[1],
+      ((const __u8*)ctl_pkt)[2], ((const __u8*)ctl_pkt)[3],
+      ((const __u8*)ctl_pkt)[4], ((const __u8*)ctl_pkt)[5],
+      ((const __u8*)ctl_pkt)[6], ((const __u8*)ctl_pkt)[7],
+      ((const __u8*)ctl_pkt)[8], ((const __u8*)ctl_pkt)[9]);
   paylen_valid = is_paylen_valid(ctx->pkt, ctx->pkt_end, hdrlen, 0);
   if (!paylen_valid)
     return -1;
   ctl_pkt->ip.chksum = 0;
   ctl_pkt->tcp.chksum = 0;
   memcpy(ctx->pkt, ctl_pkt, hdrlen);
+  LOG_DEBUG("deq_handle_ctl_tx after memcpy: ctx->pkt=%p ip_dst=%02x%02x%02x%02x tsval=%02x%02x%02x%02x",
+      ctx->pkt,
+      ((const __u8*)ctx->pkt)[16], ((const __u8*)ctx->pkt)[17],
+      ((const __u8*)ctx->pkt)[18], ((const __u8*)ctx->pkt)[19],
+      ((const __u8*)ctx->pkt)[42], ((const __u8*)ctx->pkt)[43],
+      ((const __u8*)ctx->pkt)[44], ((const __u8*)ctx->pkt)[45]);
   if (TCPH_HDRLEN(&ctl_pkt->tcp) * 4 == TCP_HLEN + TCP_TS_OPT_LEN)
   {
     if (!is_paylen_valid(ctx->pkt, ctx->pkt_end, tx_get_hdrlen(), 0))
       return -1;
     tx_write_tsopt_val(ctx->pkt);
+    LOG_DEBUG("deq_handle_ctl_tx after tsopt: ip_dst=%02x%02x%02x%02x tsval=%02x%02x%02x%02x",
+        ((const __u8*)ctx->pkt)[16], ((const __u8*)ctx->pkt)[17],
+        ((const __u8*)ctx->pkt)[18], ((const __u8*)ctx->pkt)[19],
+        ((const __u8*)ctx->pkt)[42], ((const __u8*)ctx->pkt)[43],
+        ((const __u8*)ctx->pkt)[44], ((const __u8*)ctx->pkt)[45]);
   }
   
   ret = queue_dequeue(ctl_pkt_q);

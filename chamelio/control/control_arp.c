@@ -53,11 +53,14 @@ void control_arp_lookup(struct control_context *ctx,
 
   le = &qe->data.arp_lookup;
 
+  LOG_DEBUG("ARP lookup requested for ip=%08x", le->ip);
+
   /* Ignore lookup if this address is resolved or pending */
   ae = arp_lookup(&ctx->arp_table, le->ip);
 
   if (ae == NULL)
   {
+    LOG_DEBUG("ARP entry not found, inserting pending and sending request for ip=%08x", le->ip);
     /* Insert as pending to ARP table */
     ae = arp_insert_pending(&ctx->arp_table, le->ip);
 
@@ -172,6 +175,13 @@ void control_arp_rep(struct control_context *ctx,
   struct arp_table_entry *ae;
   struct queue_arp_rx_rep *arp_rep = &qe->data.arp_pkt_rx_rep;
 
+  {
+    const __u8 *sha = (const __u8 *)&arp_rep->sha;
+    LOG_DEBUG("ARP reply received: spa=%08x tpa=%08x sha=%02x:%02x:%02x:%02x:%02x:%02x",
+        arp_rep->spa, arp_rep->tpa,
+        sha[0], sha[1], sha[2], sha[3], sha[4], sha[5]);
+  }
+
   /* Check if this ARP reply is for us and is pending */
   if (!arp_reply_targets_local(ctx, arp_rep))
   {
@@ -182,7 +192,10 @@ void control_arp_rep(struct control_context *ctx,
 
   ae = arp_lookup(&ctx->arp_table, arp_rep->spa);
   if (ae == NULL || !ae->pending)
+  {
+    LOG_DEBUG("ARP reply for ip=%08x ignored (not pending)", arp_rep->spa);
     return;
+  }
 
   ae = arp_insert(&ctx->arp_table, arp_rep->spa, (__u8 *)&arp_rep->sha);
   if (ae == NULL)
@@ -199,6 +212,7 @@ void control_arp_rep(struct control_context *ctx,
   if (ret != 0)
     return;
 
+  LOG_DEBUG("ARP resolved ip=%08x, flushing pending packets", ae->ip);
   /* Flush all packets pending on this ARP resolution */
   arp_buf_flush(&ctx->arp_buf, ae->ip, ctx->ctl_fast_qs);
 }

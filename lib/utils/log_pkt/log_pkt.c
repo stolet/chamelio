@@ -5,6 +5,7 @@
 
 #include "eth_hdr.h"
 #include "ip_hdr.h"
+#include "tcp_hdr.h"
 #include "udp_hdr.h"
 #include "arp_hdr.h"
 #include "gre_hdr.h"
@@ -117,6 +118,52 @@ void log_udp_pkt_inner(const struct udp_pkt_inner *p)
 {
   log_ip(&p->ip);
   log_udp(&p->udp);
+}
+
+void log_tcp(const struct tcp_hdr *tcp)
+{
+  const __u16 sport = f_beui16(tcp->src);
+  const __u16 dport = f_beui16(tcp->dest);
+  const __u32 seq   = f_beui32(tcp->seqno);
+  const __u32 ack   = f_beui32(tcp->ackno);
+  const __u16 raw   = TCPH_RAW(tcp);
+  const __u16 flags = raw & TAS_TCP_FLAGS;
+  const __u16 hlen  = (raw >> 12) * 4;
+  const __u16 wnd   = f_beui16(tcp->wnd);
+  const __u16 csum  = tcp->chksum;
+
+  char fstr[16];
+  int  fpos = 0;
+  if (flags & TAS_TCP_SYN)
+    fstr[fpos++] = 'S';
+  if (flags & TAS_TCP_ACK)
+    fstr[fpos++] = 'A';
+  if (flags & TAS_TCP_FIN)
+    fstr[fpos++] = 'F';
+  if (flags & TAS_TCP_RST)
+    fstr[fpos++] = 'R';
+  if (flags & TAS_TCP_PSH)
+    fstr[fpos++] = 'P';
+  if (flags & TAS_TCP_ECE)
+    fstr[fpos++] = 'E';
+  if (flags & TAS_TCP_CWR)
+    fstr[fpos++] = 'C';
+
+  fstr[fpos] = '\0';
+
+  fprintf(stderr,
+          "[TCP] sport=%u dport=%u seq=%u ack=%u hlen=%u "
+          "flags=[%s](0x%03x) wnd=%u chksum=0x%04x\n",
+          (unsigned)sport, (unsigned)dport, seq, ack,
+          (unsigned)hlen, fstr, (unsigned)flags,
+          (unsigned)wnd, (unsigned)csum);
+}
+
+void log_tcp_pkt(const struct tcp_pkt *p)
+{
+  log_eth(&p->eth);
+  log_ip(&p->ip);
+  log_tcp(&p->tcp);
 }
 
 void log_arp_pkt(const struct arp_pkt *p)

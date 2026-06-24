@@ -50,10 +50,25 @@ struct guest_fast * infra_rx(struct fast_context *ctx,
   switch (eth_type)
   {
     case ETH_TYPE_ARP:
+      LOG_PKT_DEBUG(log_arp_pkt, (struct arp_pkt *) eth);
       process_rx_arp(ctx, (struct arp_pkt *) eth);
       return NULL;
     default:
+    {
+      /* Rate-limit: log first 32 packets then every 10k to avoid fast-path spam. */
+      static __u64 rx_ip_count = 0;
+      __u64 n = rx_ip_count++;
+      if (n < 32 || n % 10000 == 0)
+      {
+        struct ip_hdr *rip = (struct ip_hdr *)(((__u8 *)eth) + sizeof(struct eth_hdr));
+        LOG_DEBUG("infra_rx: IP packet #%llu len=%u", (unsigned long long)(n + 1), mb->pkt_len);
+        LOG_PKT_DEBUG(log_eth, eth);
+        LOG_PKT_DEBUG(log_ip,  rip);
+        if (rip->proto == IP_PROTO_TCP)
+          LOG_PKT_DEBUG(log_tcp, (struct tcp_hdr *)(((__u8 *)rip) + sizeof(struct ip_hdr)));
+      }
       return process_rx_ip(ctx, mb, eth, pkt_off);
+    }
   }
 }
 
@@ -71,11 +86,12 @@ int infra_tx(struct fast_context *ctx,
   if (ctx->virt_gre)
   {
     gre_pkt = pkt;
-    e = netvirt_table_get(ctx->inner_table, g->gre_key, 
-        f_beui32(gre_pkt->inner_ip.dst));
+    __u32 _lookup_ip = f_beui32(gre_pkt->inner_ip.dst);
+    e = netvirt_table_get(ctx->inner_table, g->gre_key, _lookup_ip);
     if (e == NULL)
     {
-      LOG_WARN("could not find outer ip for destination");
+      LOG_WARN("infra_tx: could not find outer ip for destination gre_key=%u inner_ip=%08x",
+          g->gre_key, _lookup_ip);
       return INFRA_RET_ERR;
     }
     outer_remote_ip = e->outer_ip;
@@ -84,6 +100,10 @@ int infra_tx(struct fast_context *ctx,
   {
     ip = (struct ip_hdr *) (pkt + sizeof(struct eth_hdr));
     outer_remote_ip = f_beui32(ip->dst);
+    LOG_DEBUG("infra_tx: pkt_len=%zu data_off=%u ip_dst=%08x ip_dst_bytes=%02x%02x%02x%02x",
+        pkt_len, mb->data_off, outer_remote_ip,
+        ((const __u8*)&ip->dst)[0], ((const __u8*)&ip->dst)[1],
+        ((const __u8*)&ip->dst)[2], ((const __u8*)&ip->dst)[3]);
   }
 
   ret = process_tx_arp(ctx, g, pkt_len, mb, outer_remote_ip);
@@ -95,6 +115,12 @@ int infra_tx(struct fast_context *ctx,
     process_tx_hdrs_gre(ctx, g, mb, outer_remote_ip, pkt_len);
     process_tx_mbuf_gre(mb, pkt_len);
     process_tx_chksum_gre(mb);
+    {
+      const __u8 *_b = rte_pktmbuf_mtod(mb, const __u8 *);
+      LOG_DEBUG("infra_tx: pre-NIC inner_ip_bytes=%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x ol_flags=%lx",
+          _b[42], _b[43], _b[44], _b[45], _b[46], _b[47],
+          _b[48], _b[49], _b[50], _b[51], (unsigned long)mb->ol_flags);
+    }
   }
   else
   {
@@ -138,6 +164,11 @@ static inline struct guest_fast * process_rx_ip(struct fast_context *ctx,
     if (e == NULL)
     {
       LOG_WARN("received packet for unkown gueset");
+      return NULL;
+    }
+    if (e->gid >= ctx->n_guests)
+    {
+      LOG_DEBUG("received packet for unregistered guest gid=%u n_guests=%u", e->gid, ctx->n_guests);
       return NULL;
     }
     *pkt_off = sizeof(struct eth_hdr) + sizeof(struct ip_hdr) + sizeof(struct gre_hdr);

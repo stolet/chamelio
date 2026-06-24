@@ -61,6 +61,9 @@ struct configuration {
   /* Path to network virtualization configuration */
   char virt_path[MAX_PATH];
 
+  /*** Debug ***/
+  __u32 debug;
+
   /*** DPDK configurations ***/
   /* NUMA node for shared memory allocations */
   int numa_shm;

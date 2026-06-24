@@ -3,6 +3,7 @@
 #include "ip_hdr.h"
 #include "tcp_hdr.h"
 #include "log.h"
+#include "log_pkt.h"
 #include "utils_sync.h"
 #include "clock.h"
 
@@ -46,6 +47,7 @@ int tcp_fast_poll(struct tcp_slow_context *ctx)
       switch (sig_qe->type)
       {
         case TCP_QUEUE_CTL_RX:
+          LOG_DEBUG("tcp_fast_poll: received CTL_RX signal from core=%u", core);
           pkt_qe = queue_head(pkt_q);
           if (pkt_qe == NULL)
           {
@@ -93,10 +95,18 @@ static int ctl_rx(struct tcp_slow_context *ctx,
   rx.core = ctl_pkt->core;
   if (rx.core >= ctx->proto->n_fp_cores)
     rx.core = 0;
+
+  LOG_DEBUG("ctl_rx: src=%08x:%u dst=%08x:%u flags=0x%x seq=%u ack=%u core=%u",
+      rx.remote_ip, rx.remote_port, rx.local_ip, rx.local_port,
+      rx.flags, rx.seq, rx.ack, rx.core);
+  LOG_PKT_DEBUG(log_ip,  &ctl_pkt->pkt.ip);
+  LOG_PKT_DEBUG(log_tcp, &ctl_pkt->pkt.tcp);
+
   sock = tcp_flow_lookup(ctx, rx.local_ip, rx.local_port, rx.remote_ip,
       rx.remote_port);
   if (sock != NULL)
   {
+    LOG_DEBUG("ctl_rx: flow match sock_id=%u state=%u", sock->id, sock->state);
     util_spin_lock(&sock->lock);
     sock_ts_rx(sock, &rx);
     sock_ctl_rx(ctx, sock, &rx);
@@ -105,15 +115,20 @@ static int ctl_rx(struct tcp_slow_context *ctx,
   }
 
   if ((rx.flags & TAS_TCP_SYN) == 0 || (rx.flags & TAS_TCP_ACK) != 0)
+  {
+    LOG_DEBUG("ctl_rx: no flow match and not a pure SYN, dropping flags=0x%x", rx.flags);
     return 0;
+  }
 
   listener_id = tcp_listener_lookup(ctx, rx.local_ip, rx.local_port);
   if (listener_id == ID_INVALID)
   {
+    LOG_DEBUG("ctl_rx: no listener for dst=%08x:%u, sending RST", rx.local_ip, rx.local_port);
     tcp_ctl_tx_reply(ctx, rx.local_ip, rx.local_port, rx.remote_ip,
         rx.remote_port, 0, rx.seq + 1, TAS_TCP_RST | TAS_TCP_ACK);
     return 0;
   }
+  LOG_DEBUG("ctl_rx: SYN for listener_id=%u dst=%08x:%u", listener_id, rx.local_ip, rx.local_port);
 
   listen_sock = &tcp_sock_map(ctx)[listener_id];
   return tcp_rx_listen_syn(ctx, listen_sock, &rx);

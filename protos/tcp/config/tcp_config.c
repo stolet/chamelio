@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "tcp_config.h"
+#include "log.h"
 
 enum cfg_params {
   CP_VIRT,
@@ -26,6 +27,7 @@ enum cfg_params {
   CP_CC_DCTCP_MIN,
   CP_CC_DCTCP_MINPKTS,
   CP_CC_CONST_RATE,
+  CP_DEBUG,
 };
 
 static struct option opts[] = {
@@ -83,6 +85,9 @@ static struct option opts[] = {
   { .name = "cc-const-rate",
     .has_arg = required_argument,
     .val = CP_CC_CONST_RATE },
+  { .name = "debug",
+    .has_arg = no_argument,
+    .val = CP_DEBUG },
   { .name = NULL },
 };
 
@@ -188,6 +193,10 @@ int tcp_config_parse(struct tcp_configuration *c, int argc, char **argv)
         if (parse_u32_zero(optarg, &c->cc_const_rate) != 0)
           goto failed;
         break;
+      case CP_DEBUG:
+        c->debug = 1;
+        log_set_level(CHAM_LOG_LEVEL_DEBUG);
+        break;
       case -1:
         done = 1;
         break;
@@ -226,6 +235,7 @@ static int config_defaults(struct tcp_configuration *c)
   c->cc_dctcp_min = 0;
   c->cc_dctcp_minpkts = 50;
   c->cc_const_rate = 0;
+  c->debug = 0;
   return 0;
 }
 

@@ -292,6 +292,9 @@ static int app_connect(struct tcp_slow_context *ctx,
     }
   }
 
+  LOG_DEBUG("app_connect: sock_id=%u remote_ip=%08x remote_port=%u local_ip=%08x local_port=%u",
+      req->sock_id, req->remote_ip, req->remote_port, sock->local_ip, sock->local_port);
+
   return sock_connect_start(ctx, sock, req->remote_ip, req->remote_port);
 }
 
@@ -462,6 +465,9 @@ static int sock_connect_start(struct tcp_slow_context *ctx, struct tcp_sock *soc
   sock->remote_ip = remote_ip;
   sock->remote_port = remote_port;
   sock->tx_seq = 1;
+
+  LOG_DEBUG("sock_connect_start: sock_id=%u remote_ip=%08x remote_port=%u local_ip=%08x local_port=%u",
+      sock->id, sock->remote_ip, sock->remote_port, sock->local_ip, sock->local_port);
   sock->tx_pending = 1;
   sock->rx_seq = 0;
   sock->state = TCP_SOCK_STATE_SYN_SENT;

@@ -48,6 +48,8 @@ struct tcp_configuration {
   __u32 cc_dctcp_minpkts;
   /* Constant rate in kbps, 0 means unlimited */
   __u32 cc_const_rate;
+  /* Enable verbose debug logging */
+  __u32 debug;
 };
 
 int tcp_config_parse(struct tcp_configuration *c, int argc, char **argv);

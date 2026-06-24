@@ -614,6 +614,9 @@ int tcp_connect(struct tcp_context_lib *ctx, int sockfd,
   req->remote_port = ntohs(sin->sin_port);
   req->opaque = (__u64) sock;
 
+  LOG_DEBUG("tcp_connect: sock_id=%u remote_ip=%08x remote_port=%u sin_addr=%08x",
+      req->sock_id, req->remote_ip, req->remote_port, sin->sin_addr.s_addr);
+
   ret = queue_enqueue(q, TCP_QUEUE_CONNECT_REQ);
   if (ret != 0)
   {
@@ -1719,4 +1722,9 @@ static struct tcp_socket_lib *alloc_lib_sock(struct tcp_context_lib *ctx)
   sock->state = TCP_LIB_STATE_INIT;
 
   return sock;
+}
+
+void tcp_set_debug(int enable)
+{
+  log_set_level(enable ? CHAM_LOG_LEVEL_DEBUG : CHAM_LOG_LEVEL_INFO);
 }

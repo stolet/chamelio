@@ -218,4 +218,7 @@ int tcp_recvfrom(struct tcp_context_lib *ctx, int sockfd,
 /* Closes a TCP socket */
 int tcp_close(struct tcp_context_lib *ctx, int sockfd);
 
+/* Enable verbose debug logging */
+void tcp_set_debug(int enable);
+
 #endif

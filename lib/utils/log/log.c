@@ -1,9 +1,27 @@
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
+
+#include "log.h"
 
 #define LOG_MAX_LEN 256
 
-void log_debug(const char *file, int line, 
+int cham_log_level = CHAM_LOG_LEVEL_INFO;
+
+__attribute__((constructor))
+static void log_level_init(void)
+{
+  const char *env = getenv("CHAM_DEBUG");
+  if (env != NULL && env[0] != '\0' && env[0] != '0')
+    cham_log_level = CHAM_LOG_LEVEL_DEBUG;
+}
+
+void log_set_level(int level)
+{
+  cham_log_level = level;
+}
+
+void log_debug(const char *file, int line,
   const char *func, const char *fmt, ...)
 {
   va_list args;

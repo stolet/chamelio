@@ -21,6 +21,7 @@ tcp_slow_srcs = files(
 deps = [
   dependency('cham'),
   dependency('log_dep'),
+  dependency('log_pkt_dep'),
   dependency('clock_dep'),
   dependency('tcp_config_dep'),
   dependency('tomgr_dep'),

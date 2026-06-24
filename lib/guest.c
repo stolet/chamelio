@@ -51,6 +51,7 @@ struct guest_lib *cham_connect_guest()
     perror("");
     goto close_sockfd;
   }
+  LOG_DEBUG("connected to chamelio unix socket %s", GUEST_SOCKET_PATH);
 
   /* Get shared mem fd */
   if (uxsocket_read_one_msg(sock_fd, &tmp, &shm_fd) < 0 || tmp != -1 || shm_fd < 0)
@@ -61,6 +62,7 @@ struct guest_lib *cham_connect_guest()
     LOG_ERROR("cannot read shared memory fd from chamelio");
     goto close_sockfd;
   }
+  LOG_DEBUG("received shared memory fd=%d from chamelio", shm_fd);
 
   g = malloc(sizeof(struct guest_lib));
   if (g == NULL)
@@ -139,6 +141,8 @@ struct proto_lib *cham_new_proto_bare(struct guest_lib *g, __u8 proto_type)
     LOG_ERROR("protocol registration rejected by Chamelio");
     return NULL;
   }
+  LOG_DEBUG("protocol type=%u registered: shm_len=%lu n_fp_cores=%u local_ip=%08x",
+      proto_type, (unsigned long) res->shm_len, res->n_fp_cores, res->local_ip);
 
   shm_base = mmap(NULL, res->shm_len, PROT_READ | PROT_WRITE,
                   MAP_SHARED | MAP_POPULATE, g->shm_fd, 0);
@@ -364,6 +368,8 @@ struct proto_queue_lib * cham_new_queue(struct proto_lib *p,
   while (pq->nelems == 0)
     cham_poll_control(p);
 
+  LOG_DEBUG("queue allocated: qid=%u nelems=%u elsize=%u off=%lu",
+      pq->id, pq->nelems, pq->elsize, (unsigned long) pq->off);
   return &p->queues[nqueues];
 }
 
@@ -407,6 +413,8 @@ struct proto_map_lib *cham_new_map(struct proto_lib *p,
   while (m->nelems == 0)
     cham_poll_control(p);
 
+  LOG_DEBUG("map allocated: id=%u nelems=%u elsize=%u off=%lu",
+      m->id, m->nelems, m->elsize, (unsigned long) m->off);
   return &p->maps[nmaps];
 }
 
@@ -492,6 +500,8 @@ struct proto_ebpf_lib *cham_allocate_ebpf(struct proto_lib *p, __u32 size)
   while(p->ebpf_program.flag == 0)
     cham_poll_control(p);
 
+  LOG_DEBUG("eBPF program allocated: size=%u off=%lu",
+      p->ebpf_program.size, (unsigned long) p->ebpf_program.off);
   return &p->ebpf_program;
 }
 
@@ -535,7 +545,9 @@ int cham_upload_ebpf(struct proto_lib *p, void *ebpf_bytecode, __u32 size)
     LOG_ERROR("eBPF upload failed");
     return -1;
   }
-  
+
+  LOG_DEBUG("eBPF program uploaded successfully: size=%u off=%lu",
+      p->ebpf_program.size, (unsigned long) p->ebpf_program.off);
   return 0;
 }
 

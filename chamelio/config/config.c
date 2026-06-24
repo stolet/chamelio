@@ -35,6 +35,7 @@ enum cfg_params {
   CP_PERF_ISO_BOOST,
   CP_VIRT_GRE,
   CP_VIRT_PATH,
+  CP_DEBUG,
 };
 
 static struct option opts[] = {
@@ -110,6 +111,9 @@ static struct option opts[] = {
   { .name = "dpdk-extra",
     .has_arg = required_argument,
     .val = CP_DPDK_EXTRA },
+  { .name = "debug",
+    .has_arg = no_argument,
+    .val = CP_DEBUG },
   { 0 },
 };
 
@@ -275,6 +279,10 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
+      case CP_DEBUG:
+        c->debug = 1;
+        log_set_level(CHAM_LOG_LEVEL_DEBUG);
+        break;
       case -1:
         done = 1;
         break;
@@ -317,6 +325,7 @@ static int config_defaults(struct configuration *c, char *progname)
   c->perf_iso_max_ins = UINT_MAX;
   c->perf_iso_boost = 0.5;
   c->virt_gre = 0;
+  c->debug = 0;
   strcpy(c->virt_path, "net_virt.csv");
   c->numa_shm = -1;
   c->numa_shm_internal = -1;
@@ -385,7 +394,8 @@ static void print_usage(struct configuration *c, char *progname)
       "  --numa-shm=NUM                           NUMA node for shared memory\n"
       "  --numa-shm-internal=NUM                  NUMA node for internal shared memory\n"
       "Miscelaneous:\n"
-      "  --dpdk-extra=ARG                        Add extra DPDK argument"
+      "  --dpdk-extra=ARG                        Add extra DPDK argument\n"
+      "  --debug                                 Enable verbose debug logging"
       "\n"
       ,progname, 
       c->shm_len, c->shm_internal_len,

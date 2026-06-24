@@ -1,6 +1,7 @@
 #include "tcp_internal.h"
 #include "queue_fns.h"
 #include "tcp_hdr.h"
+#include "log.h"
 
 /*** Ctrl TX Helpers **********************************************************/
 
@@ -112,6 +113,12 @@ static void ctl_pkt_fill(struct tcp_queue_ctl_pkt *pkt,
   pkt->pkt.ip.src = t_beui32(local_ip);
   pkt->pkt.ip.dst = t_beui32(remote_ip);
   pkt->pkt.ip.chksum = 0;
+
+  LOG_DEBUG("ctl_pkt_fill: local_ip=%08x remote_ip=%08x local_port=%u remote_port=%u flags=0x%x "
+      "ip_dst_bytes=%02x%02x%02x%02x",
+      local_ip, remote_ip, local_port, remote_port, flags,
+      ((const __u8*)&pkt->pkt.ip.dst)[0], ((const __u8*)&pkt->pkt.ip.dst)[1],
+      ((const __u8*)&pkt->pkt.ip.dst)[2], ((const __u8*)&pkt->pkt.ip.dst)[3]);
 
   pkt->pkt.tcp.src = t_beui16(local_port);
   pkt->pkt.tcp.dest = t_beui16(remote_port);

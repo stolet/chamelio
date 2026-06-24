@@ -1,6 +1,7 @@
 #include <errno.h>
 
 #include "tcp_internal.h"
+#include "log.h"
 
 /*** Open Helpers *************************************************************/
 
@@ -15,8 +16,11 @@ static int sock_passive_established(struct tcp_slow_context *ctx,
 int tcp_rx_syn_sent(struct tcp_slow_context *ctx, struct tcp_sock *sock,
     const struct tcp_rx_ctl *rx)
 {
+  LOG_DEBUG("SYN_SENT: sock_id=%u flags=0x%x ack=%u", sock->id, rx->flags, rx->ack);
+
   if ((rx->flags & TAS_TCP_RST) != 0)
   {
+    LOG_DEBUG("SYN_SENT: RST received, connect refused");
     tcp_sock_connect_fail(ctx, sock, ECONNREFUSED);
     return 0;
   }
@@ -24,12 +28,18 @@ int tcp_rx_syn_sent(struct tcp_slow_context *ctx, struct tcp_sock *sock,
   if ((rx->flags & (TAS_TCP_SYN | TAS_TCP_ACK)) !=
       (TAS_TCP_SYN | TAS_TCP_ACK))
   {
+    LOG_DEBUG("SYN_SENT: expected SYN+ACK but flags=0x%x, ignoring", rx->flags);
     return 0;
   }
   if (!sock_ack_valid(sock, rx->ack))
+  {
+    LOG_DEBUG("SYN_SENT: invalid ACK %u (expected %u)", rx->ack,
+        sock->tx_seq + sock->tx_pending);
     return 0;
+  }
 
   sock_active_established(ctx, sock, rx);
+  LOG_DEBUG("active open complete: sock_id=%u ESTABLISHED", sock->id);
   tcp_ctl_tx(ctx, sock, TAS_TCP_ACK);
   tcp_app_connect_res(tcp_sock_actx(ctx, sock), sock->opaque, 0, sock);
   return 0;
@@ -40,6 +50,7 @@ int tcp_rx_syn_recv(struct tcp_slow_context *ctx, struct tcp_sock *sock,
 {
   __u32 listener_id;
   struct tcp_sock *listen_sock;
+  LOG_DEBUG("SYN_RECV: sock_id=%u flags=0x%x ack=%u", sock->id, rx->flags, rx->ack);
 
   if ((rx->flags & TAS_TCP_RST) != 0)
   {
@@ -61,6 +72,8 @@ int tcp_rx_syn_recv(struct tcp_slow_context *ctx, struct tcp_sock *sock,
 
   listener_id = tcp_sock_meta(ctx, sock)->listener_id;
   listen_sock = &tcp_sock_map(ctx)[listener_id];
+  LOG_DEBUG("passive open complete: sock_id=%u -> ACCEPT_PENDING, notifying listener_id=%u",
+      sock->id, listener_id);
   tcp_app_listen_newconn(ctx, listen_sock, sock);
   return 0;
 }
@@ -72,9 +85,15 @@ int tcp_rx_listen_syn(struct tcp_slow_context *ctx, struct tcp_sock *listen_sock
   struct tcp_listener_slow *listener;
   struct tcp_sock *sock;
 
+  LOG_DEBUG("SYN received: src=%08x:%u dst=%08x:%u seq=%u wnd=%u",
+      rx->remote_ip, rx->remote_port, rx->local_ip, rx->local_port,
+      rx->seq, rx->wnd);
+
   listener = &ctx->listeners[listen_sock->id];
   if (!listener->active || listener->backlog_used >= listener->backlog_len)
   {
+    LOG_DEBUG("listener inactive or backlog full (active=%d used=%u len=%u), sending RST",
+        listener->active, listener->backlog_used, listener->backlog_len);
     tcp_ctl_tx_reply(ctx, rx->local_ip, rx->local_port, rx->remote_ip,
         rx->remote_port, 0, rx->seq + 1, TAS_TCP_RST | TAS_TCP_ACK);
     return 0;
@@ -117,6 +136,9 @@ int tcp_rx_listen_syn(struct tcp_slow_context *ctx, struct tcp_sock *listen_sock
   }
 
   listener->backlog_used++;
+  LOG_DEBUG("sending SYN-ACK: sock_id=%u src=%08x:%u dst=%08x:%u tx_seq=%u rx_seq=%u",
+      sock->id, sock->local_ip, sock->local_port,
+      sock->remote_ip, sock->remote_port, sock->tx_seq, sock->rx_seq);
   ret = tcp_ctl_tx(ctx, sock, TAS_TCP_SYN | TAS_TCP_ACK |
       ((sock->flags & TCP_SOCK_FLAG_ECN) != 0 ? TAS_TCP_ECE : 0));
   if (ret != 0)
