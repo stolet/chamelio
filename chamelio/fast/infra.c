@@ -32,7 +32,7 @@ static inline void process_tx_hdrs_gre(struct fast_context *ctx,
     struct guest_fast *g, struct rte_mbuf *mb, 
     __u32 outer_remote_ip, size_t pkt_len);
 static inline void process_tx_mbuf_gre(struct rte_mbuf *mb, size_t pkt_len);
-static inline void process_tx_chksum_gre(struct rte_mbuf *mb);
+static inline void process_tx_chksum_gre(struct fast_context *ctx, struct rte_mbuf *mb);
 static inline int process_tx_arp(struct fast_context *ctx, 
   struct guest_fast *g, size_t pkt_len,
   struct rte_mbuf *mb, __u32 outer_remote_ip);
@@ -114,7 +114,7 @@ int infra_tx(struct fast_context *ctx,
   {
     process_tx_hdrs_gre(ctx, g, mb, outer_remote_ip, pkt_len);
     process_tx_mbuf_gre(mb, pkt_len);
-    process_tx_chksum_gre(mb);
+    process_tx_chksum_gre(ctx, mb);
     {
       const __u8 *_b = rte_pktmbuf_mtod(mb, const __u8 *);
       LOG_DEBUG("infra_tx: pre-NIC inner_ip_bytes=%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x ol_flags=%lx",
@@ -330,20 +330,50 @@ static inline void process_tx_mbuf_gre(struct rte_mbuf *mb, size_t pkt_len)
   mb->ol_flags = 0;
 }
 
-static inline void process_tx_chksum_gre(struct rte_mbuf *mb)
+static inline void process_tx_chksum_gre(struct fast_context *ctx, struct rte_mbuf *mb)
 {
   struct gre_pkt *pkt;
   struct tcp_hdr *tcp;
   struct udp_hdr *udp;
+  uint64_t flags;
 
   pkt = (struct gre_pkt *) rte_pktmbuf_mtod(mb, __u8 *);
   pkt->outer_ip.chksum = 0;
   pkt->inner_ip.chksum = 0;
 
+  if (ctx->nic_ctx.hw_gre_csum)
+  {
+    flags = RTE_MBUF_F_TX_OUTER_IPV4 | RTE_MBUF_F_TX_OUTER_IP_CKSUM |
+        RTE_MBUF_F_TX_TUNNEL_GRE | RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
+
+    switch (pkt->inner_ip.proto)
+    {
+      case IP_PROTO_TCP:
+        tcp = (struct tcp_hdr *) ((__u8 *) &pkt->inner_ip + sizeof(struct ip_hdr));
+        tcp->chksum = 0;
+        flags |= RTE_MBUF_F_TX_TCP_CKSUM;
+        tcp->chksum = rte_ipv4_phdr_cksum(
+            (struct rte_ipv4_hdr *) &pkt->inner_ip, flags);
+        break;
+      case IP_PROTO_UDP:
+        udp = (struct udp_hdr *) ((__u8 *) &pkt->inner_ip + sizeof(struct ip_hdr));
+        udp->chksum = 0;
+        flags |= RTE_MBUF_F_TX_UDP_CKSUM;
+        udp->chksum = rte_ipv4_phdr_cksum(
+            (struct rte_ipv4_hdr *) &pkt->inner_ip, flags);
+        break;
+      default:
+        LOG_WARN("Got unknown inner type in ip header");
+        break;
+    }
+    mb->ol_flags = flags;
+    return;
+  }
+
   switch (pkt->inner_ip.proto)
   {
     case IP_PROTO_TCP:
-      tcp = (struct tcp_hdr *) ((__u8 *) &pkt->inner_ip + 
+      tcp = (struct tcp_hdr *) ((__u8 *) &pkt->inner_ip +
           sizeof(struct ip_hdr));
           
       tcp->chksum = 0;

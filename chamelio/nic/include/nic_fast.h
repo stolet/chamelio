@@ -19,6 +19,8 @@ struct nic_fast_context {
   struct rte_mempool *pool;
   /* Ethernet address of the NIC port */
   struct rte_ether_addr eth_addr;
+  /* NIC supports GRE tunnel TX checksum offload */
+  __u8 hw_gre_csum;
 };
 
 /* Initialises NIC queue and memory pool for this core */

@@ -33,6 +33,8 @@ int nic_fast_init(struct nic_context *nic_ctx,
   nic_fast_ctx->port_id = nic_ctx->port_id;
   nic_fast_ctx->queue_id = queue_id;
   nic_fast_ctx->eth_addr = nic_ctx->eth_addr;
+  nic_fast_ctx->hw_gre_csum = !!(nic_ctx->port_conf.txmode.offloads &
+      RTE_ETH_TX_OFFLOAD_OUTER_IPV4_CKSUM);
 
   numa_id = config->numa_mpool >= 0 ?
       config->numa_mpool : rte_socket_id();
@@ -90,7 +92,7 @@ int nic_fast_init(struct nic_context *nic_ctx,
       goto error_tx_queue;
     }
 
-    if (config->virt_gre && nic_gre_rss_setup(nic_ctx, config) != 0)
+    if (config->virt_gre && config->fp_cores_max > 1 && nic_gre_rss_setup(nic_ctx, config) != 0)
     {
       LOG_ERROR("GRE RSS setup failed\n");
       goto error_tx_queue;

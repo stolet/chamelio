@@ -89,7 +89,9 @@ int nic_init(struct nic_context *nic_ctx, struct configuration *config)
   }
 
   requested_tx_offloads = RTE_ETH_TX_OFFLOAD_IPV4_CKSUM |
-      RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
+      RTE_ETH_TX_OFFLOAD_UDP_CKSUM |
+      RTE_ETH_TX_OFFLOAD_TCP_CKSUM |
+      RTE_ETH_TX_OFFLOAD_OUTER_IPV4_CKSUM;
   port_conf->txmode.offloads = requested_tx_offloads &
       dev_info->tx_offload_capa;
 
