@@ -9,6 +9,8 @@
 #include <string.h>
 #include <cham_lib.h>
 
+#include "internal.h"
+
 #include "log.h"
 #include "appif.h"
 #include "rpc_slow.h"
@@ -117,7 +119,7 @@ static int uxsocket_init_fd(struct rpc_slow_context *ctx)
 
   memset(&saun, 0, sizeof(saun));
   saun.sun_family = AF_UNIX;
-  memcpy(saun.sun_path, APP_SOCKET_PATH, sizeof(APP_SOCKET_PATH));
+  memcpy(saun.sun_path, RPC_APP_SOCKET_PATH, sizeof(RPC_APP_SOCKET_PATH));
   unlink(saun.sun_path);
 
   ret = bind(fd, (struct sockaddr *) &saun, sizeof(saun));
