@@ -31,6 +31,7 @@ void control_guest_new_proto(struct control_context *ctx,
   {
     case CHAM_PROTO_TCP:
     case CHAM_PROTO_UDP:
+    case CHAM_PROTO_RPC:
       break;
     default:
       ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_PROTO_RES);

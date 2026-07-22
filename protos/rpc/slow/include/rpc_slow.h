@@ -5,13 +5,16 @@
 #include <cham_fast.h>
 
 #include "rpc.h"
+#include "rpc_slow.h"
+#include "rpc_config.h"
+#include "rpc_queue_types.h"
 
 /* Size of batch size used to poll queues */
 #define BATCH_SIZE 16
 
-/* Size of UDP transmit buffer in bytes */
+/* Size of RPC transmit buffer in bytes */
 #define TXBUF_SZ 32768
-/* Size of UDP receive buffer in bytes */
+/* Size of RPC receive buffer in bytes */
 #define RXBUF_SZ 32768
 /* Number of elements in bump queue */
 #define BUMPQ_SZ 16384
@@ -48,6 +51,8 @@ struct rpc_app_slow
 
 struct rpc_slow_context
 {
+  /* RPC configuration */
+  struct rpc_configuration config;
   /* Listening UX sockets for new applications */
   int app_uxfd;
   /* Epoll object used by UX application socket */

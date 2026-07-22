@@ -192,7 +192,7 @@ static int uxsocket_accept(struct rpc_slow_context *ctx)
   }
 
   /* Send shared memory fd to application */
-  ret = uxsocket_sendfd(cfd, ctx->proto->guest->shm_fd, -1);
+  ret = uxsocket_sendfd(cfd, ctx->proto->shm_fd, -1);
   if (ret < 0)
   {
     LOG_ERROR("failed to sned shm fd");

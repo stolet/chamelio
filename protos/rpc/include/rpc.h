@@ -28,6 +28,11 @@
 #define MAX_SERVICE_NUMBER 8
 /* Location where ebpf bytecode is located */
 #define RPC_EBPF_BYTECODE "protos/rpc/fast/rpc_fast.bpf.o"
+#define RPC_EBPF_BYTECODE_64 "protos/rpc/fast/rpc_fast_64.bpf.o"
+#define RPC_EBPF_BYTECODE_128 "protos/rpc/fast/rpc_fast_128.bpf.o"
+#define RPC_EBPF_BYTECODE_256 "protos/rpc/fast/rpc_fast_256.bpf.o"
+#define RPC_EBPF_BYTECODE_512 "protos/rpc/fast/rpc_fast_512.bpf.o"
+#define RPC_EBPF_BYTECODE_1024 "protos/rpc/fast/rpc_fast_1024.bpf.o"
 
 // #define JOB_QUEUE_SIZE 1
 

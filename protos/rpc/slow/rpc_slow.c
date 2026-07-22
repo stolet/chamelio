@@ -47,19 +47,31 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
   struct proto_map_lib *pt_map, *servers_map, *workers_map, *clients_map;
   struct rpc_port_entry *ports;
 
-  g = cham_connect_guest();
-  if (g == NULL)
+  if (!ctx->config.virt)
   {
+    g = cham_connect_guest();
+    if (g == NULL)
+    {
     LOG_ERROR("RPC slow-path couldn't connect to Chamelio");
     abort();
-  }
+    }
 
-  p = cham_new_proto(g, 0);
-  if (p == NULL)
-  {
-    LOG_ERROR("RPC slow-path failed to register protocol with Chamelio");
-    abort();
+    p = cham_new_proto_bare(g, CHAM_PROTO_RPC);
+    if (p == NULL)
+    {
+      LOG_ERROR("RPC slow-path failed to register protocol with Chamelio");
+      abort();
+    }
   }
+  else
+  {
+    p = cham_new_proto_virt(CHAM_PROTO_RPC);
+    if (p == NULL)
+    {
+      LOG_ERROR("RPC slow-path failed to register protocol with Chamelio");
+      abort();  
+  }
+}
 
   fd = open(RPC_EBPF_BYTECODE, O_RDWR);
   if (fd < 0)

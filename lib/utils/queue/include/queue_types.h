@@ -17,6 +17,7 @@ enum cham_proto_type {
   CHAM_PROTO_INVALID = 0,
   CHAM_PROTO_TCP,
   CHAM_PROTO_UDP,
+  CHAM_PROTO_RPC
 };
 
 /* Type of queue entries */
