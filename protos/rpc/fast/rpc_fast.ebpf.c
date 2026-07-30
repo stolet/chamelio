@@ -16,8 +16,9 @@
 #define SERVER_MAP 1
 #define WORKERS_MAP 2
 #define PORT_MAP 3
+#define CFG_MAP 4
 /* Add these functions as helpers */
-static void *(*queue_tail)(struct equeue *q) = (void *)1001;
+static void *(*ebpf_queue_tail)(struct equeue *q, __u64 elsize) = (void *)1001;
 static int (*queue_enqueue)(struct equeue *q, __u8 type) = (void *)1002;
 
 static void *(*bpf_memcpy)(void *dst, void *src, size_t len) = (void *)1003;
@@ -29,6 +30,8 @@ static __u16 (*ipv4_udptcp_cksum)(void *ip_hdr, void *udp_hdr) = (void *)1006;
 static struct cham_sched_entry *(*sched_head)(struct cham_scheduler *sched) = (void *)1007;
 static int (*sched_pop)(struct cham_scheduler *sched) = (void *)1008;
 static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u32 priority) = (void *)1009;
+static void * (*ebpf_map_get)(void *map_base, __u32 len) = (void *) 1010;
+static void * (*ebpf_map_lookup)(void *map_base, __u64 id, __u64 elsize) = (void *) 1011;
 
 static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx);
 static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx);
@@ -66,14 +69,18 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   port_map = ctx->maps[PORT_MAP].addr;
   client_map = ctx->maps[CLIENT_MAP].addr;
   eth = (struct eth_hdr *)pkt;
-  if (f_beui16(eth->type) != ETH_TYPE_IP)
+
+  /* Parse IP hdr */
+  if (ctx->pkt + sizeof(struct ip_hdr) > ctx->pkt_end)
     return -1;
 
-  ip = (struct ip_hdr *)(pkt + sizeof(struct eth_hdr));
-  if (IPH_V(ip) != 4 || IPH_HL(ip) < 5) return -1;
+  // if (f_beui16(eth->type) != ETH_TYPE_IP)
+  //   return -1;
 
-  ip_hdrs_len = IPH_HL(ip) * 4;
-  ip_total_len = f_beui16(ip->len);
+  // ip = (struct ip_hdr *)(pkt + sizeof(struct eth_hdr));
+
+  ip = (struct ip_hdr *) ctx->pkt;
+  if (IPH_V(ip) != 4 || IPH_HL(ip) < 5) return -1;
 
   if (ip->proto != IP_PROTO_UDP)
     return -1;
@@ -81,20 +88,28 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   if (f_beui16(ip->offset) & 0x3FFF)
     return -1; // fragmented packet dropped
 
+  ip_hdrs_len = (__u16) IPH_HL(ip) * 4;
+  ip_total_len = f_beui16(ip->len);
+
   if (ip_total_len < ip_hdrs_len + (__u16)sizeof(struct udp_hdr))
     return -1;
 
   /* Verify IPv4 header checksum */
-  ip_saved_chksum = ip->chksum;
-  ip->chksum = 0;
-  ip_comp_chksum = ipv4_checksum((void *)ip);
-  ip->chksum = ip_saved_chksum;
-  if (ip_comp_chksum != ip_saved_chksum)
-    return -1;
+  // ip_saved_chksum = ip->chksum;
+  // ip->chksum = 0;
+  // ip_comp_chksum = ipv4_checksum((void *)ip);
+  // ip->chksum = ip_saved_chksum;
+  // if (ip_comp_chksum != ip_saved_chksum)
+  //   return -1;
 
   /* Parse UDP header */
+  if ((__u8 *)ip + ip_hdrs_len + sizeof(struct udp_hdr) > 
+      (__u8 *)ctx->pkt_end)
+    return -1;
+
   udp = (struct udp_hdr *)((__u8 *)ip + ip_hdrs_len);
   udp_len = f_beui16(udp->len);
+
   if (udp_len < sizeof(struct udp_hdr))
     return -1;
 
@@ -114,8 +129,11 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   }
 
   // Parse rpc header
-
   rpc_hdr = (struct rpc_hdr *)((__u8 *)udp + sizeof(struct udp_hdr));
+  if ((__u8 *)rpc_hdr + sizeof(struct rpc_hdr) > 
+      (__u8 *)ctx->pkt_end)
+    return -1;
+
   // size of the udp payload
   rpc_len = f_beui16(rpc_hdr->len);
 
@@ -129,7 +147,12 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   payload = (__u8 *)udp + sizeof(struct udp_hdr);
   service = f_beui16(rpc_hdr->service);
 
-  port_entry = &port_map[f_beui16(udp->dst)];
+  // port_entry = &port_map[f_beui16(udp->dst)];
+  port_entry = ebpf_map_lookup(ctx->maps[PORT_MAP].addr,
+    f_beui16(udp->dst), sizeof(struct rpc_port_entry));
+
+  if (port_entry == NULL)
+    return -1;
 
   if (rpc_hdr->type == 0)
   {
@@ -137,8 +160,17 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     if (port_entry->server_id == (__u32)INVALID_ID)
       return -1;
 
-    server = &server_map[port_entry->server_id];
+    server = ebpf_map_lookup(ctx->maps[SERVER_MAP].addr,
+      port_entry->server_id, sizeof(struct rpc_server));
+
+    if (server == NULL)
+      return -1;
+
+    // server = &server_map[port_entry->server_id];
     if (server->n_workers == 0)
+      return -1;
+
+    if (server->n_workers > MAX_WORKERS)
       return -1;
 
     if (service >= MAX_SERVICE_NUMBER || !server->service_table[service])
@@ -148,9 +180,16 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     {
       /* write entry to server's shared RX ring. */
       __u32 entry_len = (__u32)sizeof(struct rpc_rx_meta) + payload_len;
-      rx_base = (__u8 *)ctx->shm_base + server->rx_off;
+      
+      // rx_base = (__u8 *)ctx->shm_base + server->rx_off;
+      rx_base = ebpf_map_get(ctx->shm_base + server->rx_off,
+                server->rx_len);
+      if (rx_base == NULL)
+        return -1;
+
       head = server->rx_head;
       tail = server->rx_tail;
+
       if (tail >= head)
         used_bytes = tail - head;
       else
@@ -165,7 +204,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       meta.rx_port = f_beui16(udp->src);
       meta._pad    = 0;
 
-      if (tail + sizeof(meta) <= server->rx_len)
+      if (sizeof(meta) <= server->rx_len - tail)
       {
         bpf_memcpy(rx_base + tail, &meta, sizeof(meta));
       }
@@ -179,7 +218,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       if (tail >= server->rx_len)
         tail -= server->rx_len;
 
-      if (tail + payload_len <= server->rx_len)
+      if (tail > server->rx_len)
+        return -1;
+
+      if (payload_len <= server->rx_len - tail)
       {
         bpf_memcpy(rx_base + tail, payload, payload_len);
       }
@@ -208,11 +250,19 @@ int event_rx(struct cham_ebpf_ctx *ctx)
         __u32 idx;
         if (i >= server->n_workers)
           break;
+        //use subtraction arithmetic here 
         idx = (rr_start + (__u32)i) % server->n_workers;
+        if (idx >= MAX_WORKERS)
+          continue;
         worker_id = server->workers[idx];
         if (worker_id == (__u32)INVALID_ID)
           continue;
-        worker = &worker_map[worker_id];
+
+        worker = ebpf_map_lookup(worker_map, worker_id,
+                sizeof(struct rpc_worker));
+        if (worker == NULL)
+          continue;
+        
         free_bytes = worker->rx_len - worker->rx_avail;
         if (payload_len > free_bytes)
           continue;
@@ -235,7 +285,14 @@ int event_rx(struct cham_ebpf_ctx *ctx)
         worker_id = server->workers[i];
         if (worker_id == (__u32)INVALID_ID)
           continue;
-        worker = &worker_map[worker_id];
+        
+        // worker = &worker_map[worker_id];
+        
+        worker = ebpf_map_lookup(worker_map, worker_id,
+                sizeof(struct rpc_worker));
+        if (worker == NULL)
+          continue;
+
         free_bytes = worker->rx_len - worker->rx_avail;
         if (payload_len > free_bytes)
           continue;
@@ -246,9 +303,15 @@ int event_rx(struct cham_ebpf_ctx *ctx)
           min_work = worker->work_remaining;
         }
       }
-      /* Charge the cost to the chosen worker */
+      /* Charge the cost to the chosen worker. */
       if (best_worker_id != (__u32)INVALID_ID)
-        __sync_fetch_and_add(&worker_map[best_worker_id].work_remaining, req_cost);
+      {
+        worker = ebpf_map_lookup(worker_map, best_worker_id,
+                    sizeof(struct rpc_worker));
+        if (worker == NULL)
+          return -1;
+        __sync_fetch_and_add(&worker->work_remaining, req_cost);
+      }
     }
     else
     {
@@ -264,7 +327,14 @@ int event_rx(struct cham_ebpf_ctx *ctx)
         if (worker_id == (__u32)INVALID_ID)
           continue;
 
-        worker = &worker_map[worker_id];
+        // worker = &worker_map[worker_id];
+
+        worker = ebpf_map_lookup(worker_map, worker_id,
+                sizeof(struct rpc_worker));
+
+        if (worker == NULL)
+          continue;
+
         free_bytes = worker->rx_len - worker->rx_avail;
         if (payload_len > free_bytes)
           continue;
@@ -281,10 +351,21 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     if (best_worker_id == (__u32)INVALID_ID)
       return -1;
 
-    worker = &worker_map[best_worker_id];
+    // worker = &worker_map[best_worker_id];
+
+    worker = ebpf_map_lookup(worker_map, best_worker_id,
+                sizeof(struct rpc_worker));
+    if (worker == NULL)
+      return -1;
 
     // copy payload to worker rx buffer
-    rx_base = (__u8 *)ctx->shm_base + worker->rx_off;
+    // rx_base = (__u8 *)ctx->shm_base + worker->rx_off;
+
+    rx_base = ebpf_map_get(ctx->shm_base + worker->rx_off,
+                worker->rx_len);
+    if (rx_base == NULL)
+      return -1;
+    
     free_bytes = worker->rx_len - worker->rx_avail;
 
     if (payload_len > free_bytes)
@@ -293,7 +374,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     if (tail >= worker->rx_len)
       tail -= worker->rx_len;
 
-    if (tail + payload_len <= worker->rx_len)
+    if (tail >= worker->rx_len)
+      return -1;
+
+    if (payload_len <= worker->rx_len - tail)
     {
       bpf_memcpy(rx_base + tail, payload, payload_len);
     }
@@ -306,8 +390,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     worker->rx_avail += payload_len;
     __sync_fetch_and_add(&worker->jobs_pending, 1);
 
+    if (worker->app_bump_qid >= MAX_PROTO_QUEUES)
+      return -1;
     q = &ctx->equeues[worker->app_bump_qid].eq;
-    qe = queue_tail(q);
+    qe = ebpf_queue_tail(q, sizeof(struct rpc_queue_bump_entry));
     if (qe == NULL)
       return -1;
     bump = &qe->data.bump_app_rx;
@@ -322,8 +408,17 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     if (port_entry->client_id == (__u32)INVALID_ID)
       return -1;
 
-    client = &client_map[port_entry->client_id];
-    rx_base = (__u8 *)ctx->shm_base + client->rx_off;
+    client = ebpf_map_lookup(ctx->maps[CLIENT_MAP].addr,
+      port_entry->client_id, sizeof(struct rpc_client));
+    if (client == NULL)
+      return -1;
+
+    // rx_base = (__u8 *)ctx->shm_base + client->rx_off;
+    rx_base = ebpf_map_get(ctx->shm_base + client->rx_off,
+                client->rx_len);
+    if (rx_base == NULL)
+      return -1;
+    
     free_bytes = client->rx_len - client->rx_avail;
 
     if (payload_len > free_bytes)
@@ -331,7 +426,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     tail = client->rx_head + client->rx_avail;
     if (tail >= client->rx_len)
       tail -= client->rx_len;
-    if (tail + payload_len <= client->rx_len)
+    if (payload_len <= client->rx_len - tail)
     {
       bpf_memcpy(rx_base + tail, payload, payload_len);
     }
@@ -343,8 +438,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     }
     client->rx_avail += payload_len;
 
+    if (client->app_bump_qid >= MAX_PROTO_QUEUES)
+      return -1;
     q = &ctx->equeues[client->app_bump_qid].eq;
-    qe = queue_tail(q);
+    qe = ebpf_queue_tail(q, sizeof(struct rpc_queue_bump_entry));
     if (qe == NULL)
       return -1;
     bump = &qe->data.bump_app_rx;
@@ -373,6 +470,9 @@ SEC("chamelio/event_deq")
 int event_deq(struct cham_ebpf_ctx *ctx)
 {
   int ret;
+
+  if ((__u8 *)ctx->qe + sizeof(*ctx->qe) > (__u8 *)ctx->shm_end)
+    return -1;
   switch (ctx->qe->type)
   {
   case RPC_QUEUE_BUMP_CHAM_RX:
@@ -401,7 +501,12 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   {
     // worker receiving
     struct rpc_worker *worker_map = ctx->maps[WORKERS_MAP].addr;
-    struct rpc_worker *worker = &worker_map[bump->sock_id];
+    if (bump->sock_id >= MAX_WORKERS)
+      return -1;
+    struct rpc_worker *worker = ebpf_map_lookup(worker_map, bump->sock_id,
+        sizeof(struct rpc_worker));
+    if (worker == NULL)
+      return -1;
 
     new_head = worker->rx_head + bump->rx_head;
     if (new_head >= worker->rx_len)
@@ -413,7 +518,12 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
   {
     // client receiving
     struct rpc_client *client_map = ctx->maps[CLIENT_MAP].addr;
-    struct rpc_client *client = &client_map[bump->sock_id];
+    if (bump->sock_id >= MAX_CLIENTS)
+      return -1;
+    struct rpc_client *client = ebpf_map_lookup(client_map, bump->sock_id,
+        sizeof(struct rpc_client));
+    if (client == NULL)
+      return -1;
 
     new_head = client->rx_head + bump->rx_head;
     if (new_head >= client->rx_len)
@@ -427,15 +537,41 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
 
 static __always_inline __u16 find_free_port(struct cham_ebpf_ctx *ctx)
 {
-  __u16 i;
-  struct rpc_port_entry *ports;
+  __u16 i, next_port;
+  __u32 nr;
+  struct rpc_cfg *cfg;
+  struct rpc_port_entry *port;
+  struct cham_map *map;
 
-  ports = ctx->maps[PORT_MAP].addr;
-  for (i = MIN_PORT; i < MAX_PORT; i++)
+  map = &ctx->maps[CFG_MAP];
+  cfg = ebpf_map_lookup(map->addr, 0, sizeof(struct rpc_cfg));
+  if (cfg == NULL)
+    return 0;
+
+  next_port = cfg->next_port;
+  if (next_port < MIN_PORT || next_port > MAX_PORT)
+    next_port = MIN_PORT;
+
+  map = &ctx->maps[PORT_MAP];
+#pragma unroll
+  for (i = 0; i < RPC_PORT_SCAN_MAX; i++)
   {
-    if (ports[i].server_id == (__u32)INVALID_ID &&
-        ports[i].client_id == (__u32)INVALID_ID)
-      return i;
+    nr = next_port + i;
+    if (nr > MAX_PORT)
+      nr = MIN_PORT + nr - MAX_PORT - 1;
+
+    port = ebpf_map_lookup(map->addr, nr, sizeof(struct rpc_port_entry));
+    if (port == NULL)
+      return 0;
+
+    if (port->server_id == (__u32)INVALID_ID &&
+        port->client_id == (__u32)INVALID_ID)
+    {
+      cfg->next_port = nr + 1;
+      if (cfg->next_port > MAX_PORT)
+        cfg->next_port = MIN_PORT;
+      return (__u16)nr;
+    }
   }
   return 0;
 }
@@ -456,7 +592,11 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   __u32 tx_off, tx_head, tx_len, new_head, app_bump_qid;
   __u64 part, opaque;
   void *payload;
+
+
   struct rpc_pkt *p = (struct rpc_pkt *)ctx->pkt;
+  if ((__u8 *)p + sizeof(struct rpc_pkt) > (__u8 *)ctx->pkt_end)
+    return -1;
 
   qe = (struct rpc_queue_bump_entry *)ctx->qe;
   bump_cham = &qe->data.bump_cham_tx;
@@ -494,7 +634,12 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   {
     // client sending
     client_map = ctx->maps[CLIENT_MAP].addr;
-    client = &client_map[bump_cham->sock_id];
+    if (bump_cham->sock_id >= MAX_CLIENTS)
+      return -1;
+    client = ebpf_map_lookup(client_map, bump_cham->sock_id,
+        sizeof(struct rpc_client));
+    if (client == NULL)
+      return -1;
 
     // Set port if local_port == 0
     if (client->local_port == 0)
@@ -502,8 +647,11 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
       free_port = find_free_port(ctx);
       if (free_port == 0)
         return -1;
-      ports = ctx->maps[PORT_MAP].addr;
-      ports[free_port].client_id = client->id;
+      ports = ebpf_map_lookup(ctx->maps[PORT_MAP].addr, free_port,
+          sizeof(struct rpc_port_entry));
+      if (ports == NULL)
+        return -1;
+      ports->client_id = client->id;
       client->local_port = free_port;
     }
 
@@ -522,11 +670,19 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   {
     // worker sending
     worker_map = ctx->maps[WORKERS_MAP].addr;
-    worker = &worker_map[bump_cham->sock_id];
+    if (bump_cham->sock_id >= MAX_WORKERS)
+      return -1;
+    worker = ebpf_map_lookup(worker_map, bump_cham->sock_id,
+        sizeof(struct rpc_worker));
+    if (worker == NULL)
+      return -1;
 
     // find the server of the worker to find the local port/ip
     server_map = ctx->maps[SERVER_MAP].addr;
-    server = &server_map[worker->server_id];
+    server = ebpf_map_lookup(server_map, worker->server_id,
+        sizeof(struct rpc_server));
+    if (server == NULL)
+      return -1;
 
     p->ip.src = t_beui32(server->local_ip);
     p->udp.src = t_beui16(server->local_port);
@@ -560,19 +716,36 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   if (!bump_cham->type)
   {
+    if (bump_cham->sock_id >= MAX_CLIENTS)
+      return -1;
+    client = ebpf_map_lookup(ctx->maps[CLIENT_MAP].addr,
+        bump_cham->sock_id, sizeof(struct rpc_client));
+    if (client == NULL)
+      return -1;
+
     client->tx_head = new_head;
     client->tx_avail -= payload_len;
   }
   else
   {
+    if (bump_cham->sock_id >= MAX_WORKERS)
+      return -1;
+    worker = ebpf_map_lookup(ctx->maps[WORKERS_MAP].addr,
+        bump_cham->sock_id, sizeof(struct rpc_worker));
+    if (worker == NULL)
+      return -1;
+
     worker->tx_head = new_head;
     worker->tx_avail -= payload_len;
   }
 
   // send a bump to application
+  if (app_bump_qid >= MAX_PROTO_QUEUES)
+    return -1;
   q = &ctx->equeues[app_bump_qid].eq;
 
-  qe = (struct rpc_queue_bump_entry *)queue_tail(q);
+  qe = (struct rpc_queue_bump_entry *)ebpf_queue_tail(q,
+      sizeof(struct rpc_queue_bump_entry));
   if (qe == NULL)
     return -1;
 

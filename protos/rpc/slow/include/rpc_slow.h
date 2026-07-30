@@ -76,6 +76,8 @@ struct rpc_slow_context
   struct proto_map_lib *socks_map;
   /* Maps a port to a socket */
   struct proto_map_lib *port_map;
+  /* Fast-path ephemeral-port allocation state */
+  struct proto_map_lib *cfg_map;
 
   /* Stores all the clients */
   struct proto_map_lib *clients_map;

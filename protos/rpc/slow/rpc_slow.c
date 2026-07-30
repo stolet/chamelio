@@ -8,6 +8,7 @@
 
 #include "appif.h"
 #include "rpc_slow.h"
+#include "rpc_state.h"
 #include "rpc_queue_types.h"
 #include "queue_fns.h"
 #include "rpc.h"
@@ -36,6 +37,8 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx);
 
 int poll_apps(struct rpc_slow_context *ctx);
 
+static void rpc_state_publish(struct rpc_slow_context *ctx);
+
 int init_rpc_slow_context(struct rpc_slow_context *ctx)
 {
   int fd, ret, i;
@@ -45,7 +48,9 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
   struct guest_lib *g;
   struct proto_lib *p;
   struct proto_map_lib *pt_map, *servers_map, *workers_map, *clients_map;
+  struct proto_map_lib *cfg_map;
   struct rpc_port_entry *ports;
+  struct rpc_cfg *cfg;
 
   if (!ctx->config.virt)
   {
@@ -129,6 +134,14 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
   }
   ctx->port_map = pt_map;
 
+  cfg_map = cham_new_map(p, 1, sizeof(struct rpc_cfg));
+  if (cfg_map == NULL)
+  {
+    LOG_ERROR("failed to create RPC config map");
+    abort();
+  }
+  ctx->cfg_map = cfg_map;
+
   ctx->clients_map = clients_map;
   ctx->servers_map = servers_map;
   // ctx->port_server_map = pt_to_ser_map;
@@ -152,6 +165,10 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
     ports[i].server_id = INVALID_ID;
     ports[i].client_id = INVALID_ID;
   }
+
+  cfg = ctx->proto->shm_base + ctx->cfg_map->off;
+  cfg->next_port = MIN_PORT;
+
   return 0;
 }
 
@@ -238,12 +255,21 @@ int main(int argc, char **argv)
   int ret;
   struct rpc_slow_context ctx;
 
+  ret = rpc_config_parse(&ctx.config, argc, argv);
+  if (ret != 0)
+  {
+    LOG_ERROR("failed to parse RPC configuration");
+    abort();
+  }
+
   ret = init_rpc_slow_context(&ctx);
   if (ret != 0)
   {
     LOG_ERROR("failed to initialise udp slow context");
     abort();
   }
+
+  rpc_state_publish(&ctx);
 
   ret = appif_init(&ctx);
   if (ret != 0)
@@ -302,6 +328,16 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
 
   if (req->local_port != 0)
   {
+    if (req->local_port > MAX_PORT)
+    {
+      LOG_ERROR("port is invalid");
+      res->success = 0;
+      ret = queue_enqueue(actx->slow_app_q, RPC_QUEUE_NEW_CLIENT_RES);
+      if (ret != 0)
+        LOG_ERROR("failed to enqueue rpc new client response");
+      return -1;
+    }
+
     port = &pt_cl_map[req->local_port];
     if (port->client_id != (__u32)INVALID_ID || port->server_id != (__u32)INVALID_ID)
     {
@@ -315,10 +351,8 @@ int handle_new_client_req(struct rpc_slow_context *ctx,
       return -1;
     }
     cl->local_port = req->local_port;
+    port->client_id = res->client_id;
   }
-
-  port = &pt_cl_map[cl->local_port];
-  port->client_id = res->client_id;
 
   // Create queue for RX buffer
   protoq = cham_new_queue(ctx->proto, RXBUF_SZ, 1);
@@ -591,4 +625,32 @@ int handle_new_service_req(struct rpc_slow_context *ctx,
   }
 
   return 0;
+}
+
+static void rpc_state_publish(struct rpc_slow_context *ctx)
+{
+  int fd;
+  struct rpc_state state = {
+    .magic = RPC_STATE_MAGIC,
+    .version = RPC_STATE_VERSION,
+    .pid = getpid(),
+    .ctx_addr = (__u64)ctx,
+    .ctx_size = sizeof(struct rpc_slow_context),
+    .port_size = sizeof(struct rpc_port_entry),
+    // .cfg_size = sizeof(struct rpc_cfg),
+    .app_size = sizeof(struct rpc_app_slow),
+    .app_ctx_size = sizeof(struct rpc_app_context_slow),
+  };
+
+  mkdir("/run/chamelio", 0777);
+  fd = open(RPC_STATE_PATH, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+  if (fd < 0)
+  {
+    LOG_WARN("failed to publish RPC state");
+    return;
+  }
+
+  if (write(fd, &state, sizeof(state)) != sizeof(state))
+    LOG_WARN("failed to write RPC state to file");
+  close(fd); 
 }

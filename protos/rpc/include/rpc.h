@@ -26,6 +26,8 @@
 #define INVALID_ID -1
 /* Maximum number of services */
 #define MAX_SERVICE_NUMBER 8
+/* Maximum number of ports to probe for an ephemeral bind in fast-path */
+#define RPC_PORT_SCAN_MAX 8
 /* Location where ebpf bytecode is located */
 #define RPC_EBPF_BYTECODE "protos/rpc/fast/rpc_fast.bpf.o"
 #define RPC_EBPF_BYTECODE_64 "protos/rpc/fast/rpc_fast_64.bpf.o"
@@ -164,4 +166,12 @@ struct rpc_worker
   __u32 tx_head;
 
 };
+
+struct rpc_cfg
+{
+  /* Next ephemeral port candidate for fast-path allocation */
+  __u16 next_port;
+  __u16 __pad;
+} __attribute__((packed));
+
 #endif
