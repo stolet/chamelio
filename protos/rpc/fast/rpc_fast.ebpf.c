@@ -611,7 +611,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   /* Calculate number of bytes to transmit */
   payload_len = bump_cham->tx_avail;
   max_payload = (__u32) ((__u8 *) ctx->pkt_end - 
-      ((__u8 *)p - sizeof(struct rpc_pkt_inner)));
+      ((__u8 *)p + sizeof(struct rpc_pkt_inner)));
   if (max_payload > RPC_MAX_PAYLOAD)
     payload_len = RPC_MAX_PAYLOAD;
   if (payload_len > max_payload)
