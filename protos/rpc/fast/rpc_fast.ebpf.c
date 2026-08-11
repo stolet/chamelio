@@ -17,15 +17,18 @@
 #define WORKERS_MAP 2
 #define PORT_MAP 3
 #define CFG_MAP 4
+//TODO: understand this again tmr
+#define RPC_MAX_PAYLOAD (FAST_L3_PKT_ROOM - sizeof(struct rpc_pkt_inner))
+
 /* Add these functions as helpers */
 static void *(*ebpf_queue_tail)(struct equeue *q, __u64 elsize) = (void *)1001;
 static int (*queue_enqueue)(struct equeue *q, __u8 type) = (void *)1002;
 
-static void *(*bpf_memcpy)(void *dst, void *src, size_t len) = (void *)1003;
-static void (*bpf_print)(int a) = (void *)1004;
+static void *(*ebpf_memcpy)(void *dst, void *src, size_t len) = (void *)1003;
+static void (*ebpf_print)(int a) = (void *)1004;
 
-static __u16 (*ipv4_checksum)(void *ip_hdr) = (void *)1005;
-static __u16 (*ipv4_udptcp_cksum)(void *ip_hdr, void *udp_hdr) = (void *)1006;
+static __u16 (*ebpf_ipv4_checksum)(void *ip_hdr) = (void *)1005;
+static __u16 (*ebpf_ipv4_udptcp_cksum)(void *ip_hdr, void *udp_hdr) = (void *)1006;
 
 static struct cham_sched_entry *(*sched_head)(struct cham_scheduler *sched) = (void *)1007;
 static int (*sched_pop)(struct cham_scheduler *sched) = (void *)1008;
@@ -121,7 +124,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   if (udp_saved_chksum != 0)
   {
     udp->chksum = 0;
-    udp_comp_chksum = ipv4_udptcp_cksum((void *)ip, (void *)udp);
+    udp_comp_chksum = ebpf_ipv4_udptcp_cksum((void *)ip, (void *)udp);
     udp->chksum = udp_saved_chksum;
 
     if (udp_comp_chksum != udp_saved_chksum)
@@ -206,13 +209,13 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
       if (sizeof(meta) <= server->rx_len - tail)
       {
-        bpf_memcpy(rx_base + tail, &meta, sizeof(meta));
+        ebpf_memcpy(rx_base + tail, &meta, sizeof(meta));
       }
       else
       {
         part = server->rx_len - tail;
-        bpf_memcpy(rx_base + tail, &meta, part);
-        bpf_memcpy(rx_base, (__u8 *)(&meta) + part, sizeof(meta) - part);
+        ebpf_memcpy(rx_base + tail, &meta, part);
+        ebpf_memcpy(rx_base, (__u8 *)(&meta) + part, sizeof(meta) - part);
       }
       tail += (__u32)sizeof(struct rpc_rx_meta);
       if (tail >= server->rx_len)
@@ -223,13 +226,13 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
       if (payload_len <= server->rx_len - tail)
       {
-        bpf_memcpy(rx_base + tail, payload, payload_len);
+        ebpf_memcpy(rx_base + tail, payload, payload_len);
       }
       else
       {
         part = server->rx_len - tail;
-        bpf_memcpy(rx_base + tail, payload, part);
-        bpf_memcpy(rx_base, payload + part, payload_len - part);
+        ebpf_memcpy(rx_base + tail, payload, part);
+        ebpf_memcpy(rx_base, payload + part, payload_len - part);
       }
       tail += payload_len;
       if (tail >= server->rx_len)
@@ -379,13 +382,13 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
     if (payload_len <= worker->rx_len - tail)
     {
-      bpf_memcpy(rx_base + tail, payload, payload_len);
+      ebpf_memcpy(rx_base + tail, payload, payload_len);
     }
     else
     {
       part = worker->rx_len - tail;
-      bpf_memcpy(rx_base + tail, payload, part);
-      bpf_memcpy(rx_base, payload + part, payload_len - part);
+      ebpf_memcpy(rx_base + tail, payload, part);
+      ebpf_memcpy(rx_base, payload + part, payload_len - part);
     }
     worker->rx_avail += payload_len;
     __sync_fetch_and_add(&worker->jobs_pending, 1);
@@ -428,13 +431,13 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       tail -= client->rx_len;
     if (payload_len <= client->rx_len - tail)
     {
-      bpf_memcpy(rx_base + tail, payload, payload_len);
+      ebpf_memcpy(rx_base + tail, payload, payload_len);
     }
     else
     {
       part = client->rx_len - tail;
-      bpf_memcpy(rx_base + tail, payload, part);
-      bpf_memcpy(rx_base, payload + part, payload_len - part);
+      ebpf_memcpy(rx_base + tail, payload, part);
+      ebpf_memcpy(rx_base, payload + part, payload_len - part);
     }
     client->rx_avail += payload_len;
 
@@ -590,18 +593,34 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   __u16 free_port;
   __u16 payload_len, pkt_hdrs_len, ip_hdr_len, udp_hdr_len;
   __u32 tx_off, tx_head, tx_len, new_head, app_bump_qid;
+  __u32 max_payload;
   __u64 part, opaque;
   void *payload;
 
-
-  struct rpc_pkt *p = (struct rpc_pkt *)ctx->pkt;
-  if ((__u8 *)p + sizeof(struct rpc_pkt) > (__u8 *)ctx->pkt_end)
+  struct rpc_pkt_inner *p = (struct rpc_pkt_inner *)ctx->pkt;
+  if ((__u8 *)p + sizeof(struct rpc_pkt_inner) > (__u8 *)ctx->pkt_end)
     return -1;
+
+  // struct rpc_pkt *p = (struct rpc_pkt *)ctx->pkt;
+  // if ((__u8 *)p + sizeof(struct rpc_pkt) > (__u8 *)ctx->pkt_end)
+  //   return -1;
 
   qe = (struct rpc_queue_bump_entry *)ctx->qe;
   bump_cham = &qe->data.bump_cham_tx;
 
+  /* Calculate number of bytes to transmit */
   payload_len = bump_cham->tx_avail;
+  max_payload = (__u32) ((__u8 *) ctx->pkt_end - 
+      ((__u8 *)p - sizeof(struct rpc_pkt_inner)));
+  if (max_payload > RPC_MAX_PAYLOAD)
+    payload_len = RPC_MAX_PAYLOAD;
+  if (payload_len > max_payload)
+    payload_len = max_payload;
+
+  /* Drop if payload len out of bounds */
+  if ((__u8 *)p + sizeof(struct rpc_pkt_inner) + payload_len > 
+      (__u8 *)ctx->pkt_end)
+    return -1;
 
   // rpc hdr + data alr in the tx buffer
   if (payload_len > UDP_MSS + sizeof(struct rpc_hdr))
@@ -609,11 +628,11 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   udp_hdr_len = sizeof(struct udp_hdr);
   ip_hdr_len = sizeof(struct ip_hdr);
-  pkt_hdrs_len = sizeof(struct eth_hdr) + ip_hdr_len + udp_hdr_len;
+  pkt_hdrs_len = ip_hdr_len + udp_hdr_len;
 
   // set hdrs
-  p->eth.type = t_beui16(ETH_TYPE_IP);
-
+  // p->eth.type = t_beui16(ETH_TYPE_IP);
+  //set ip hdr
   IPH_VHL_SET(&p->ip, 4, 5);
   p->ip._tos = 0;
   p->ip.len = t_beui16(sizeof(struct ip_hdr) + sizeof(struct udp_hdr) + payload_len);
@@ -621,12 +640,15 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   p->ip.offset = t_beui16(0);
   p->ip.ttl = 0xff;
   p->ip.proto = IP_PROTO_UDP;
-  // src set inside if/else
+  // src for both ip and udp set inside if/else
   p->ip.dst = t_beui32(bump_cham->tx_ip);
   p->ip.chksum = 0;
+
+  //set udp hdr
   p->udp.dst = t_beui16(bump_cham->tx_port);
   p->udp.len = t_beui16(udp_hdr_len + payload_len);
 
+  /* Copy data to pkt */
   payload = ctx->pkt + pkt_hdrs_len;
 
   // is_client = !bump_cham->type;
@@ -696,19 +718,19 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   if (tx_head + payload_len <= tx_len)
   {
-    bpf_memcpy(payload, ctx->shm_base + tx_off + tx_head, payload_len);
+    ebpf_memcpy(payload, ctx->shm_base + tx_off + tx_head, payload_len);
   }
   else
   {
     part = tx_len - tx_head;
-    bpf_memcpy(payload, ctx->shm_base + tx_off + tx_head, part);
-    bpf_memcpy(payload + part, ctx->shm_base + tx_off, payload_len - part);
+    ebpf_memcpy(payload, ctx->shm_base + tx_off + tx_head, part);
+    ebpf_memcpy(payload + part, ctx->shm_base + tx_off, payload_len - part);
   }
 
   /* Compute checksums */
   p->udp.chksum = 0;
-  p->udp.chksum = ipv4_udptcp_cksum((void *)&p->ip, (void *)&p->udp);
-  p->ip.chksum = ipv4_checksum((void *)&p->ip);
+  p->udp.chksum = ebpf_ipv4_udptcp_cksum((void *)&p->ip, (void *)&p->udp);
+  p->ip.chksum = ebpf_ipv4_checksum((void *)&p->ip);
 
   new_head = tx_head + payload_len;
   if (new_head >= tx_len)

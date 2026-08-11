@@ -149,7 +149,7 @@ int init_rpc_slow_context(struct rpc_slow_context *ctx)
   LOG_DEBUG("initialized rpc slow context maps");
   ctx->app_uxfd = -1;
   ctx->app_epfd = -1;
-  ctx->guest = g;
+  // ctx->guest = g;
   ctx->proto = p;
   ctx->n_apps = 0;
   ctx->next_app = 0;

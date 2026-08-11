@@ -61,7 +61,7 @@ struct rpc_slow_context
   __u32 n_socks;
 
   /* Chamelio library guest structure */
-  struct guest_lib *guest;
+  // struct guest_lib *guest;
   /* Chamelio library protocol structure */
   struct proto_lib *proto;
 

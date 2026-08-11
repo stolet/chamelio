@@ -24,4 +24,13 @@ struct rpc_pkt {
   struct rpc_hdr rpc;
 } __attribute__ ((packed));
 
+// for network virt pkts, the pkts have the following structure: 
+// eth ip gre inner_pkt
+
+struct rpc_pkt_inner {
+  struct ip_hdr ip;
+  struct udp_hdr udp;
+  struct rpc_hdr rpc;
+} __attribute__ ((packed));
+
 #endif

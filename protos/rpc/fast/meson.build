@@ -1,12 +1,11 @@
-rpc_fast_inc = include_directories('include', '../include')
+# rpc_fast_inc = include_directories('include', '../include')
 
-deps = [
-  dependency('log_dep'),
-  dependency('cham_utils_dep'),
-  dependency('pkt_hdrs_dep'),
-  dependency('cham'),
-]
-
+# deps = [
+#   dependency('log_dep'),
+#   dependency('cham_utils_dep'),
+#   dependency('pkt_hdrs_dep'),
+#   dependency('cham'),
+# ]
 ecc = find_program('ecc', required: true)
 
 # Compile rpc_fast.ebpf.c to an object in the build dir
