@@ -706,9 +706,6 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   bump->type = 0; // request
 
   ret = queue_enqueue(eq, RPC_QUEUE_BUMP_CHAM_TX);
-  fprintf(stderr,
-        "DEBUG 1: RPC warmup enqueued ret=%d client=%u dst_ip=%08x dst_port=%u\n",
-        ret, c->client_id, ip, port);
   if (ret != 0)
   {
     // req = client_get_req(c, ntohl(hdr.rid.x));
