@@ -7,6 +7,8 @@ implementations registered with a host fast path.
 A protocol in Chamelio is split into a slow path, an application library, and
 a fast-path.
 
+Paper: [Chamelio Preprint](https://arxiv.org/pdf/2604.22603)
+
 This repository contains:
 
 - `chamelio/`: the Chamelio executable, control plane, NIC integration, fast
