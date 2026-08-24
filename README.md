@@ -1,4 +1,4 @@
-# <img src="docs/assets/chamelio.svg" alt="Chamelio logo" height="80" style="vertical-align: middle;"> Chamelio
+# <img src="docs/assets/chamelio-animated.svg" alt="Chamelio logo" height="80" style="vertical-align: middle;"> Chamelio
 
 Chamelio is a flexible high-performance network stack 
 shared between applications and guests
