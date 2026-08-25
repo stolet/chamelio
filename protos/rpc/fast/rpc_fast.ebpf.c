@@ -17,7 +17,7 @@
 #define WORKERS_MAP 2
 #define PORT_MAP 3
 #define CFG_MAP 4
-//TODO: understand this again tmr
+
 #define RPC_MAX_PAYLOAD (FAST_L3_PKT_ROOM - sizeof(struct rpc_pkt_inner))
 
 /* Add these functions as helpers */

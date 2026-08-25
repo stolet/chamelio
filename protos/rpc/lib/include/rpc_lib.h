@@ -7,13 +7,14 @@
 #include "queue.h"
 
 /* TODO: Fix this because it's duplicated */
-#define MAX_SOCKETS 8192
 #define MAX_SERVERS 6
 #define MAX_CLIENTS 256
 #define MAX_WORKERS 16
-#define SOCK_INACTIVE (-1U)
-/* Invalid server ID */
+
+#define MAX_SOCKETS 8192
 #define INVALID_ID -1
+#define SOCK_INACTIVE (-1U)
+
 struct rpc_context_lib
 {
   /* ID for this context */

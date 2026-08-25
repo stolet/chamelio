@@ -23,7 +23,6 @@
 
 #define POLL_BATCH 16
 
-
 static struct rpc_lib *rpc = NULL;
 static __thread struct rpc_context_lib *rpc_thread_ctx = NULL;
 
@@ -34,9 +33,9 @@ static int handle_new_service_res(struct rpc_queue_entry *qe);
 static int handle_tx_bump(struct rpc_queue_bump_entry *qe);
 static int handle_rx_bump(struct rpc_queue_bump_entry *qe);
 static void ring2ring(__u8 *dst, __u32 dst_pos, __u32 dst_ring_len,
-    const __u8 *src, __u32 src_pos, __u32 src_ring_len, __u32 len);
-//TODO: put the ring reads in a helper function
-
+                     const __u8 *src, __u32 src_pos, __u32 src_ring_len, __u32 len);
+static void ring_read(void *dst, const __u8 *ring, __u32 pos,
+                      __u32 ring_len, __u32 len);
 
 int rpc_connect_slow()
 {
@@ -524,7 +523,7 @@ struct rpc_worker_lib *rpc_new_worker(struct rpc_server_lib *s, struct rpc_conte
 
   return worker;
 }
-// TODO: check if the service registration makes sense
+
 int rpc_register(struct rpc_server_lib *server, __u8 service)
 {
   struct equeue *eq;
@@ -641,7 +640,7 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   hdr.type = 0; // request
 
   // fprintf(stderr, "rpc_call: service=%u client_id=%u rid=%u\n",
-          // service, c->client_id, ntohl(hdr.rid.x));
+  // service, c->client_id, ntohl(hdr.rid.x));
 
   // tail pos. of tx ring
   tail = c->tx_head + c->tx_avail;
@@ -681,6 +680,7 @@ int rpc_call(struct rpc_client_lib *c, __u32 ip, __u16 port,
   {
     memcpy(c->tx_buf + tail, buf, len);
   }
+
   // update avail
 
   /* have to send the rpc_hdr + payload so that we do not have to store
@@ -845,8 +845,8 @@ int rpc_return(struct rpc_server_lib *s, struct rpc_worker_lib *w,
   return len;
 }
 
-//TODO: need to handle multi-client scenarios for application layer 
-//JSQ in which we may have the wrong rx_ip/port being set in the worker
+// TODO: need to handle multi-client scenarios for application layer
+// JSQ in which we may have the wrong rx_ip/port being set in the worker
 
 int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
                     void *buf, size_t len)
@@ -854,7 +854,7 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
   int n;
   struct dqueue *q;
   struct rpc_queue_bump_entry *qe;
-  __u32 n1, n2, new_head;
+  __u32 new_head;
   struct rpc_hdr hdr = {0};
   struct rpc_worker *wkr;
   if (!w || !rid)
@@ -895,7 +895,6 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     else if (w->server->app_lb_mode == 1)
     {
       /* JBSQ pull: worker claims next entry from the server's shared ring */
-      //TODO: remove entry_len var
       __u8 *shbuf;
       __u32 meta_sz, tail, avail, entry_len, hdr_pos, dst_pos, curr_head;
       struct rpc_rx_meta md;
@@ -903,51 +902,63 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 
       srvr = (struct rpc_server *)w->server->shm_server;
       shbuf = (__u8 *)w->server->rx_buf;
-      meta_sz    = (__u32)sizeof(struct rpc_rx_meta);
+      meta_sz = (__u32)sizeof(struct rpc_rx_meta);
 
-      while (__sync_lock_test_and_set(&srvr->rx_lock, 1)){}
+      while (__sync_lock_test_and_set(&srvr->rx_lock, 1))
+      {
+      }
 
       curr_head = srvr->rx_head;
       tail = srvr->rx_tail;
-      if (tail >= curr_head) avail = tail - curr_head;
-      else avail = srvr->rx_len - curr_head + tail;
+      if (tail >= curr_head)
+        avail = tail - curr_head;
+      else
+        avail = srvr->rx_len - curr_head + tail;
 
-      //check if enough space for metadata & hdr
+      // check if enough space for metadata & hdr
       if (avail < meta_sz + (__u32)sizeof(struct rpc_hdr))
       {
         __sync_lock_release(&srvr->rx_lock);
         errno = EAGAIN;
         return -1;
       }
-      //copy the metadata with ip/port info
-      if (curr_head + meta_sz <= srvr->rx_len)
-      {
-        memcpy(&md, shbuf + curr_head, meta_sz);
-      }
-      else
-      {
-        n1 = srvr->rx_len - curr_head;
-        n2 = meta_sz - n1;
-        memcpy(&md, shbuf + curr_head, n1);
-        memcpy((__u8 *)&md + n1, shbuf, n2);
-      }
-      //copy hdr 
+      // copy the metadata with ip/port info
+
+      ring_read(&md, shbuf, curr_head, srvr->rx_len, meta_sz);
+
+      // if (curr_head + meta_sz <= srvr->rx_len)
+      // {
+      //   memcpy(&md, shbuf + curr_head, meta_sz);
+      // }
+      // else
+      // {
+      //   n1 = srvr->rx_len - curr_head;
+      //   n2 = meta_sz - n1;
+      //   memcpy(&md, shbuf + curr_head, n1);
+      //   memcpy((__u8 *)&md + n1, shbuf, n2);
+      // }
+
+      // copy hdr
       hdr_pos = (curr_head + meta_sz) % srvr->rx_len;
-      if (hdr_pos + sizeof(struct rpc_hdr) <= srvr->rx_len)
-      {
-        memcpy(&hdr, shbuf + hdr_pos, sizeof(struct rpc_hdr));
-      }
-      else
-      {
-        n1 = srvr->rx_len - hdr_pos;
-        n2 = (__u32)sizeof(struct rpc_hdr) - n1;
-        memcpy(&hdr, shbuf + hdr_pos, n1);
-        memcpy((__u8 *)&hdr + n1, shbuf, n2);
-      }
+
+      ring_read(&hdr, shbuf, hdr_pos, srvr->rx_len,
+                sizeof(struct rpc_hdr));
+
+      // if (hdr_pos + sizeof(struct rpc_hdr) <= srvr->rx_len)
+      // {
+      //   memcpy(&hdr, shbuf + hdr_pos, sizeof(struct rpc_hdr));
+      // }
+      // else
+      // {
+      //   n1 = srvr->rx_len - hdr_pos;
+      //   n2 = (__u32)sizeof(struct rpc_hdr) - n1;
+      //   memcpy(&hdr, shbuf + hdr_pos, n1);
+      //   memcpy((__u8 *)&hdr + n1, shbuf, n2);
+      // }
 
       hdr.service.x = ntohs(hdr.service.x);
-      hdr.len.x     = ntohs(hdr.len.x);
-      hdr.rid.x     = ntohl(hdr.rid.x);
+      hdr.len.x = ntohs(hdr.len.x);
+      hdr.rid.x = ntohl(hdr.rid.x);
 
       entry_len = meta_sz + hdr.len.x;
 
@@ -967,7 +978,6 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 
       dst_pos = (w->rx_head + w->rx_avail) % w->rx_len;
       
-      //TODO: see if this helper function has other uses
       //copy payload from the server's rx buf to worker rx_buf
       ring2ring((__u8 *)w->rx_buf, dst_pos, w->rx_len, shbuf, hdr_pos,
                 srvr->rx_len, hdr.len.x);
@@ -978,8 +988,8 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 
       __sync_fetch_and_add(&wkr->jobs_pending, 1);
 
-      w->rx_ip    = md.rx_ip;
-      w->rx_port  = md.rx_port;
+      w->rx_ip = md.rx_ip;
+      w->rx_port = md.rx_port;
       w->rx_avail += hdr.len.x;
     }
     else
@@ -997,49 +1007,55 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 
       /* Read address and size directly from the bump */
       w->rx_avail = qe->data.bump_app_rx.rx_avail;
-      w->rx_ip    = qe->data.bump_app_rx.rx_ip;
-      w->rx_port  = qe->data.bump_app_rx.rx_port;
+      w->rx_ip = qe->data.bump_app_rx.rx_ip;
+      w->rx_port = qe->data.bump_app_rx.rx_port;
       w->rx_pending = 1;
 
-      if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len)
-      {
-        n1 = w->rx_len - w->rx_head;
-        n2 = sizeof(struct rpc_hdr) - n1;
-        memcpy(&hdr, w->rx_buf + w->rx_head, n1);
-        memcpy(((__u8 *)&hdr) + n1, w->rx_buf, n2);
-      }
-      else
-      {
-        memcpy(&hdr, w->rx_buf + w->rx_head, sizeof(struct rpc_hdr));
-      }
+      ring_read(&hdr, w->rx_buf, w->rx_head, w->rx_len, sizeof(struct rpc_hdr));
+
+      // if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len)
+      // {
+      //   n1 = w->rx_len - w->rx_head;
+      //   n2 = sizeof(struct rpc_hdr) - n1;
+      //   memcpy(&hdr, w->rx_buf + w->rx_head, n1);
+      //   memcpy(((__u8 *)&hdr) + n1, w->rx_buf, n2);
+      // }
+      // else
+      // {
+      //   memcpy(&hdr, w->rx_buf + w->rx_head, sizeof(struct rpc_hdr));
+      // }
       hdr.service.x = ntohs(hdr.service.x);
-      hdr.len.x     = ntohs(hdr.len.x);
-      hdr.rid.x     = ntohl(hdr.rid.x);
+      hdr.len.x = ntohs(hdr.len.x);
+      hdr.rid.x = ntohl(hdr.rid.x);
     }
   }
-  
+
   /* Mode 2: read header now
-    * hdr.len: how many bytes how many bytes to copy from rx_buf into
+    * hdr.len: how many bytes to copy from rx_buf into
      the application's buf, and how far to advance
-     hdr.rid: returned as *rid to the caller, so the application can 
+     hdr.rid: returned as *rid to the caller, so the application can
      match the response to the right request
      hdr.service: tells the application which service handler to invoke */
   if (w->server->app_lb_mode == 2)
   {
-    if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len)
-    {
-      n1 = w->rx_len - w->rx_head;
-      n2 = sizeof(struct rpc_hdr) - n1;
-      memcpy(&hdr, (__u8 *)w->rx_buf + w->rx_head, n1);
-      memcpy((__u8 *)&hdr + n1, w->rx_buf, n2);
-    }
-    else
-    {
-      memcpy(&hdr, (__u8 *)w->rx_buf + w->rx_head, sizeof(struct rpc_hdr));
-    }
+    ring_read(&hdr, (__u8 *)w->rx_buf, w->rx_head, w->rx_len,
+              sizeof(struct rpc_hdr));
+
+    // if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len)
+    // {
+    //   n1 = w->rx_len - w->rx_head;
+    //   n2 = sizeof(struct rpc_hdr) - n1;
+    //   memcpy(&hdr, (__u8 *)w->rx_buf + w->rx_head, n1);
+    //   memcpy((__u8 *)&hdr + n1, w->rx_buf, n2);
+    // }
+    // else
+    // {
+    //   memcpy(&hdr, (__u8 *)w->rx_buf + w->rx_head, sizeof(struct rpc_hdr));
+    // }
+
     hdr.service.x = ntohs(hdr.service.x);
-    hdr.len.x     = ntohs(hdr.len.x);
-    hdr.rid.x     = ntohl(hdr.rid.x);
+    hdr.len.x = ntohs(hdr.len.x);
+    hdr.rid.x = ntohl(hdr.rid.x);
   }
 
   // store metadata so the application can read it immediately after this call
@@ -1063,17 +1079,20 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     new_head -= w->rx_len;
 
   // Read payload
-  if (new_head + n > w->rx_len)
-  {
-    n1 = w->rx_len - new_head;
-    n2 = n - n1;
-    memcpy(buf, w->rx_buf + new_head, n1);
-    memcpy((__u8 *)buf + n1, w->rx_buf, n2);
-  }
-  else
-  {
-    memcpy(buf, w->rx_buf + new_head, n);
-  }
+
+  ring_read(buf, w->rx_buf, new_head, w->rx_len, n);
+
+  // if (new_head + n > w->rx_len)
+  // {
+  //   n1 = w->rx_len - new_head;
+  //   n2 = n - n1;
+  //   memcpy(buf, w->rx_buf + new_head, n1);
+  //   memcpy((__u8 *)buf + n1, w->rx_buf, n2);
+  // }
+  // else
+  // {
+  //   memcpy(buf, w->rx_buf + new_head, n);
+  // }
 
   /* rx_head must be updated before rx_avail in mode 2: the dispatcher computes
   dst_pos = rx_head + rx_avail, so if rx_avail is decremented first the
@@ -1091,8 +1110,6 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
     __atomic_fetch_sub(&w->rx_avail, hdr.len.x, __ATOMIC_RELEASE);
   else
     w->rx_avail -= hdr.len.x;
-
-  // TODO: store some information about the call in the worker struct?
 
   // bump fast path
   /*
@@ -1125,7 +1142,7 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
   struct rpc_queue_bump_entry *qe;
   struct rpc_queue_bump_cham_rx *bump;
   struct rpc_hdr hdr;
-  __u32 n1, n2, new_head;
+  __u32 new_head;
 
   if (!c)
   {
@@ -1140,17 +1157,21 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
   }
 
   // Read the header
-  if (c->rx_head + sizeof(struct rpc_hdr) > c->rx_len)
-  {
-    n1 = c->rx_len - c->rx_head;
-    n2 = sizeof(struct rpc_hdr) - n1;
-    memcpy(&hdr, c->rx_buf + c->rx_head, n1);
-    memcpy(((__u8 *)&hdr) + n1, c->rx_buf, n2);
-  }
-  else
-  {
-    memcpy(&hdr, c->rx_buf + c->rx_head, sizeof(struct rpc_hdr));
-  }
+  
+  ring_read(&hdr, c->rx_buf, c->rx_head, c->rx_len,
+            sizeof(struct rpc_hdr));
+
+  // if (c->rx_head + sizeof(struct rpc_hdr) > c->rx_len)
+  // {
+  //   n1 = c->rx_len - c->rx_head;
+  //   n2 = sizeof(struct rpc_hdr) - n1;
+  //   memcpy(&hdr, c->rx_buf + c->rx_head, n1);
+  //   memcpy(((__u8 *)&hdr) + n1, c->rx_buf, n2);
+  // }
+  // else
+  // {
+  //   memcpy(&hdr, c->rx_buf + c->rx_head, sizeof(struct rpc_hdr));
+  // }
 
   // Convert fields from network to host order
   hdr.service.x = ntohs(hdr.service.x);
@@ -1172,17 +1193,20 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
     new_head -= c->rx_len;
 
   // Read the payload
-  if (new_head + n > c->rx_len)
-  {
-    n1 = c->rx_len - new_head;
-    n2 = n - n1;
-    memcpy(buf, c->rx_buf + new_head, n1);
-    memcpy((__u8 *)buf + n1, c->rx_buf, n2);
-  }
-  else
-  {
-    memcpy(buf, c->rx_buf + new_head, n);
-  }
+
+  ring_read(buf, c->rx_buf, new_head, c->rx_len, n);
+
+  // if (new_head + n > c->rx_len)
+  // {
+  //   n1 = c->rx_len - new_head;
+  //   n2 = n - n1;
+  //   memcpy(buf, c->rx_buf + new_head, n1);
+  //   memcpy((__u8 *)buf + n1, c->rx_buf, n2);
+  // }
+  // else
+  // {
+  //   memcpy(buf, c->rx_buf + new_head, n);
+  // }
 
   // Update rx buffer head and avail
 
@@ -1250,10 +1274,9 @@ int rpc_set_app_lb(struct rpc_server_lib *server)
   serv = (struct rpc_server *)server->shm_server;
   serv->app_lb_mode = 1;
   server->app_lb_mode = 1;
-  //TO CHANGE for testing with JBSQ
+  // TO CHANGE for testing with JBSQ
   /* JBSQ: > 0: set to the size of bounded queue */
-  server->job_queue_bound = 0; 
-
+  server->job_queue_bound = 0;
 
   // for (i = 0; i < server->nworkers; i++)
   //   server->workers[i].app_lb_mode = 1;
@@ -1317,7 +1340,7 @@ int rpc_call_complete_svc(struct rpc_worker_lib *w, __u8 service_id)
     return -1;
   }
 
-  shm_serv   = (struct rpc_server *)w->server->shm_server;
+  shm_serv = (struct rpc_server *)w->server->shm_server;
   shm_worker = (struct rpc_worker *)w->shm_worker;
 
   cost = (service_id < MAX_SERVICE_NUMBER) ? shm_serv->service_cost[service_id] : 1;
@@ -1358,7 +1381,7 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
   struct rpc_worker *best_wkr;
   __u8 *shbuf;
   __u32 meta_sz, curr_head, tail, avail, entry_len, hdr_pos, dst_pos;
-  __u32 min_pending, n1, n2, i;
+  __u32 min_pending, i;
   struct rpc_rx_meta md;
   struct rpc_hdr hdr = {0};
 
@@ -1369,7 +1392,9 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
   shbuf = (__u8 *)server->rx_buf;
   meta_sz = (__u32)sizeof(struct rpc_rx_meta);
 
-  while (__sync_lock_test_and_set(&srvr->rx_lock, 1)) {}
+  while (__sync_lock_test_and_set(&srvr->rx_lock, 1))
+  {
+  }
 
   curr_head = srvr->rx_head;
   tail = srvr->rx_tail;
@@ -1384,50 +1409,56 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
   }
 
   /* Read metadata */
-  if (curr_head + meta_sz <= srvr->rx_len)
-  {
-    memcpy(&md, shbuf + curr_head, meta_sz);
-  }
-  else
-  {
-    n1 = srvr->rx_len - curr_head;
-    n2 = meta_sz - n1;
-    memcpy(&md, shbuf + curr_head, n1);
-    memcpy((__u8 *)&md + n1, shbuf, n2);
-  }
+
+  ring_read(&md, shbuf, curr_head, srvr->rx_len, meta_sz);
+
+  // if (curr_head + meta_sz <= srvr->rx_len)
+  // {
+  //   memcpy(&md, shbuf + curr_head, meta_sz);
+  // }
+  // else
+  // {
+  //   n1 = srvr->rx_len - curr_head;
+  //   n2 = meta_sz - n1;
+  //   memcpy(&md, shbuf + curr_head, n1);
+  //   memcpy((__u8 *)&md + n1, shbuf, n2);
+  // }
 
   /* Read RPC header */
   hdr_pos = (curr_head + meta_sz) % srvr->rx_len;
-  if (hdr_pos + sizeof(struct rpc_hdr) <= srvr->rx_len)
-  {
-    memcpy(&hdr, shbuf + hdr_pos, sizeof(struct rpc_hdr));
-  }
-  else
-  {
-    n1 = srvr->rx_len - hdr_pos;
-    n2 = (__u32)sizeof(struct rpc_hdr) - n1;
-    memcpy(&hdr, shbuf + hdr_pos, n1);
-    memcpy((__u8 *)&hdr + n1, shbuf, n2);
-  }
+
+  ring_read(&hdr, shbuf, hdr_pos, srvr->rx_len, sizeof(struct rpc_hdr));
+
+  // if (hdr_pos + sizeof(struct rpc_hdr) <= srvr->rx_len)
+  // {
+  //   memcpy(&hdr, shbuf + hdr_pos, sizeof(struct rpc_hdr));
+  // }
+  // else
+  // {
+  //   n1 = srvr->rx_len - hdr_pos;
+  //   n2 = (__u32)sizeof(struct rpc_hdr) - n1;
+  //   memcpy(&hdr, shbuf + hdr_pos, n1);
+  //   memcpy((__u8 *)&hdr + n1, shbuf, n2);
+  // }
   hdr.service.x = ntohs(hdr.service.x);
-  hdr.len.x     = ntohs(hdr.len.x);
-  hdr.rid.x     = ntohl(hdr.rid.x);
+  hdr.len.x = ntohs(hdr.len.x);
+  hdr.rid.x = ntohl(hdr.rid.x);
 
   entry_len = meta_sz + hdr.len.x;
 
   /* JSQ: pick worker with fewest jobs_pending that has enough rx_buf space */
-  best_w   = NULL;
+  best_w = NULL;
   best_wkr = NULL;
   min_pending = (__u32)-1;
   for (i = 0; i < server->nworkers; i++)
   {
-    struct rpc_worker_lib *w   = &server->workers[i];
+    struct rpc_worker_lib *w = &server->workers[i];
     struct rpc_worker *wkr;
     __u32 space, pending;
 
     // if (!w->shm_worker)
     //   continue;
-    wkr   = (struct rpc_worker *)w->shm_worker;
+    wkr = (struct rpc_worker *)w->shm_worker;
     space = w->rx_len - __atomic_load_n(&w->rx_avail, __ATOMIC_ACQUIRE);
     if (hdr.len.x > space)
       continue;
@@ -1436,8 +1467,8 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
     if (pending < min_pending)
     {
       min_pending = pending;
-      best_w      = w;
-      best_wkr    = wkr;
+      best_w = w;
+      best_wkr = wkr;
     }
   }
 
@@ -1454,6 +1485,7 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
   dst_pos = best_w->rx_disp_tail;
   ring2ring((__u8 *)best_w->rx_buf, dst_pos, best_w->rx_len,
             shbuf, hdr_pos, srvr->rx_len, hdr.len.x);
+
   best_w->rx_disp_tail = (best_w->rx_disp_tail + hdr.len.x) % best_w->rx_len;
 
   srvr->rx_head = (curr_head + entry_len) % srvr->rx_len;
@@ -1461,7 +1493,7 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
 
   __sync_lock_release(&srvr->rx_lock);
 
-  best_w->rx_ip   = md.rx_ip;
+  best_w->rx_ip = md.rx_ip;
   best_w->rx_port = md.rx_port;
 
   /* Release store: worker must see the payload before it sees rx_avail > 0 */
@@ -1470,10 +1502,10 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
   return 0;
 }
 
-/* Copy `len` bytes from a circular ring of size `src_ring_len` starting at
-   `src_pos` into a circular ring of size `dst_ring_len` starting at `dst_pos` */
+/* Copy len bytes from a circular ring of size src_ring_len starting at
+   src_pos into a circular ring of size dst_ring_len starting at dst_pos */
 static void ring2ring(__u8 *dst, __u32 dst_pos, __u32 dst_ring_len,
-    const __u8 *src, __u32 src_pos, __u32 src_ring_len, __u32 len)
+                      const __u8 *src, __u32 src_pos, __u32 src_ring_len, __u32 len)
 {
   while (len > 0)
   {
@@ -1481,35 +1513,35 @@ static void ring2ring(__u8 *dst, __u32 dst_pos, __u32 dst_ring_len,
     __u32 dst_chunk = dst_ring_len - dst_pos;
     __u32 chunk = len;
 
-    if (chunk > src_chunk) chunk = src_chunk;
-    if (chunk > dst_chunk) chunk = dst_chunk;
+    if (chunk > src_chunk)
+      chunk = src_chunk;
+    if (chunk > dst_chunk)
+      chunk = dst_chunk;
     memcpy(dst + dst_pos, src + src_pos, chunk);
     src_pos = (src_pos + chunk) % src_ring_len;
     dst_pos = (dst_pos + chunk) % dst_ring_len;
     len -= chunk;
   }
 }
-/*
-static int ring_read(void *dst, const __u8 *ring, __u32 pos,
-                    __u32 ring_len, __u32 len)
+
+/* Read from a circular ring buffer to a linear buffer (non-ring)*/
+static void ring_read(void *dst, const __u8 *ring, __u32 pos,
+                      __u32 ring_len, __u32 len)
 {
-    __u32 first;
+  __u32 first;
 
-    if (!dst || !ring || ring_len == 0 || pos >= ring_len)
-        return -1;
-
-    if (pos + len <= ring_len) {
-        memcpy(dst, ring + pos, len);
-        return 0;
-    }
-
+  if (pos + len <= ring_len)
+  {
+    memcpy(dst, ring + pos, len);
+  }
+  else
+  {
     first = ring_len - pos;
     memcpy(dst, ring + pos, first);
     memcpy((__u8 *)dst + first, ring, len - first);
-
-    return 0;
+  }
 }
-*/
+
 static int handle_new_client_res(struct rpc_queue_entry *qe)
 {
   struct rpc_queue_new_client_res *res;
@@ -1606,7 +1638,6 @@ static int handle_tx_bump(struct rpc_queue_bump_entry *qe)
   }
 
   new_head = bump->tx_head + *tx_head;
-  // TODO: see if the equal has to be removed!
   if (new_head >= tx_len)
     new_head -= tx_len;
   *tx_head = new_head;
@@ -1642,4 +1673,3 @@ static int handle_rx_bump(struct rpc_queue_bump_entry *qe)
   }
   return 0;
 }
-
