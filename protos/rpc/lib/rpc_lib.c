@@ -33,7 +33,7 @@ static int handle_new_service_res(struct rpc_queue_entry *qe);
 static int handle_tx_bump(struct rpc_queue_bump_entry *qe);
 static int handle_rx_bump(struct rpc_queue_bump_entry *qe);
 static void ring2ring(__u8 *dst, __u32 dst_pos, __u32 dst_ring_len,
-                     const __u8 *src, __u32 src_pos, __u32 src_ring_len, __u32 len);
+                      const __u8 *src, __u32 src_pos, __u32 src_ring_len, __u32 len);
 static void ring_read(void *dst, const __u8 *ring, __u32 pos,
                       __u32 ring_len, __u32 len);
 
@@ -977,8 +977,8 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
       }
 
       dst_pos = (w->rx_head + w->rx_avail) % w->rx_len;
-      
-      //copy payload from the server's rx buf to worker rx_buf
+
+      // copy payload from the server's rx buf to worker rx_buf
       ring2ring((__u8 *)w->rx_buf, dst_pos, w->rx_len, shbuf, hdr_pos,
                 srvr->rx_len, hdr.len.x);
 
@@ -1157,7 +1157,7 @@ int rpc_response(struct rpc_client_lib *c, void *buf, size_t len)
   }
 
   // Read the header
-  
+
   ring_read(&hdr, c->rx_buf, c->rx_head, c->rx_len,
             sizeof(struct rpc_hdr));
 
@@ -1392,18 +1392,21 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
   shbuf = (__u8 *)server->rx_buf;
   meta_sz = (__u32)sizeof(struct rpc_rx_meta);
 
-  while (__sync_lock_test_and_set(&srvr->rx_lock, 1))
-  {
-  }
+  // while (__sync_lock_test_and_set(&srvr->rx_lock, 1))
+  // {
+  // }
 
-  curr_head = srvr->rx_head;
-  tail = srvr->rx_tail;
+  curr_head = __atomic_load_n(&srvr->rx_head, __ATOMIC_RELAXED);
+  tail = __atomic_load_n(&srvr->rx_tail, __ATOMIC_ACQUIRE);
+
+  // curr_head = srvr->rx_head;
+  // tail = srvr->rx_tail;
   avail = (tail >= curr_head) ? tail - curr_head
                               : srvr->rx_len - curr_head + tail;
 
   if (avail < meta_sz + (__u32)sizeof(struct rpc_hdr))
   {
-    __sync_lock_release(&srvr->rx_lock);
+    // __sync_lock_release(&srvr->rx_lock);
     errno = EAGAIN;
     return -1;
   }
@@ -1474,7 +1477,7 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
 
   if (!best_w)
   {
-    __sync_lock_release(&srvr->rx_lock);
+    // __sync_lock_release(&srvr->rx_lock);
     errno = EAGAIN;
     return -1;
   }
@@ -1488,10 +1491,14 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
 
   best_w->rx_disp_tail = (best_w->rx_disp_tail + hdr.len.x) % best_w->rx_len;
 
-  srvr->rx_head = (curr_head + entry_len) % srvr->rx_len;
+  __atomic_store_n(&srvr->rx_head,
+                   (curr_head + entry_len) % srvr->rx_len,
+                   __ATOMIC_RELEASE);
+
+  // srvr->rx_head = (curr_head + entry_len) % srvr->rx_len;
   __sync_fetch_and_add(&best_wkr->jobs_pending, 1);
 
-  __sync_lock_release(&srvr->rx_lock);
+  // __sync_lock_release(&srvr->rx_lock);
 
   best_w->rx_ip = md.rx_ip;
   best_w->rx_port = md.rx_port;

@@ -20,6 +20,11 @@
 
 #define RPC_MAX_PAYLOAD (FAST_L3_PKT_ROOM - sizeof(struct rpc_pkt_inner))
 
+// Atomic read/write helpers for x86 host only
+#define READ_ONCE(ptr) (*(volatile typeof(ptr) *)&(ptr))
+#define WRITE_ONCE(ptr, val) (*(volatile typeof(ptr) *)&(ptr) = (val))
+#define COMPILER_BARRIER() __asm__ __volatile__("" ::: "memory")
+
 /* Add these functions as helpers */
 static void *(*ebpf_queue_tail)(struct equeue *q, __u64 elsize) = (void *)1001;
 static int (*queue_enqueue)(struct equeue *q, __u8 type) = (void *)1002;
@@ -190,8 +195,13 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       if (rx_base == NULL)
         return -1;
 
-      head = server->rx_head;
-      tail = server->rx_tail;
+      // head = server->rx_head;
+      // tail = server->rx_tail;
+      
+      head = READ_ONCE(server->rx_head);
+      COMPILER_BARRIER();
+      // modified only by the fast path, so relaxed is fine
+      tail = READ_ONCE(server->rx_tail);
 
       if (tail >= head)
         used_bytes = tail - head;
@@ -237,7 +247,9 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       tail += payload_len;
       if (tail >= server->rx_len)
         tail -= server->rx_len;
-      server->rx_tail = tail;
+      // server->rx_tail = tail;
+      COMPILER_BARRIER();
+      WRITE_ONCE(server->rx_tail, tail);
       return 0;
     }
 
