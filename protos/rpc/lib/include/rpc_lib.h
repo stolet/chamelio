@@ -15,6 +15,18 @@
 #define INVALID_ID -1
 #define SOCK_INACTIVE (-1U)
 
+enum rpc_req_class
+{
+  RPC_REQ_CLASS_SHORT = 1,
+  RPC_REQ_CLASS_LONG = 2,
+};
+
+enum worker_type
+{
+  WORKER_TYPE_SHORT = 1,
+  WORKER_TYPE_LONG = 2,
+};
+
 struct rpc_context_lib
 {
   /* ID for this context */
@@ -86,7 +98,7 @@ struct rpc_worker_lib
 
 /* RPC client that makes calls */
 struct rpc_client_lib
-{ 
+{
   // /* Type field (= Client) */
   // __u8 type;
   /* Context that created this client */
@@ -228,7 +240,7 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 /* Parses the response from a worker */
 int rpc_response(struct rpc_client_lib *c, void *buf, size_t len);
 
-/* Removes a pending job from the given worker. 
+/* Removes a pending job from the given worker.
 Information used by FP during LB of workers */
 int rpc_call_complete(struct rpc_worker_lib *w);
 
@@ -251,5 +263,10 @@ int rpc_call_complete_svc(struct rpc_worker_lib *w, __u8 service_id);
 /* Dispatch one pending request from the shared ring to the worker with fewest
  * jobs_pending. Call in a tight loop from the dispatcher thread. */
 int rpc_app_dispatch(struct rpc_server_lib *server);
+/* Set the service class for a given service ID */
+int rpc_set_service_class(struct rpc_server_lib *server,
+                          __u8 service_id, __u8 class);
+/* Classify a worker as serving short or long requests. */
+int rpc_set_worker_type(struct rpc_worker_lib *worker, __u8 worker_type);
 
 #endif

@@ -24,6 +24,11 @@
 #define INVALID_ID -1
 /* Maximum number of services */
 #define MAX_SERVICE_NUMBER 8
+/* Shared numeric values used by the application API and eBPF fast path. */
+#define RPC_REQ_CLASS_SHORT 1
+#define RPC_REQ_CLASS_LONG 2
+#define WORKER_TYPE_SHORT 1
+#define WORKER_TYPE_LONG 2
 /* Maximum number of ports to probe for an ephemeral bind in fast-path */
 #define RPC_PORT_SCAN_MAX 8
 /* Location where ebpf bytecode is located */
@@ -127,6 +132,8 @@ struct rpc_server
   __u32 rx_lock;
   /* LWL cost table: cost_units per service ID; set at startup, read by eBPF at dispatch */
   __u32 service_cost[MAX_SERVICE_NUMBER];
+  /* service classification: 1=short, 2=long */
+  __u8 service_class[MAX_SERVICE_NUMBER];
 };
 
 struct rpc_worker
@@ -143,6 +150,8 @@ struct rpc_worker
   __u32 jobs_pending;
   /* Total cost units of in-flight jobs; used by LWL routing */
   __u32 work_remaining;
+  /* type of requests handled by worker: 1 = short, 2 = long */
+  __u8 worker_type;
 
   /* Length of RX buffer */
   __u32 rx_len;
@@ -153,7 +162,6 @@ struct rpc_worker
   /* Head of RX buffer */
   __u32 rx_head;
 
-
   /* Length of TX buffer */
   __u32 tx_len;
   /* Pointer to start of TX buffer in shared memory */
@@ -162,7 +170,6 @@ struct rpc_worker
   __u32 tx_avail;
   /* Head of the TX buffer */
   __u32 tx_head;
-
 };
 
 struct rpc_cfg

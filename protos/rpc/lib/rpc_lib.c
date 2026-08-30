@@ -1549,6 +1549,49 @@ static void ring_read(void *dst, const __u8 *ring, __u32 pos,
   }
 }
 
+int rpc_set_service_class(struct rpc_server_lib *server,
+                           __u8 service_id, __u8 class)
+{
+  struct rpc_server *serv;
+
+  if (!server || !server->shm_server)
+  {
+    LOG_ERROR("null server in rpc_set_service_class");
+    return -1;
+  }
+
+  if (service_id >= MAX_SERVICE_NUMBER)
+    return -1;
+
+  serv = (struct rpc_server *)server->shm_server;
+  serv->service_class[service_id] = class;
+
+  return 0;
+}
+
+int rpc_set_worker_type(struct rpc_worker_lib *worker, __u8 worker_type)
+{
+  struct rpc_worker *shm_worker;
+
+  if (!worker || !worker->shm_worker)
+  {
+    LOG_ERROR("null worker in rpc_set_worker_type");
+    return -1;
+  }
+
+  if (worker_type != WORKER_TYPE_SHORT &&
+      worker_type != WORKER_TYPE_LONG)
+  {
+    LOG_ERROR("invalid worker type %u", worker_type);
+    return -1;
+  }
+
+  shm_worker = (struct rpc_worker *)worker->shm_worker;
+  shm_worker->worker_type = worker_type;
+
+  return 0;
+}
+
 static int handle_new_client_res(struct rpc_queue_entry *qe)
 {
   struct rpc_queue_new_client_res *res;

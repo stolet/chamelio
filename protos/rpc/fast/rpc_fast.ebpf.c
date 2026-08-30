@@ -38,8 +38,8 @@ static __u16 (*ebpf_ipv4_udptcp_cksum)(void *ip_hdr, void *udp_hdr) = (void *)10
 static struct cham_sched_entry *(*sched_head)(struct cham_scheduler *sched) = (void *)1007;
 static int (*sched_pop)(struct cham_scheduler *sched) = (void *)1008;
 static int (*sched_add)(struct cham_scheduler *sched, __u32 id, __u32 priority) = (void *)1009;
-static void * (*ebpf_map_get)(void *map_base, __u32 len) = (void *) 1010;
-static void * (*ebpf_map_lookup)(void *map_base, __u64 id, __u64 elsize) = (void *) 1011;
+static void *(*ebpf_map_get)(void *map_base, __u32 len) = (void *)1010;
+static void *(*ebpf_map_lookup)(void *map_base, __u64 id, __u64 elsize) = (void *)1011;
 
 static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx);
 static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx);
@@ -69,6 +69,8 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   struct rpc_queue_bump_app_rx *bump;
   struct rpc_client *client_map, *client;
   __u32 best_worker_id, fewest_jobs, worker_id;
+  __u32 idle_long_worker_id;
+  __u8 req_class, long_pool_idle;
   struct rpc_rx_meta meta;
 
   pkt = ctx->pkt;
@@ -87,8 +89,9 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   // ip = (struct ip_hdr *)(pkt + sizeof(struct eth_hdr));
 
-  ip = (struct ip_hdr *) ctx->pkt;
-  if (IPH_V(ip) != 4 || IPH_HL(ip) < 5) return -1;
+  ip = (struct ip_hdr *)ctx->pkt;
+  if (IPH_V(ip) != 4 || IPH_HL(ip) < 5)
+    return -1;
 
   if (ip->proto != IP_PROTO_UDP)
     return -1;
@@ -96,7 +99,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   if (f_beui16(ip->offset) & 0x3FFF)
     return -1; // fragmented packet dropped
 
-  ip_hdrs_len = (__u16) IPH_HL(ip) * 4;
+  ip_hdrs_len = (__u16)IPH_HL(ip) * 4;
   ip_total_len = f_beui16(ip->len);
 
   if (ip_total_len < ip_hdrs_len + (__u16)sizeof(struct udp_hdr))
@@ -111,7 +114,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   //   return -1;
 
   /* Parse UDP header */
-  if ((__u8 *)ip + ip_hdrs_len + sizeof(struct udp_hdr) > 
+  if ((__u8 *)ip + ip_hdrs_len + sizeof(struct udp_hdr) >
       (__u8 *)ctx->pkt_end)
     return -1;
 
@@ -138,7 +141,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   // Parse rpc header
   rpc_hdr = (struct rpc_hdr *)((__u8 *)udp + sizeof(struct udp_hdr));
-  if ((__u8 *)rpc_hdr + sizeof(struct rpc_hdr) > 
+  if ((__u8 *)rpc_hdr + sizeof(struct rpc_hdr) >
       (__u8 *)ctx->pkt_end)
     return -1;
 
@@ -157,7 +160,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   // port_entry = &port_map[f_beui16(udp->dst)];
   port_entry = ebpf_map_lookup(ctx->maps[PORT_MAP].addr,
-    f_beui16(udp->dst), sizeof(struct rpc_port_entry));
+                               f_beui16(udp->dst), sizeof(struct rpc_port_entry));
 
   if (port_entry == NULL)
     return -1;
@@ -169,7 +172,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       return -1;
 
     server = ebpf_map_lookup(ctx->maps[SERVER_MAP].addr,
-      port_entry->server_id, sizeof(struct rpc_server));
+                             port_entry->server_id, sizeof(struct rpc_server));
 
     if (server == NULL)
       return -1;
@@ -184,20 +187,21 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     if (service >= MAX_SERVICE_NUMBER || !server->service_table[service])
       return -1;
 
+    // app layer mode
     if (server->app_lb_mode)
     {
       /* write entry to server's shared RX ring. */
       __u32 entry_len = (__u32)sizeof(struct rpc_rx_meta) + payload_len;
-      
+
       // rx_base = (__u8 *)ctx->shm_base + server->rx_off;
       rx_base = ebpf_map_get(ctx->shm_base + server->rx_off,
-                server->rx_len);
+                             server->rx_len);
       if (rx_base == NULL)
         return -1;
 
       // head = server->rx_head;
       // tail = server->rx_tail;
-      
+
       head = READ_ONCE(server->rx_head);
       COMPILER_BARRIER();
       // modified only by the fast path, so relaxed is fine
@@ -213,9 +217,9 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       if (entry_len > free_bytes)
         return -1;
 
-      meta.rx_ip   = f_beui32(ip->src);
+      meta.rx_ip = f_beui32(ip->src);
       meta.rx_port = f_beui16(udp->src);
-      meta._pad    = 0;
+      meta._pad = 0;
 
       if (sizeof(meta) <= server->rx_len - tail)
       {
@@ -253,6 +257,8 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       return 0;
     }
 
+    // ebpf mode
+
     best_worker_id = (__u32)INVALID_ID;
 
     if (server->ebpf_lb_mode == 1)
@@ -265,7 +271,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
         __u32 idx;
         if (i >= server->n_workers)
           break;
-        //use subtraction arithmetic here 
+        // use subtraction arithmetic here
         idx = (rr_start + (__u32)i) % server->n_workers;
         if (idx >= MAX_WORKERS)
           continue;
@@ -274,10 +280,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
           continue;
 
         worker = ebpf_map_lookup(worker_map, worker_id,
-                sizeof(struct rpc_worker));
+                                 sizeof(struct rpc_worker));
         if (worker == NULL)
           continue;
-        
+
         free_bytes = worker->rx_len - worker->rx_avail;
         if (payload_len > free_bytes)
           continue;
@@ -291,7 +297,8 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       /* LWL: pick worker with least total remaining work (cost-weighted) */
       __u32 min_work = (__u32)-1;
       __u32 req_cost = (service < MAX_SERVICE_NUMBER)
-                       ? server->service_cost[service] : 1;
+                           ? server->service_cost[service]
+                           : 1;
 #pragma unroll
       for (i = 0; i < MAX_WORKERS; i++)
       {
@@ -300,11 +307,11 @@ int event_rx(struct cham_ebpf_ctx *ctx)
         worker_id = server->workers[i];
         if (worker_id == (__u32)INVALID_ID)
           continue;
-        
+
         // worker = &worker_map[worker_id];
-        
+
         worker = ebpf_map_lookup(worker_map, worker_id,
-                sizeof(struct rpc_worker));
+                                 sizeof(struct rpc_worker));
         if (worker == NULL)
           continue;
 
@@ -322,7 +329,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       if (best_worker_id != (__u32)INVALID_ID)
       {
         worker = ebpf_map_lookup(worker_map, best_worker_id,
-                    sizeof(struct rpc_worker));
+                                 sizeof(struct rpc_worker));
         if (worker == NULL)
           return -1;
         __sync_fetch_and_add(&worker->work_remaining, req_cost);
@@ -330,36 +337,108 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     }
     else
     {
-      /* eBPF JSQ: pick worker with fewest pending jobs */
+      req_class = server->service_class[service];
+      if (req_class != RPC_REQ_CLASS_SHORT &&
+          req_class != RPC_REQ_CLASS_LONG)
+        return -1;
+
       fewest_jobs = (__u32)-1;
-#pragma unroll
-      for (i = 0; i < MAX_WORKERS; i++)
+      /* Long requests are eligible only for long workers. */
+      if (req_class == RPC_REQ_CLASS_LONG)
       {
-        if (i >= server->n_workers)
-          break;
-
-        worker_id = server->workers[i];
-        if (worker_id == (__u32)INVALID_ID)
-          continue;
-
-        // worker = &worker_map[worker_id];
-
-        worker = ebpf_map_lookup(worker_map, worker_id,
-                sizeof(struct rpc_worker));
-
-        if (worker == NULL)
-          continue;
-
-        free_bytes = worker->rx_len - worker->rx_avail;
-        if (payload_len > free_bytes)
-          continue;
-
-        if (best_worker_id == (__u32)INVALID_ID ||
-            worker->jobs_pending < fewest_jobs)
+#pragma unroll
+        for (i = 0; i < MAX_WORKERS; i++)
         {
-          best_worker_id = worker_id;
-          fewest_jobs = worker->jobs_pending;
+          if (i >= server->n_workers)
+            break;
+
+          worker_id = server->workers[i];
+          if (worker_id == (__u32)INVALID_ID)
+            continue;
+
+          worker = ebpf_map_lookup(worker_map, worker_id,
+                                   sizeof(struct rpc_worker));
+          if (worker == NULL || worker->worker_type != WORKER_TYPE_LONG)
+            continue;
+
+          free_bytes = worker->rx_len - worker->rx_avail;
+          if (payload_len > free_bytes)
+            continue;
+
+          if (best_worker_id == (__u32)INVALID_ID ||
+              worker->jobs_pending < fewest_jobs)
+          {
+            best_worker_id = worker_id;
+            fewest_jobs = worker->jobs_pending;
+          }
         }
+      }
+      else
+      {
+        /* First run JSQ over the short-worker pool. */
+#pragma unroll
+        for (i = 0; i < MAX_WORKERS; i++)
+        {
+          if (i >= server->n_workers)
+            break;
+
+          worker_id = server->workers[i];
+          if (worker_id == (__u32)INVALID_ID)
+            continue;
+
+          worker = ebpf_map_lookup(worker_map, worker_id,
+                                   sizeof(struct rpc_worker));
+          if (worker == NULL || worker->worker_type != WORKER_TYPE_SHORT)
+            continue;
+
+          free_bytes = worker->rx_len - worker->rx_avail;
+          if (payload_len > free_bytes)
+            continue;
+
+          if (best_worker_id == (__u32)INVALID_ID ||
+              worker->jobs_pending < fewest_jobs)
+          {
+            best_worker_id = worker_id;
+            fewest_jobs = worker->jobs_pending;
+          }
+        }
+
+        //TODO: ask Mat if we should allow aggressive borrowing of long workers for short requests
+        /* A short request may borrow an idle long worker only when every
+         * long worker is idle. Prefer an idle short worker when available. */
+        long_pool_idle = 1;
+        idle_long_worker_id = (__u32)INVALID_ID;
+#pragma unroll
+        for (i = 0; i < MAX_WORKERS; i++)
+        {
+          if (i >= server->n_workers)
+            break;
+
+          worker_id = server->workers[i];
+          if (worker_id == (__u32)INVALID_ID)
+            continue;
+
+          worker = ebpf_map_lookup(worker_map, worker_id,
+                                   sizeof(struct rpc_worker));
+          if (worker == NULL || worker->worker_type != WORKER_TYPE_LONG)
+            continue;
+
+          if (worker->jobs_pending != 0)
+          {
+            long_pool_idle = 0;
+            continue;
+          }
+
+          free_bytes = worker->rx_len - worker->rx_avail;
+          if (idle_long_worker_id == (__u32)INVALID_ID &&
+              payload_len <= free_bytes)
+            idle_long_worker_id = worker_id;
+        }
+
+        if (long_pool_idle &&
+            idle_long_worker_id != (__u32)INVALID_ID &&
+            (best_worker_id == (__u32)INVALID_ID || fewest_jobs > 0))
+          best_worker_id = idle_long_worker_id;
       }
     }
 
@@ -369,7 +448,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     // worker = &worker_map[best_worker_id];
 
     worker = ebpf_map_lookup(worker_map, best_worker_id,
-                sizeof(struct rpc_worker));
+                             sizeof(struct rpc_worker));
     if (worker == NULL)
       return -1;
 
@@ -377,10 +456,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
     // rx_base = (__u8 *)ctx->shm_base + worker->rx_off;
 
     rx_base = ebpf_map_get(ctx->shm_base + worker->rx_off,
-                worker->rx_len);
+                           worker->rx_len);
     if (rx_base == NULL)
       return -1;
-    
+
     free_bytes = worker->rx_len - worker->rx_avail;
 
     if (payload_len > free_bytes)
@@ -424,16 +503,16 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       return -1;
 
     client = ebpf_map_lookup(ctx->maps[CLIENT_MAP].addr,
-      port_entry->client_id, sizeof(struct rpc_client));
+                             port_entry->client_id, sizeof(struct rpc_client));
     if (client == NULL)
       return -1;
 
     // rx_base = (__u8 *)ctx->shm_base + client->rx_off;
     rx_base = ebpf_map_get(ctx->shm_base + client->rx_off,
-                client->rx_len);
+                           client->rx_len);
     if (rx_base == NULL)
       return -1;
-    
+
     free_bytes = client->rx_len - client->rx_avail;
 
     if (payload_len > free_bytes)
@@ -473,7 +552,6 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 
   return 0;
 }
-
 
 SEC("chamelio/event_sched")
 int event_sched(struct cham_ebpf_ctx *ctx)
@@ -519,7 +597,7 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
     if (bump->sock_id >= MAX_WORKERS)
       return -1;
     struct rpc_worker *worker = ebpf_map_lookup(worker_map, bump->sock_id,
-        sizeof(struct rpc_worker));
+                                                sizeof(struct rpc_worker));
     if (worker == NULL)
       return -1;
 
@@ -536,7 +614,7 @@ static __always_inline int handle_bump_rx(struct cham_ebpf_ctx *ctx)
     if (bump->sock_id >= MAX_CLIENTS)
       return -1;
     struct rpc_client *client = ebpf_map_lookup(client_map, bump->sock_id,
-        sizeof(struct rpc_client));
+                                                sizeof(struct rpc_client));
     if (client == NULL)
       return -1;
 
@@ -622,15 +700,15 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   /* Calculate number of bytes to transmit */
   payload_len = bump_cham->tx_avail;
-  max_payload = (__u32) ((__u8 *) ctx->pkt_end - 
-      ((__u8 *)p + sizeof(struct rpc_pkt_inner)));
+  max_payload = (__u32)((__u8 *)ctx->pkt_end -
+                        ((__u8 *)p + sizeof(struct rpc_pkt_inner)));
   if (max_payload > RPC_MAX_PAYLOAD)
     payload_len = RPC_MAX_PAYLOAD;
   if (payload_len > max_payload)
     payload_len = max_payload;
 
   /* Drop if payload len out of bounds */
-  if ((__u8 *)p + sizeof(struct rpc_pkt_inner) + payload_len > 
+  if ((__u8 *)p + sizeof(struct rpc_pkt_inner) + payload_len >
       (__u8 *)ctx->pkt_end)
     return -1;
 
@@ -644,7 +722,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
 
   // set hdrs
   // p->eth.type = t_beui16(ETH_TYPE_IP);
-  //set ip hdr
+  // set ip hdr
   IPH_VHL_SET(&p->ip, 4, 5);
   p->ip._tos = 0;
   p->ip.len = t_beui16(sizeof(struct ip_hdr) + sizeof(struct udp_hdr) + payload_len);
@@ -656,7 +734,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
   p->ip.dst = t_beui32(bump_cham->tx_ip);
   p->ip.chksum = 0;
 
-  //set udp hdr
+  // set udp hdr
   p->udp.dst = t_beui16(bump_cham->tx_port);
   p->udp.len = t_beui16(udp_hdr_len + payload_len);
 
@@ -671,7 +749,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     if (bump_cham->sock_id >= MAX_CLIENTS)
       return -1;
     client = ebpf_map_lookup(client_map, bump_cham->sock_id,
-        sizeof(struct rpc_client));
+                             sizeof(struct rpc_client));
     if (client == NULL)
       return -1;
 
@@ -682,7 +760,7 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
       if (free_port == 0)
         return -1;
       ports = ebpf_map_lookup(ctx->maps[PORT_MAP].addr, free_port,
-          sizeof(struct rpc_port_entry));
+                              sizeof(struct rpc_port_entry));
       if (ports == NULL)
         return -1;
       ports->client_id = client->id;
@@ -707,14 +785,14 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     if (bump_cham->sock_id >= MAX_WORKERS)
       return -1;
     worker = ebpf_map_lookup(worker_map, bump_cham->sock_id,
-        sizeof(struct rpc_worker));
+                             sizeof(struct rpc_worker));
     if (worker == NULL)
       return -1;
 
     // find the server of the worker to find the local port/ip
     server_map = ctx->maps[SERVER_MAP].addr;
     server = ebpf_map_lookup(server_map, worker->server_id,
-        sizeof(struct rpc_server));
+                             sizeof(struct rpc_server));
     if (server == NULL)
       return -1;
 
@@ -753,7 +831,8 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     if (bump_cham->sock_id >= MAX_CLIENTS)
       return -1;
     client = ebpf_map_lookup(ctx->maps[CLIENT_MAP].addr,
-        bump_cham->sock_id, sizeof(struct rpc_client));
+                             bump_cham->sock_id,
+                             sizeof(struct rpc_client));
     if (client == NULL)
       return -1;
 
@@ -765,7 +844,8 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     if (bump_cham->sock_id >= MAX_WORKERS)
       return -1;
     worker = ebpf_map_lookup(ctx->maps[WORKERS_MAP].addr,
-        bump_cham->sock_id, sizeof(struct rpc_worker));
+                             bump_cham->sock_id,
+                             sizeof(struct rpc_worker));
     if (worker == NULL)
       return -1;
 
@@ -778,8 +858,8 @@ static __always_inline int handle_bump_tx(struct cham_ebpf_ctx *ctx)
     return -1;
   q = &ctx->equeues[app_bump_qid].eq;
 
-  qe = (struct rpc_queue_bump_entry *)ebpf_queue_tail(q,
-      sizeof(struct rpc_queue_bump_entry));
+  qe = (struct rpc_queue_bump_entry *)ebpf_queue_tail(
+      q, sizeof(struct rpc_queue_bump_entry));
   if (qe == NULL)
     return -1;
 
