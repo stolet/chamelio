@@ -1379,9 +1379,13 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
   struct rpc_server *srvr;
   struct rpc_worker_lib *best_w;
   struct rpc_worker *best_wkr;
+  struct rpc_worker_lib *idle_long_w;
+  struct rpc_worker *idle_long_wkr;
   __u8 *shbuf;
+  __u8 req_class;
   __u32 meta_sz, curr_head, tail, avail, entry_len, hdr_pos, dst_pos;
   __u32 min_pending, i;
+  int long_pool_idle;
   struct rpc_rx_meta md;
   struct rpc_hdr hdr = {0};
 
@@ -1449,29 +1453,116 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
 
   entry_len = meta_sz + hdr.len.x;
 
-  /* JSQ: pick worker with fewest jobs_pending that has enough rx_buf space */
+  if (hdr.service.x >= MAX_SERVICE_NUMBER)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  req_class = srvr->service_class[hdr.service.x];
+  if (req_class != RPC_REQ_CLASS_SHORT &&
+      req_class != RPC_REQ_CLASS_LONG)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  /* Class-aware JSQ with the same asymmetric borrowing policy as Chamelio. */
   best_w = NULL;
   best_wkr = NULL;
   min_pending = (__u32)-1;
-  for (i = 0; i < server->nworkers; i++)
+
+  if (req_class == RPC_REQ_CLASS_LONG)
   {
-    struct rpc_worker_lib *w = &server->workers[i];
-    struct rpc_worker *wkr;
-    __u32 space, pending;
-
-    // if (!w->shm_worker)
-    //   continue;
-    wkr = (struct rpc_worker *)w->shm_worker;
-    space = w->rx_len - __atomic_load_n(&w->rx_avail, __ATOMIC_ACQUIRE);
-    if (hdr.len.x > space)
-      continue;
-
-    pending = wkr->jobs_pending;
-    if (pending < min_pending)
+    /* Long requests are eligible only for long workers. */
+    for (i = 0; i < server->nworkers; i++)
     {
-      min_pending = pending;
-      best_w = w;
-      best_wkr = wkr;
+      struct rpc_worker_lib *w = &server->workers[i];
+      struct rpc_worker *wkr = (struct rpc_worker *)w->shm_worker;
+      __u32 space, pending;
+
+      if (!wkr || wkr->worker_type != WORKER_TYPE_LONG)
+        continue;
+
+      // this cannot be a simple read since the dispatcher may be writing to rx_avail/jobs_pending concurrently
+      space = w->rx_len -
+              __atomic_load_n(&w->rx_avail, __ATOMIC_ACQUIRE);
+      if (hdr.len.x > space)
+        continue;
+
+      pending = __atomic_load_n(&wkr->jobs_pending, __ATOMIC_RELAXED);
+      if (pending < min_pending)
+      {
+        min_pending = pending;
+        best_w = w;
+        best_wkr = wkr;
+      }
+    }
+  }
+  else
+  {
+    /* First run JSQ over the short-worker pool. */
+    for (i = 0; i < server->nworkers; i++)
+    {
+      struct rpc_worker_lib *w = &server->workers[i];
+      struct rpc_worker *wkr = (struct rpc_worker *)w->shm_worker;
+      __u32 space, pending;
+
+      if (!wkr || wkr->worker_type != WORKER_TYPE_SHORT)
+        continue;
+
+      space = w->rx_len -
+              __atomic_load_n(&w->rx_avail, __ATOMIC_ACQUIRE);
+      if (hdr.len.x > space)
+        continue;
+
+      pending = __atomic_load_n(&wkr->jobs_pending, __ATOMIC_RELAXED);
+      if (pending < min_pending)
+      {
+        min_pending = pending;
+        best_w = w;
+        best_wkr = wkr;
+      }
+    }
+
+    /* Borrow one idle long worker only when the entire long pool is idle.
+     * An idle short worker still takes priority. */
+    long_pool_idle = 1;
+    idle_long_w = NULL;
+    idle_long_wkr = NULL;
+    for (i = 0; i < server->nworkers; i++)
+    {
+      struct rpc_worker_lib *w = &server->workers[i];
+      struct rpc_worker *wkr = (struct rpc_worker *)w->shm_worker;
+      __u32 space, pending;
+
+      if (!wkr || wkr->worker_type != WORKER_TYPE_LONG)
+        continue;
+
+      /* this cannot be a simple read since the dispatcher may be 
+       * writing to rx_avail/jobs_pending concurrently */
+       
+      pending = __atomic_load_n(&wkr->jobs_pending, __ATOMIC_RELAXED);
+      if (pending != 0)
+      {
+        long_pool_idle = 0;
+        continue;
+      }
+
+      space = w->rx_len -
+              __atomic_load_n(&w->rx_avail, __ATOMIC_ACQUIRE);
+      if (!idle_long_w && hdr.len.x <= space)
+      {
+        idle_long_w = w;
+        idle_long_wkr = wkr;
+      }
+    }
+
+    if (long_pool_idle && idle_long_w &&
+        (!best_w || min_pending > 0))
+    {
+      best_w = idle_long_w;
+      best_wkr = idle_long_wkr;
     }
   }
 
