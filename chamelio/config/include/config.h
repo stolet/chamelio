@@ -42,8 +42,12 @@ struct configuration {
   __u32 fp_jit_combined;
   /* Select eBPF or handwritten fast-path mode */
   __u32 fp_proto_mode;
-  /* Max number of fast-path cores */
+  /* Max number of fast path cores */
   __u32 fp_cores_max;
+  /* Enables power management on the fast path */
+  __u32 fp_pwr_mgmt;
+  /* Set frequency of fast path core to this value */
+  __u32 fp_pwr_lvl;
   
   /*** Performance isolation configurations ***/
   /* Enable performance isolation */

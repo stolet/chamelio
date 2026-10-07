@@ -6,6 +6,7 @@
 #include <pthread.h>
 
 #include <rte_malloc.h>
+#include <rte_power.h>
 
 #include "chamelio.h"
 #include "config.h"
@@ -298,7 +299,7 @@ static int fast_thread(void *arg)
     f_ctx->gid_table = NULL;
   }
 
-  /* initialize data plane context */
+  /* Initialize data plane context */
   ret = fast_context_init(f_ctx, &cham_ctx.nic_ctx, id,
       cham_ctx.fast_ctl_handles[id], cham_ctx.ctl_fast_handles[id],
       cham_ctx.ctxq_handles[id], &cham_ctx.config, 
@@ -307,6 +308,16 @@ static int fast_thread(void *arg)
   {
     LOG_ERROR("failed to initialize fast path context");
     goto error_alloc;
+  }
+
+  if (cham_ctx.config.fp_pwr_mgmt)
+  {
+    ret = fast_pwr_mgmt_init(f_ctx);
+    if (ret < 0)
+    {
+      LOG_ERROR("failed to initialize DPDK power management");
+      goto error_alloc;
+    }
   }
 
   fast_loop(f_ctx);
