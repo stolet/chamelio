@@ -18,6 +18,7 @@
 #include "fast_queues.h"
 #include "clock.h"
 
+#define MAX_FREQS 32
 
 static int loop_fast_default(struct fast_context *ctx);
 static int loop_fast_comb(struct fast_context *ctx);
@@ -48,6 +49,8 @@ int fast_context_init(struct fast_context *f_ctx,
   f_ctx->shm_base_internal= shm_base_internal;
   nic_fast_init(nic_ctx, &f_ctx->nic_ctx, thread_id, config);
   stats_init(f_ctx);
+
+  /* Initialize power management */
 
   /* Initialize ARP table with default values */
   arp_table_init(&f_ctx->arp_table);
@@ -103,6 +106,47 @@ int fast_context_init(struct fast_context *f_ctx,
   }
   f_ctx->tx_cache_n = TX_CACHE_SIZE;
   f_ctx->tx_cache_head = 0;
+
+  return 0;
+}
+
+int fast_pwr_mgmt_init(struct fast_context *ctx)
+{
+  int i, n, ret; 
+  __u32 freqs[MAX_FREQS];
+  /* Initialize power management */
+  if (rte_power_init(ctx->id) < 0)
+  {
+    LOG_ERROR("failed to initialize dpdk power management");
+    return -1;
+  }
+
+  /* Set CPU frequency level */
+  n = rte_power_freqs(ctx->id, freqs, MAX_FREQS);
+  if (n <= 0)
+  {
+    LOG_ERROR("failed to get CPU frequency levels from power manager");
+    return -1;
+  }
+
+  LOG_INFO_PLAIN("Available Frequencies:");
+  for (i = 0; i < n; i++)
+  {
+    LOG_INFO_PLAIN("%u", freqs[i]);
+  }
+
+  if (ctx->config.fp_pwr_lvl >= n)
+  {
+    LOG_ERROR("frequency level=%u unsupported", ctx->config.fp_pwr_lvl);
+    return -1;
+  }
+
+  ret = rte_power_set_freq(ctx->id, ctx->config.fp_pwr_lvl);
+  if (ret < 0)
+  {
+    LOG_ERROR("failed to set CPU frequency level");
+    return -1;
+  }
 
   return 0;
 }

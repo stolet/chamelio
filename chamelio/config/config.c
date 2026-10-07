@@ -29,6 +29,8 @@ enum cfg_params {
   CP_FP_NO_XSUMOFFLOAD,
   CP_FP_JITCOMB,
   CP_FP_PROTO,
+  CP_FP_PWR_MGMT,
+  CP_FP_PWR_LVL,
   CP_PERF_ISO,
   CP_PERF_ISO_CAP,
   CP_PERF_ISO_MAX_INS,
@@ -89,6 +91,12 @@ static struct option opts[] = {
   { .name = "fp-proto",
     .has_arg = required_argument,
     .val = CP_FP_PROTO },
+  { .name = "fp-pwr-mgmt",
+    .has_arg = no_argument,
+    .val = CP_FP_PWR_MGMT },
+  { .name = "fp-pwr-lvl",
+    .has_arg = required_argument,
+    .val = CP_FP_PWR_LVL },
   { .name = "perf-iso",
     .has_arg = no_argument,
     .val = CP_PERF_ISO },
@@ -240,6 +248,15 @@ int config_parse(struct configuration *c, int argc, char **argv)
           goto failed;
         }
         break;
+      case CP_FP_PWR_MGMT:
+        c->fp_pwr_mgmt = 1;
+        break;
+      case CP_FP_PWR_LVL:
+        if (parse_int32(optarg, &c->fp_pwr_lvl) != 0) {
+          LOG_ERROR("fp power level parsing failed");
+          goto failed;
+        }
+        break;
       case CP_PERF_ISO:
         c->perf_iso = 1;
         break;
@@ -312,6 +329,8 @@ static int config_defaults(struct configuration *c, char *progname)
   c->fp_xsumoffloads = 1;
   c->fp_jit_combined = 0;
   c->fp_proto_mode = FP_PROTO_EBPF;
+  c->fp_pwr_mgmt = 0;
+  c->fp_pwr_lvl = 0;
   c->perf_iso = 0;
   c->perf_iso_cap = 1000;
   c->perf_iso_max_ins = UINT_MAX;
@@ -364,6 +383,10 @@ static void print_usage(struct configuration *c, char *progname)
           "[default: disabled]\n"
       "  --fp-proto=ebpf|hand                    Select fast-path protocol mode"
           "[default: ebpf]\n"
+      "  --fp-pwr-mgmt                           Enable power management"
+          "[default: disabled]\n"
+      "  --fp-pwr-lvl                            Sets fast path core power level; needs power mgmt enabled"
+          "[default: %u]\n"
       "Performance isolation:\n"
       "  --perf-iso                              Enable performance isolation"
           "[default: disabled]\n"
@@ -391,7 +414,7 @@ static void print_usage(struct configuration *c, char *progname)
       c->shm_len, c->shm_internal_len,
       c->cham_queue_len, c->agt_queue_len, c->control_txq_len,
       c->control_txq_pkt_len,
-      c->fp_cores_max,
+      c->fp_cores_max, c->fp_pwr_lvl,
       c->perf_iso_cap, c->perf_iso_max_ins, c->perf_iso_boost, c->virt_path);
 }
 
