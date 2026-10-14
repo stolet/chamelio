@@ -21,7 +21,12 @@
 static inline int poll_fast(struct control_context *ctx);
 static inline int poll_guests(struct control_context *ctx);
 static inline int poll_timeouts(struct control_context *ctx);
-static inline void log_fast_batch_stats(struct control_context *ctx);
+static inline void log_stats(struct control_context *ctx);
+static void log_core_stats(struct control_context *ctx, __u16 core,
+    const struct fast_stats *cur, struct fast_stats *prev, __u64 budg_nr);
+#if CHAM_CTL_BUDGET_STATS
+static __u64 log_budget_stats(struct control_context *ctx);
+#endif
 
 int control_context_init(struct control_context *ctl_ctx, 
     struct nic_context *nic_ctx, struct configuration *config, 
@@ -208,32 +213,16 @@ int control_loop(struct control_context *ctx)
     poll_guests(ctx);
     poll_timeouts(ctx);
     control_budget_refresh(ctx);
-    log_fast_batch_stats(ctx);
+    log_stats(ctx);
   }
 }
 
-static inline void log_fast_batch_stats(struct control_context *ctx)
+static inline void log_stats(struct control_context *ctx)
 {
   __u16 i;
   __u64 now_tsc;
-  __u64 rx_calls, rx_items;
-  __u64 queue_calls, queue_items;
-  __u64 sched_calls, sched_items;
-  double avg_rx_calls, avg_queue_calls, avg_sched_calls;
-#if CHAM_CTL_CYCLES_STATS
-  __u64 rx_cyc_pkt;
-  __u64 queue_cyc_pkt;
-  __u64 sched_cyc_pkt;
-#endif
-#if CHAM_CTL_BUDGET_STATS
-  __u8 gid;
   __u64 budg_nr;
-  __u64 avg_gap;
-  __u64 avg_core;
-  __u64 avg_guest;
-  struct ctl_budg_stats budg_cur;
-#endif
-  struct fast_context *f_ctx;
+  struct fast_context *fast_ctx;
   struct fast_stats cur;
   struct fast_stats *prev;
 
@@ -249,84 +238,97 @@ static inline void log_fast_batch_stats(struct control_context *ctx)
   ctx->fast_stats_tsc = now_tsc;
 
 #if CHAM_CTL_BUDGET_STATS
-  budg_nr = 0;
-  if (ctx->config->perf_iso)
-  {
-    budg_cur = ctx->budg_stats;
-    budg_nr = budg_cur.nr - ctx->budg_last.nr;
-    avg_gap = budg_nr == 0 ? 0 : (budg_cur.cyc - ctx->budg_last.cyc) / budg_nr;
-    LOG_INFO_PLAIN("budg-refr  period=%llu n=%llu",
-        avg_gap, budg_nr);
-    ctx->budg_last = budg_cur;
-  }
+  budg_nr = log_budget_stats(ctx);
 #endif
 
   for (i = 0; i < ctx->config->fp_cores_max; i++)
   {
-    f_ctx = ctx->f_ctxs[i];
-    if (f_ctx == NULL)
+    fast_ctx = ctx->f_ctxs[i];
+    if (fast_ctx == NULL)
       continue;
 
-    if (fast_stats_snapshot(f_ctx, &cur) != 0)
+    if (fast_stats_snapshot(fast_ctx, &cur) != 0)
       continue;
     prev = &ctx->fast_batch_last[i];
 
-    rx_calls = cur.rx_calls - prev->rx_calls;
-    rx_items = cur.rx_items - prev->rx_items;
-    avg_rx_calls = rx_calls == 0 ? 0.0 :
-        (double) rx_items / rx_calls;
+    log_core_stats(ctx, i, &cur, prev, budg_nr);
+  }
+}
 
-    queue_calls = cur.queue_calls - prev->queue_calls;
-    queue_items = cur.queue_items - prev->queue_items;
-    avg_queue_calls = queue_calls == 0 ? 0.0 :
-        (double) queue_items / queue_calls;
+#if CHAM_CTL_BUDGET_STATS
+static __u64 log_budget_stats(struct control_context *ctx)
+{
+  struct ctl_budg_stats current;
+  __u64 count;
+  __u64 avg_gap;
 
-    sched_calls = cur.sched_calls - prev->sched_calls;
-    sched_items = cur.sched_items - prev->sched_items;
-    avg_sched_calls = sched_calls == 0 ? 0.0 :
-        (double) sched_items / sched_calls;
+  if (!ctx->config->perf_iso)
+    return 0;
 
-    LOG_INFO_PLAIN("batch      core=%u rx=%.2f queues=%.2f sched=%.2f",
-        i, avg_rx_calls, avg_queue_calls, avg_sched_calls);
+  current = ctx->budg_stats;
+  count = current.nr - ctx->budg_last.nr;
+  avg_gap = count == 0 ? 0 : (current.cyc - ctx->budg_last.cyc) / count;
+  LOG_INFO_PLAIN("budg-refr  period=%llu n=%llu", avg_gap, count);
+  ctx->budg_last = current;
+  return count;
+}
+#endif
+
+static void log_core_stats(struct control_context *ctx, __u16 core,
+    const struct fast_stats *cur, struct fast_stats *prev, __u64 budg_nr)
+{
+  __u64 rx_calls, rx_items;
+  __u64 queue_calls, queue_items;
+  __u64 sched_calls, sched_items;
+  double avg_rx_calls, avg_queue_calls, avg_sched_calls;
+
+  rx_calls = cur->rx_calls - prev->rx_calls;
+  rx_items = cur->rx_items - prev->rx_items;
+  avg_rx_calls = rx_calls == 0 ? 0.0 : (double) rx_items / rx_calls;
+
+  queue_calls = cur->queue_calls - prev->queue_calls;
+  queue_items = cur->queue_items - prev->queue_items;
+  avg_queue_calls = queue_calls == 0 ? 0.0 : (double) queue_items / queue_calls;
+
+  sched_calls = cur->sched_calls - prev->sched_calls;
+  sched_items = cur->sched_items - prev->sched_items;
+  avg_sched_calls = sched_calls == 0 ? 0.0 : (double) sched_items / sched_calls;
+
+  LOG_INFO_PLAIN("batch      core=%u rx=%.2f queues=%.2f sched=%.2f",
+      core, avg_rx_calls, avg_queue_calls, avg_sched_calls);
 
 #if CHAM_CTL_CYCLES_STATS
-    rx_cyc_pkt = rx_items == 0 ? 0 :
-        (cur.rx_cyc - prev->rx_cyc) / rx_items;
-    queue_cyc_pkt = queue_items == 0 ? 0 :
-        (cur.queue_cyc - prev->queue_cyc) / queue_items;
-    sched_cyc_pkt = sched_items == 0 ? 0 :
-        (cur.sched_cyc - prev->sched_cyc) / sched_items;
+  {
+    __u64 rx_cyc_pkt = rx_items == 0 ? 0 :
+        (cur->rx_cyc - prev->rx_cyc) / rx_items;
+    __u64 queue_cyc_pkt = queue_items == 0 ? 0 :
+        (cur->queue_cyc - prev->queue_cyc) / queue_items;
+    __u64 sched_cyc_pkt = sched_items == 0 ? 0 :
+        (cur->sched_cyc - prev->sched_cyc) / sched_items;
     LOG_INFO_PLAIN("cyc-pkt    core=%u rx=%llu queues=%llu sched=%llu",
-        i, rx_cyc_pkt, queue_cyc_pkt, sched_cyc_pkt);
+        core, rx_cyc_pkt, queue_cyc_pkt, sched_cyc_pkt);
+  }
 #endif
 
 #if CHAM_CTL_BUDGET_STATS
-    if (ctx->config->perf_iso)
-    {
-      avg_core = 0;
-      if (budg_nr != 0)
-      {
-        avg_core = (cur.budg_cyc - prev->budg_cyc) / budg_nr;
-      }
-      LOG_INFO_PLAIN("budg-core  core=%u avg-spent=%llu",
-          i, avg_core);
+  if (ctx->config->perf_iso)
+  {
+    __u8 gid;
+    __u64 avg_core = budg_nr == 0 ? 0 :
+        (cur->budg_cyc - prev->budg_cyc) / budg_nr;
+    LOG_INFO_PLAIN("budg-core  core=%u avg-spent=%llu", core, avg_core);
 
-      for (gid = 0; gid < ctx->n_guests; gid++)
-      {
-        avg_guest = 0;
-        if (budg_nr != 0)
-        {
-          avg_guest = (cur.guest_budg_cyc[gid] - prev->guest_budg_cyc[gid])
-              / budg_nr;
-        }
-        LOG_INFO_PLAIN("budg-guest core=%u gid=%u avg-spent=%llu",
-            i, gid, avg_guest);
-      }
+    for (gid = 0; gid < ctx->n_guests; gid++)
+    {
+      __u64 avg_guest = budg_nr == 0 ? 0 :
+          (cur->guest_budg_cyc[gid] - prev->guest_budg_cyc[gid]) / budg_nr;
+      LOG_INFO_PLAIN("budg-guest core=%u gid=%u avg-spent=%llu",
+          core, gid, avg_guest);
     }
+  }
 #endif
 
-    *prev = cur;
-  }
+  *prev = *cur;
 }
 
 /* Polls for messages from fast-path */
