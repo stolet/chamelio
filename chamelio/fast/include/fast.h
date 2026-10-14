@@ -158,6 +158,8 @@ int fast_context_init(struct fast_context *f_ctx,
     struct shm_handle *fc_handle, struct shm_handle *cf_handle,
     struct shm_handle *ctxq_handle, struct configuration *config, 
     int shm_fd_internal, void *shm_base_internal);
+/* Initializes DPDK power library and sets cores to specific frequency */
+int fast_pwr_mgmt_init(struct fast_context *ctx);
 /* Dataplane loop in a fast-path core */
 int fast_loop(struct fast_context *ctx);
 /* Cleans up the fast-path */

@@ -3,6 +3,7 @@
 #include <sys/mman.h>
 
 #include <rte_malloc.h>
+#include <rte_power_cpufreq.h>
 
 #include "fast_stats.h"
 #include "nic.h"
@@ -135,19 +136,21 @@ int fast_pwr_mgmt_init(struct fast_context *ctx)
     LOG_INFO_PLAIN("%u", freqs[i]);
   }
 
-  if (ctx->config.fp_pwr_lvl >= n)
+  if (ctx->config->fp_pwr_lvl >= n)
   {
-    LOG_ERROR("frequency level=%u unsupported", ctx->config.fp_pwr_lvl);
+    LOG_ERROR("frequency level=%u unsupported", ctx->config->fp_pwr_lvl);
     return -1;
   }
 
-  ret = rte_power_set_freq(ctx->id, ctx->config.fp_pwr_lvl);
+  ret = rte_power_set_freq(ctx->id, ctx->config->fp_pwr_lvl);
   if (ret < 0)
   {
-    LOG_ERROR("failed to set CPU frequency level");
+    LOG_ERROR("failed to set CPU frequency level core=%d pwr_lvl=%d", 
+        ctx->id, ctx->config->fp_pwr_lvl);
     return -1;
   }
 
+  LOG_INFO_PLAIN("core=%d freq=%d", ctx->id, freqs[ctx->config->fp_pwr_lvl]);
   return 0;
 }
 

@@ -6,7 +6,6 @@
 #include <pthread.h>
 
 #include <rte_malloc.h>
-#include <rte_power.h>
 
 #include "chamelio.h"
 #include "config.h"
