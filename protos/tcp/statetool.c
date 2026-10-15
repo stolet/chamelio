@@ -129,8 +129,8 @@ int main(int argc, char **argv)
 
   printf("tcp_slow pid=%u ctx=0x%" PRIx64 " n_socks=%u n_apps=%u\n",
       state.pid, (uint64_t) state.ctx_addr, ctx.n_socks, ctx.n_apps);
-  printf("proto shm_base=%p shm_size=%u local_ip=%s n_fp_cores=%u\n",
-      proto.shm_base, proto.shm_size,
+  printf("proto shm_base=%p shm_size=%" PRIu64 " local_ip=%s n_fp_cores=%u\n",
+      proto.shm_base, (uint64_t) proto.shm_size,
       ip_str(proto.local_ip, (char[INET_ADDRSTRLEN]){0}, INET_ADDRSTRLEN),
       proto.n_fp_cores);
   printf("maps socks id=%u nr=%u elsize=%u off=%" PRIu64

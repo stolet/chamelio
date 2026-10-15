@@ -68,7 +68,7 @@ struct proto_lib {
   /* Shared memory file descriptor */
   int shm_fd;
   /* Size of shared memory region */
-  __u32 shm_size;
+  __u64 shm_size;
   /* Base pointer for shared memory region used by this guest */
   void *shm_base;
   /* Shared memory offset used in mmap */
