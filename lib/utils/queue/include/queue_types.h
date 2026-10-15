@@ -105,7 +105,7 @@ struct queue_new_proto_res {
   /* Local IP address */
   __u32 local_ip;
   /* Size of shm region */
-  __u32 shm_len;
+  __u64 shm_len;
 } __attribute__((packed));
 
 /* Request to create queues for the protocol */

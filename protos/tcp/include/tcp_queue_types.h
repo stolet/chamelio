@@ -104,7 +104,7 @@ struct tcp_queue_new_actx_res {
   /* Number of fast-path cores */
   __u32 n_fp_cores;
   /* Size of shm region */
-  __u32 shm_len;
+  __u64 shm_len;
   /* Offset of shm region */
   __u64 shm_off;
   /* Number of elements app->slow queue */
