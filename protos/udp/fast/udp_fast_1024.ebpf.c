@@ -495,11 +495,11 @@ static __always_inline struct udp_sock *udp_sock_find(struct cham_ebpf_ctx *ctx,
     return NULL;
 
   nsocks = port->nsocks;
-  if (nsocks == 0)
+  if (nsocks == 0 || nsocks > MAX_REUSOCK_PORT)
     return NULL;
 
-  idx = port->next_sock[core];
-  if (idx >= MAX_REUSOCK_PORT)
+  idx = nsocks == 1 ? 0 : port->next_sock[core];
+  if (idx >= nsocks || idx >= MAX_REUSOCK_PORT)
     return NULL;
 
   sock_id = port->sids[idx];
