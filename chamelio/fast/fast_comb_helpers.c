@@ -251,123 +251,76 @@ static inline __u64 comb_rate_delay_tsc(__u32 bytes, __u32 rate_kbps)
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_QUEUE_TAIL, ext_queue_tail)
 {
-  (void) arg3;
-  (void) arg4;
-  (void) arg5;
   return (uintptr_t) comb_queue_tail((struct equeue *)(uintptr_t) arg1);
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_QUEUE_ENQUEUE, ext_queue_enqueue)
 {
-  (void) arg3;
-  (void) arg4;
-  (void) arg5;
   return (__u64) comb_queue_enqueue((struct equeue *)(uintptr_t) arg1,
       (__u8) arg2);
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_MEMCPY, ext_memcpy)
 {
-  (void) arg4;
-  (void) arg5;
   return (uintptr_t) memcpy((void *)(uintptr_t) arg1,
       (const void *)(uintptr_t) arg2, (size_t) arg3);
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_SCHED_HEAD, ext_sched_head)
 {
-  (void) arg2;
-  (void) arg3;
-  (void) arg4;
-  (void) arg5;
   return (uintptr_t) comb_sched_head(
       (struct cham_scheduler *)(uintptr_t) arg1);
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_SCHED_POP, ext_sched_pop)
 {
-  (void) arg2;
-  (void) arg3;
-  (void) arg4;
-  (void) arg5;
   return (__u64) comb_sched_pop((struct cham_scheduler *)(uintptr_t) arg1);
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_SCHED_ADD, ext_sched_add)
 {
-  (void) arg5;
   return (__u64) comb_sched_add((struct cham_scheduler *)(uintptr_t) arg1,
       (__u32) arg2, (__u64) arg3, (__u32) arg4);
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_MAP_GET, ext_map_get)
 {
-  (void) arg2;
-  (void) arg3;
-  (void) arg4;
-  (void) arg5;
   return (uintptr_t) comb_map_get((void *)(uintptr_t) arg1);
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_MAP_LOOKUP, ext_map_lookup)
 {
-  (void) arg4;
-  (void) arg5;
   return (uintptr_t) comb_map_lookup((void *)(uintptr_t) arg1,
       (__u64) arg2, (__u64) arg3);
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_QUEUE_HEAD, ext_queue_head)
 {
-  (void) arg2;
-  (void) arg3;
-  (void) arg4;
-  (void) arg5;
   return (uintptr_t) comb_queue_head((struct dqueue *)(uintptr_t) arg1);
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_QUEUE_DEQUEUE, ext_queue_dequeue)
 {
-  (void) arg2;
-  (void) arg3;
-  (void) arg4;
-  (void) arg5;
   return (__u64) comb_queue_dequeue((struct dqueue *)(uintptr_t) arg1);
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_RDTSC, ext_rdtsc)
 {
-  (void) arg1;
-  (void) arg2;
-  (void) arg3;
-  (void) arg4;
-  (void) arg5;
   return comb_rdtsc();
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_NOW_US, ext_now_us)
 {
-  (void) arg1;
-  (void) arg2;
-  (void) arg3;
-  (void) arg4;
-  (void) arg5;
   return comb_now_us();
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_RATE_DELAY_TSC, ext_rate_delay_tsc)
 {
-  (void) arg3;
-  (void) arg4;
-  (void) arg5;
   return comb_rate_delay_tsc((__u32) arg1, (__u32) arg2);
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_SCHED_REMOVE, ext_sched_remove)
 {
-  (void) arg3;
-  (void) arg4;
-  (void) arg5;
   return (__u64) comb_sched_remove((struct cham_scheduler *)(uintptr_t) arg1,
       (__u32) arg2);
 }

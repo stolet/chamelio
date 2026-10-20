@@ -375,7 +375,6 @@ static int app_shutdown(struct tcp_slow_context *ctx,
   struct tcp_queue_shutdown_req *req;
   struct tcp_sock *sock;
 
-  (void) actx;
   req = &qe->data.shutdown_req;
   if (req->sock_id >= ctx->n_socks)
     return -1;
@@ -393,7 +392,6 @@ static int app_close(struct tcp_slow_context *ctx,
   struct tcp_queue_close_req *req;
   struct tcp_sock *sock;
 
-  (void) actx;
   req = &qe->data.close_req;
   if (req->sock_id >= ctx->n_socks)
     return -1;

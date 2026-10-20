@@ -1,5 +1,6 @@
 subdir('udp')
 subdir('tcp')
+subdir('homa')
 
 deps = [
   dependency('udp_dep'),

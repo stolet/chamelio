@@ -785,7 +785,6 @@ static inline __u16 ebpf_ipv4_udptcp_cksum(void *ip_hdr, void *udp_hdr)
 
 static inline void *ebpf_map_get(void *map_base, __u32 len)
 {
-  (void)len;
   return map_base;
 }
 
@@ -833,18 +832,15 @@ static inline void ebpf_spin_unlock(volatile __u32 *sl)
 static inline struct cham_sched_entry *ebpf_sched_head(
     struct cham_scheduler *sched, __u64 elsize)
 {
-  (void) elsize;
   return sched_head(sched);
 }
 
 static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize)
 {
-  (void) elsize;
   return queue_tail(q);
 }
 
 static inline void *ebpf_queue_head(struct dqueue *q, __u64 elsize)
 {
-  (void) elsize;
   return queue_head(q);
 }

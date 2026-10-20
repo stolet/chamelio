@@ -24,7 +24,6 @@ static __always_inline void *ebpf_memcpy(void *dst, void *src, size_t len)
 
 static __always_inline void ebpf_print(int a)
 {
-  (void) a;
 }
 
 static __always_inline __u16 ebpf_ipv4_checksum(void *ip_hdr)
@@ -65,7 +64,6 @@ static __always_inline __u64 ebpf_rate_delay_tsc(__u32 bytes, __u32 rate_kbps)
 
 static __always_inline void *ebpf_map_get(void *map_base, __u32 len)
 {
-  (void) len;
   return map_base;
 }
 
@@ -78,26 +76,22 @@ static __always_inline void *ebpf_map_lookup(void *map_base, __u64 id,
 static __always_inline struct cham_sched_entry *ebpf_sched_head(
     struct cham_scheduler *sched, __u64 elsize)
 {
-  (void) elsize;
   return sched_head(sched);
 }
 
 static __always_inline struct cham_sched_entry *cham_native_sched_head(
     struct cham_scheduler *sched, __u64 elsize)
 {
-  (void) elsize;
   return sched_head(sched);
 }
 
 static __always_inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize)
 {
-  (void) elsize;
   return queue_tail(q);
 }
 
 static __always_inline void *ebpf_queue_head(struct dqueue *q, __u64 elsize)
 {
-  (void) elsize;
   return queue_head(q);
 }
 

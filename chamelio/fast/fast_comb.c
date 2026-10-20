@@ -37,8 +37,6 @@ static inline void dqueue_rotate_head(struct guest_fast *g,
   __attribute__((weak)) uint64_t event_##kind##_slot_##slot(void *mem,        \
       size_t mem_len)                                                         \
   {                                                                           \
-    (void) mem;                                                               \
-    (void) mem_len;                                                           \
     return 0;                                                                 \
   }
 

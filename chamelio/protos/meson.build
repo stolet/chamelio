@@ -3,6 +3,7 @@ proto_inc = include_directories('include')
 proto_srcs = files(
   'tcp_fast.c',
   'udp_fast.c',
+  'homa_fast.c',
 )
 
 deps = [
