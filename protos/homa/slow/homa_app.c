@@ -14,6 +14,7 @@
 #include "queue_fns.h"
 #include "uxsocket.h"
 
+static int queues_init(struct homa_slow *ctx);
 static void app_disconnect(struct homa_slow *ctx);
 static void app_accept(struct homa_slow *ctx);
 static int socket_open(struct homa_slow *ctx, __u32 *sock_id);
@@ -79,16 +80,11 @@ static void app_disconnect(struct homa_slow *ctx)
   if (ctx->app_fd < 0)
     return;
 
+  cham_disable_queue(ctx->proto, ctx->app_fast_qid, 0);
   close(ctx->app_fd);
   ctx->app_fd = -1;
   memset(ctx->ports, 0, (UINT16_MAX + 1U) * sizeof(*ctx->ports));
   memset(ctx->sockets, 0, HOMA_MAX_SOCKETS * sizeof(*ctx->sockets));
-  memset(ctx->app_slow.entries, 0,
-      HOMA_QUEUE_LENGTH * sizeof(struct homa_queue_entry));
-  memset(ctx->slow_app.entries, 0,
-      HOMA_QUEUE_LENGTH * sizeof(struct homa_queue_entry));
-  ctx->app_slow.head = 0;
-  ctx->slow_app.tail = 0;
 }
 
 static void app_accept(struct homa_slow *ctx)
@@ -105,7 +101,8 @@ static void app_accept(struct homa_slow *ctx)
     return;
   }
 
-  if (uxsocket_sendfd(fd, ctx->proto->shm_fd, -1) < 0 ||
+  if (queues_init(ctx) != 0 ||
+      uxsocket_sendfd(fd, ctx->proto->shm_fd, -1) < 0 ||
       send(fd, &ctx->info, sizeof(ctx->info), MSG_NOSIGNAL) !=
       sizeof(ctx->info))
   {
@@ -125,6 +122,7 @@ static int socket_open(struct homa_slow *ctx, __u32 *sock_id)
     if (ctx->sockets[i].state == HOMA_SOCKET_FREE)
     {
       ctx->sockets[i].state = HOMA_SOCKET_OPEN;
+      ctx->sockets[i].app_qid = ctx->fast_app_qid;
       *sock_id = i;
       return 0;
     }
@@ -218,4 +216,56 @@ static void control_poll(struct homa_slow *ctx)
     queue_enqueue(&ctx->slow_app, HOMA_QUEUE_RESULT);
     queue_dequeue(&ctx->app_slow);
   }
+}
+
+static int queues_init(struct homa_slow *ctx)
+{
+  struct proto_queue_lib *queue;
+  __u64 *offsets[] = {
+    &ctx->info.app_slow_off,
+    &ctx->info.slow_app_off,
+    &ctx->info.app_fast_off,
+    &ctx->info.fast_app_off,
+  };
+  unsigned int i;
+
+  if (ctx->proto->nqueues > MAX_PROTO_QUEUES - 4)
+  {
+    errno = ENOBUFS;
+    return -1;
+  }
+
+  for (i = 0; i < sizeof(offsets) / sizeof(offsets[0]); i++)
+  {
+    queue = cham_new_queue(ctx->proto, HOMA_QUEUE_LENGTH,
+        sizeof(struct homa_queue_entry));
+    if (queue == NULL)
+      return -1;
+
+    *offsets[i] = queue->off;
+    memset((char *) ctx->proto->shm_base + queue->off, 0,
+        queue->nelems * queue->elsize);
+
+    if (i == HOMA_APP_FAST_Q)
+    {
+      ctx->app_fast_qid = queue->id;
+      if (cham_enable_queue(ctx->proto, queue->id, 0) != 0)
+        return -1;
+    }
+    else if (i == HOMA_FAST_APP_Q)
+    {
+      ctx->fast_app_qid = queue->id;
+    }
+  }
+
+  dqueue_init(&ctx->app_slow, HOMA_QUEUE_LENGTH,
+      sizeof(struct homa_queue_entry),
+      (char *) ctx->proto->shm_base + ctx->info.app_slow_off,
+      ctx->info.app_slow_off);
+  equeue_init(&ctx->slow_app, HOMA_QUEUE_LENGTH,
+      sizeof(struct homa_queue_entry),
+      (char *) ctx->proto->shm_base + ctx->info.slow_app_off,
+      ctx->info.slow_app_off);
+
+  return 0;
 }

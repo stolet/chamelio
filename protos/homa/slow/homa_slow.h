@@ -23,6 +23,10 @@ struct homa_slow {
   struct dqueue app_slow;
   /* Slow-path-to-application queue view. */
   struct equeue slow_app;
+  /* Active application-to-fast-path queue ID. */
+  __u16 app_fast_qid;
+  /* Active fast-path-to-application queue ID. */
+  __u16 fast_app_qid;
   /* Listening application socket. */
   int listen_fd;
   /* Active application connection, or -1. */

@@ -11,6 +11,7 @@
 #include "ip_hdr.h"
 #include "tcp_hdr.h"
 #include "udp_hdr.h"
+#include "homa_hdr.h"
 #include "gre_hdr.h"
 #include "arp_hdr.h"
 #include "queue_types.h"
@@ -279,6 +280,11 @@ static inline void process_tx_chksum(struct rte_mbuf *mb, void *pkt)
           RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_UDP_CKSUM;
       udp->chksum = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *) ip,
           mb->ol_flags);
+      break;
+    case IP_PROTO_HOMA:
+      mb->l3_len = sizeof(struct ip_hdr);
+      mb->l4_len = 0;
+      mb->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
       break;
     default:
       LOG_WARN("Got unknown type in ip header");

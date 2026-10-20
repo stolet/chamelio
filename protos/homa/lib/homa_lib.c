@@ -8,6 +8,7 @@
 
 #include "homa_lib.h"
 #include "homa.h"
+#include "homa_hdr.h"
 #include "homa_queue_types.h"
 #include "queue_fns.h"
 #include "uxsocket.h"
@@ -15,6 +16,10 @@
 struct homa_context_lib {
   void *shm_base;
   size_t shm_len;
+  struct homa_socket *sockets;
+  struct homa_rpc *rpcs;
+  __u8 received[HOMA_MAX_RPCS];
+  __u8 replied[HOMA_MAX_RPCS];
   struct equeue app_slow;
   struct dqueue slow_app;
   struct equeue app_fast;
@@ -25,6 +30,10 @@ static int slow_fd = -1;
 static struct homa_context_lib *context;
 
 static int slow_alive(void);
+static struct homa_socket *socket_get(struct homa_context_lib *ctx, int sockfd);
+static struct homa_rpc *rpc_get(struct homa_context_lib *ctx, int sockfd,
+    __u64 rpc_id);
+static int message_valid(const void *data, size_t len);
 static int control_request(struct homa_context_lib *ctx, __u8 type,
     __u32 sock_id, __u32 local_ip, __u16 local_port);
 static int queue_offset_valid(const struct homa_context_info *info, __u64 off);
@@ -102,7 +111,12 @@ struct homa_context_lib *homa_lib_ctx_new(void)
   if (info.shm_len == 0 || !queue_offset_valid(&info, info.app_slow_off) ||
       !queue_offset_valid(&info, info.slow_app_off) ||
       !queue_offset_valid(&info, info.app_fast_off) ||
-      !queue_offset_valid(&info, info.fast_app_off))
+      !queue_offset_valid(&info, info.fast_app_off) ||
+      info.sockets_off > info.shm_len ||
+      sizeof(struct homa_socket) * HOMA_MAX_SOCKETS >
+          info.shm_len - info.sockets_off ||
+      info.rpcs_off > info.shm_len ||
+      sizeof(struct homa_rpc) * HOMA_MAX_RPCS > info.shm_len - info.rpcs_off)
   {
     errno = EPROTO;
     goto failed;
@@ -122,6 +136,8 @@ struct homa_context_lib *homa_lib_ctx_new(void)
 
   close(shm_fd);
   ctx->shm_len = info.shm_len;
+  ctx->sockets = (void *) ((char *) ctx->shm_base + info.sockets_off);
+  ctx->rpcs = (void *) ((char *) ctx->shm_base + info.rpcs_off);
 
   equeue_init(&ctx->app_slow, HOMA_QUEUE_LENGTH,
       sizeof(struct homa_queue_entry),
@@ -218,22 +234,112 @@ int homa_lib_close(struct homa_context_lib *ctx, int sockfd)
 int homa_lib_request(struct homa_context_lib *ctx, int sockfd, const void *data,
     size_t len, const struct sockaddr *peer, socklen_t peerlen, __u64 *rpc_id)
 {
+  const struct sockaddr_in *in = (const struct sockaddr_in *) peer;
+  struct homa_queue_entry *entry;
+  struct homa_rpc *rpc;
+  __u32 i;
 
-  errno = EOPNOTSUPP;
-  return -1;
+  if (socket_get(ctx, sockfd) == NULL || !message_valid(data, len))
+    return -1;
+
+  if (peer == NULL || peerlen < sizeof(*in) || rpc_id == NULL)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  if (in->sin_family != AF_INET)
+  {
+    errno = EAFNOSUPPORT;
+    return -1;
+  }
+
+  if (in->sin_port == 0 || in->sin_addr.s_addr == INADDR_ANY)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  entry = queue_tail(&ctx->app_fast);
+  if (entry == NULL)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  for (i = 0; i < HOMA_CLIENT_RPCS; i++)
+  {
+    if (ctx->rpcs[i].state == HOMA_RPC_FREE)
+      break;
+  }
+
+  if (i == HOMA_CLIENT_RPCS)
+  {
+    errno = ENOBUFS;
+    return -1;
+  }
+
+  rpc = &ctx->rpcs[i];
+  rpc->id = (__u64) (i + 1) * 2;
+  rpc->sock_id = sockfd;
+  rpc->app_qid = ctx->sockets[sockfd].app_qid;
+  rpc->remote_ip = ntohl(in->sin_addr.s_addr);
+  rpc->remote_port = ntohs(in->sin_port);
+  rpc->tx_len = len;
+  if (len != 0)
+    memcpy(rpc->tx_data, data, len);
+
+  rpc->state = HOMA_RPC_WAIT_RESPONSE;
+  entry->data.rpc_slot = i;
+  queue_enqueue(&ctx->app_fast, HOMA_QUEUE_TX);
+  *rpc_id = i + 1;
+  return 0;
 }
 
 int homa_lib_reply(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id,
     const void *data, size_t len)
 {
+  struct homa_rpc *rpc;
+  struct homa_queue_entry *entry;
+  __u32 slot;
 
-  errno = EOPNOTSUPP;
-  return -1;
+  rpc = rpc_get(ctx, sockfd, rpc_id);
+  if (rpc == NULL || !message_valid(data, len))
+    return -1;
+
+  slot = rpc_id - 1;
+  if (!(rpc->id & 1) || ctx->replied[slot])
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  entry = queue_tail(&ctx->app_fast);
+  if (entry == NULL)
+  {
+    errno = EAGAIN;
+    return -1;
+  }
+
+  if (len != 0)
+    memcpy(rpc->tx_data, data, len);
+
+  rpc->tx_len = len;
+  entry->data.rpc_slot = slot;
+  queue_enqueue(&ctx->app_fast, HOMA_QUEUE_TX);
+  ctx->replied[slot] = 1;
+  return 0;
 }
 
 int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
     int maxevents)
 {
+  struct homa_queue_entry *entry;
+  struct homa_event *event;
+  struct homa_rpc *rpc;
+  __u32 slot;
+  int n = 0;
+
   if (ctx == NULL || ctx != context || slow_fd < 0)
   {
     errno = ENOTCONN;
@@ -246,14 +352,106 @@ int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
     return -1;
   }
 
-  return 0;
+  while (n < maxevents && (entry = queue_head(&ctx->fast_app)) != NULL)
+  {
+    slot = entry->data.rpc_slot;
+    if (entry->type != HOMA_QUEUE_RX || slot >= HOMA_MAX_RPCS)
+    {
+      errno = EPROTO;
+      return -1;
+    }
+
+    MEM_BARRIER();
+    rpc = &ctx->rpcs[slot];
+    event = &events[n++];
+    memset(event, 0, sizeof(*event));
+    event->type = (rpc->id & 1) ? HOMA_EVENT_REQUEST : HOMA_EVENT_RESPONSE;
+    event->sockfd = rpc->sock_id;
+    event->rpc_id = slot + 1;
+    event->peer.sin_family = AF_INET;
+    event->peer.sin_addr.s_addr = htonl(rpc->remote_ip);
+    event->peer.sin_port = htons(rpc->remote_port);
+    event->data = rpc->rx_data;
+    event->len = rpc->rx_len;
+    ctx->received[slot] = 1;
+    queue_dequeue(&ctx->fast_app);
+  }
+
+  return n;
 }
 
 int homa_lib_release(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id)
 {
+  if (rpc_get(ctx, sockfd, rpc_id) == NULL)
+    return -1;
 
-  errno = EOPNOTSUPP;
-  return -1;
+  if (ctx->received[rpc_id - 1] != 1)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+
+  /* Drop the application's reference; transport storage stays retained. */
+  ctx->received[rpc_id - 1] = 2;
+  return 0;
+}
+
+static struct homa_socket *socket_get(struct homa_context_lib *ctx, int sockfd)
+{
+  if (ctx == NULL || ctx != context || slow_fd < 0)
+  {
+    errno = ENOTCONN;
+    return NULL;
+  }
+
+  if (sockfd < 0 || sockfd >= HOMA_MAX_SOCKETS ||
+      ctx->sockets[sockfd].state == HOMA_SOCKET_FREE)
+  {
+    errno = EBADF;
+    return NULL;
+  }
+
+  if (ctx->sockets[sockfd].state != HOMA_SOCKET_BOUND)
+  {
+    errno = EDESTADDRREQ;
+    return NULL;
+  }
+
+  return &ctx->sockets[sockfd];
+}
+
+static struct homa_rpc *rpc_get(struct homa_context_lib *ctx, int sockfd,
+    __u64 rpc_id)
+{
+  if (socket_get(ctx, sockfd) == NULL)
+    return NULL;
+
+  if (rpc_id == 0 || rpc_id > HOMA_MAX_RPCS ||
+      ctx->rpcs[rpc_id - 1].sock_id != (__u32) sockfd ||
+      ctx->received[rpc_id - 1] == 0)
+  {
+    errno = EINVAL;
+    return NULL;
+  }
+
+  return &ctx->rpcs[rpc_id - 1];
+}
+
+static int message_valid(const void *data, size_t len)
+{
+  if (len > HOMA_MAX_PAYLOAD)
+  {
+    errno = EMSGSIZE;
+    return 0;
+  }
+
+  if (len != 0 && data == NULL)
+  {
+    errno = EINVAL;
+    return 0;
+  }
+
+  return 1;
 }
 
 static int slow_alive(void)

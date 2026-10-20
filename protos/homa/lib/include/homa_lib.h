@@ -9,7 +9,7 @@
 /* Single-threaded application context; private to the library. */
 struct homa_context_lib;
 
-/* Completion delivered by homa_lib_poll once packet support is implemented. */
+/* Complete message or error delivered by homa_lib_poll. */
 enum homa_event_type {
   HOMA_EVENT_REQUEST,
   HOMA_EVENT_RESPONSE,
@@ -34,7 +34,7 @@ struct homa_event {
   int status;
 };
 
-/* Connect to the Homa slow path; one connection per process in step 1. */
+/* Connect to the Homa slow path; one connection per process. */
 int homa_lib_connect_slow(void);
 /* Attach the single application context and map its queues. */
 struct homa_context_lib *homa_lib_ctx_new(void);
@@ -49,16 +49,18 @@ int homa_lib_bind(struct homa_context_lib *ctx, int sockfd,
     const struct sockaddr *addr, socklen_t addrlen);
 /* Close an endpoint and release its port. */
 int homa_lib_close(struct homa_context_lib *ctx, int sockfd);
-/* Submit a request; step 1 returns -1 with EOPNOTSUPP. */
+/* Submit up to 1420 bytes; store a local handle in rpc_id, return 0 or -1.
+ * At most 128 outgoing RPCs are retained until transport restart in step 2. */
 int homa_lib_request(struct homa_context_lib *ctx, int sockfd, const void *data,
     size_t len, const struct sockaddr *peer, socklen_t peerlen, __u64 *rpc_id);
-/* Submit a reply to a received RPC; step 1 returns -1 with EOPNOTSUPP. */
+/* Submit up to 1420 reply bytes using a received request handle. */
 int homa_lib_reply(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id,
     const void *data, size_t len);
-/* Poll without blocking; step 1 has no network completions and returns zero. */
+/* Poll complete messages without blocking; return the number of events. */
 int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
     int maxevents);
-/* Release a received message; step 1 returns -1 with EOPNOTSUPP. */
+/* Release the application reference; transport state is retained in step 2.
+ * At most 128 incoming RPCs are retained until transport restart. */
 int homa_lib_release(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id);
 
 #endif

@@ -5,7 +5,7 @@
 
 #include "utils.h"
 
-/* Control requests and their common response. */
+/* Application control and data-path messages. */
 enum homa_queue_type {
   /* Signals that the queue is empty. */
   HOMA_QUEUE_EMPTY = 0,
@@ -17,6 +17,10 @@ enum homa_queue_type {
   HOMA_QUEUE_CLOSE,
   /* Result of an endpoint control request. */
   HOMA_QUEUE_RESULT,
+  /* Transmit the retained request or response in an RPC slot. */
+  HOMA_QUEUE_TX,
+  /* Deliver a complete received message from an RPC slot. */
+  HOMA_QUEUE_RX,
 };
 
 /* Endpoint control request. */
@@ -37,7 +41,7 @@ struct homa_queue_result {
   __s32 status;
 } __attribute__((packed));
 
-/* Shared queue entry for endpoint control. */
+/* Cache-line queue entry for endpoint control or RPC notification. */
 struct homa_queue_entry {
   /* Type of queue entry. Don't update outside of enqueue or dequeue */
   volatile __u8 type;
@@ -47,17 +51,23 @@ struct homa_queue_entry {
     struct homa_queue_request request;
     /* Result of the preceding control request. */
     struct homa_queue_result result;
+    /* RPC slot index for data-path commands and notifications. */
+    __u32 rpc_slot;
     /* Keep entries one cache line wide. */
     __u8 raw[63];
   } __attribute__((packed)) data;
 } __attribute__((packed, aligned(64)));
 
-/* Queue offsets sent when the application context attaches. */
+/* Shared resource offsets sent when the application context attaches. */
 struct homa_context_info {
   /* Mapped length of the protocol's shared memory. */
   __u64 shm_len;
   /* File offset of the protocol's shared memory. */
   __u64 shm_off;
+  /* Shared endpoint table offset. */
+  __u64 sockets_off;
+  /* Shared RPC table offset. */
+  __u64 rpcs_off;
   /* Application-to-slow-path queue offset. */
   __u64 app_slow_off;
   /* Slow-path-to-application queue offset. */

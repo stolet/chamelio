@@ -23,6 +23,7 @@ deps = [
   dependency('arp_dep'),
   dependency('fast_proto_dep'),
   dependency('udp_dep'),
+  dependency('homa_dep'),
   dependency('cham'),
 ]
 

@@ -12,6 +12,7 @@ deps = [
   dependency('pkt_hdrs_dep'),
   dependency('tcp_dep'),
   dependency('udp_dep'),
+  dependency('homa_dep'),
   dependency('cham'),
   dpdk_dep,
 ]

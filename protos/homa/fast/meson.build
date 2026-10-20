@@ -2,6 +2,7 @@ ecc = find_program('ecc', required: true)
 src = meson.project_source_root()
 ebpf_incs = [
   src / 'lib/include',
+  src / 'protos/homa/include',
   src / 'lib/utils/include',
   src / 'lib/utils/queue/include',
   src / 'lib/utils/scheduler/include',
@@ -18,5 +19,10 @@ homa_fast = custom_target(
   output: 'homa_fast.bpf.o',
   command: [ecc, '@INPUT@', '--output-path', meson.current_build_dir()]
     + ecc_inc_args,
+  depend_files: files(
+    '../include/homa.h',
+    '../include/homa_hdr.h',
+    '../include/homa_queue_types.h',
+  ),
   build_by_default: true,
 )

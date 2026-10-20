@@ -12,11 +12,11 @@
 
 static void *map_new(struct proto_lib *proto, __u32 nelems, __u32 elsize);
 static int upload_fast_path(struct proto_lib *proto);
-static int queues_init(struct homa_slow *ctx);
 
 int homa_init_context(struct homa_slow *ctx)
 {
   struct guest_lib *guest;
+  void *rpcs;
 
   ctx->listen_fd = -1;
   ctx->app_fd = -1;
@@ -39,7 +39,7 @@ int homa_init_context(struct homa_slow *ctx)
 
   if (ctx->proto->n_fp_cores != 1)
   {
-    fprintf(stderr, "Homa step 1 requires one fast-path core\n");
+    fprintf(stderr, "Homa requires one fast-path core\n");
     errno = EOPNOTSUPP;
     return -1;
   }
@@ -52,14 +52,17 @@ int homa_init_context(struct homa_slow *ctx)
   if (ctx->sockets == NULL)
     return -1;
 
-  if (map_new(ctx->proto, HOMA_MAX_RPCS, sizeof(struct homa_rpc)) == NULL)
+  rpcs = map_new(ctx->proto, HOMA_MAX_RPCS, sizeof(struct homa_rpc));
+  if (rpcs == NULL)
     return -1;
 
+  if (map_new(ctx->proto, 1, sizeof(struct homa_state)) == NULL)
+    return -1;
+
+  ctx->info.sockets_off = (char *) ctx->sockets - (char *) ctx->proto->shm_base;
+  ctx->info.rpcs_off = (char *) rpcs - (char *) ctx->proto->shm_base;
   ctx->info.shm_len = ctx->proto->shm_size;
   ctx->info.shm_off = ctx->proto->shm_off;
-
-  if (queues_init(ctx) != 0)
-    return -1;
 
   return upload_fast_path(ctx->proto);
 }
@@ -109,42 +112,4 @@ static int upload_fast_path(struct proto_lib *proto)
 
   munmap(bytecode, st.st_size);
   return ret;
-}
-
-static int queues_init(struct homa_slow *ctx)
-{
-  struct proto_queue_lib *queue;
-  __u64 *offsets[] = {
-    &ctx->info.app_slow_off,
-    &ctx->info.slow_app_off,
-    &ctx->info.app_fast_off,
-    &ctx->info.fast_app_off,
-  };
-  unsigned int i;
-
-  for (i = 0; i < sizeof(offsets) / sizeof(offsets[0]); i++)
-  {
-    queue = cham_new_queue(ctx->proto, HOMA_QUEUE_LENGTH,
-        sizeof(struct homa_queue_entry));
-    if (queue == NULL)
-      return -1;
-
-    *offsets[i] = queue->off;
-    memset((char *) ctx->proto->shm_base + queue->off, 0,
-        queue->nelems * queue->elsize);
-
-    if (i == 2 && cham_enable_queue(ctx->proto, queue->id, 0) != 0)
-      return -1;
-  }
-
-  dqueue_init(&ctx->app_slow, HOMA_QUEUE_LENGTH,
-      sizeof(struct homa_queue_entry),
-      (char *) ctx->proto->shm_base + ctx->info.app_slow_off,
-      ctx->info.app_slow_off);
-  equeue_init(&ctx->slow_app, HOMA_QUEUE_LENGTH,
-      sizeof(struct homa_queue_entry),
-      (char *) ctx->proto->shm_base + ctx->info.slow_app_off,
-      ctx->info.slow_app_off);
-
-  return 0;
 }

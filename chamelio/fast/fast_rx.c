@@ -91,6 +91,9 @@ static inline int rx_poll_guest(struct fast_context *ctx, struct guest_fast *g,
   did_work = 0;
   g->proto.ebpf_ctx.core = ctx->id;
   fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off, virt_gre);
+  if (g->proto.proto_type == CHAM_PROTO_HOMA)
+    g->proto.ebpf_ctx.pkt_end = rte_pktmbuf_mtod(mb, __u8 *) + mb->data_len;
+
   switch (ctx->fp_proto_mode)
   {
     case FP_PROTO_EBPF:
