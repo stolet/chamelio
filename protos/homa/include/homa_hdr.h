@@ -2,19 +2,20 @@
 #define CHAM_HOMA_HDR_H
 
 #include "ip_hdr.h"
+#include "homa.h"
 
 /* Experimental IPv4 protocol number. */
 #define IP_PROTO_HOMA 253
 /* Unscheduled or scheduled message data. */
 #define HOMA_DATA 0x10
+/* Authorize DATA through a cumulative message offset. */
+#define HOMA_GRANT 0x11
 /* Request confirmation that a response has been received. */
 #define HOMA_NEED_ACK 0x17
 /* Confirm receipt of a complete response. */
 #define HOMA_ACK 0x18
 /* Reserved completion records in the baseline standalone ACK format. */
 #define HOMA_ACK_RECORDS 5
-/* Single DATA packet at the physical MTU of 1500 bytes. */
-#define HOMA_MAX_PAYLOAD 1420
 
 /* Homa common header, including the TCP-compatible prefix. */
 struct homa_common_hdr {
@@ -64,6 +65,18 @@ struct homa_data_hdr {
   beui16_t ack_dport;
 } __attribute__((packed));
 
+/* Receiver authorization in the eTRAN wire format. */
+struct homa_grant_hdr {
+  /* Common Homa fields, using the receiver's local RPC ID. */
+  struct homa_common_hdr common;
+  /* Exclusive cumulative end offset for authorized DATA. */
+  beui32_t offset;
+  /* Network priority; initially the artifact's highest priority. */
+  __u8 priority;
+  /* Recovery request; unused until loss recovery is implemented. */
+  __u8 resend_all;
+} __attribute__((packed));
+
 /* Completion record in the baseline standalone ACK format. */
 struct homa_ack_record {
   /* Client's wire RPC ID. */
@@ -94,6 +107,7 @@ struct homa_pkt {
 
 STATIC_ASSERT(sizeof(struct homa_common_hdr) == 28, homa_common_hdr_size);
 STATIC_ASSERT(sizeof(struct homa_data_hdr) == 60, homa_data_hdr_size);
+STATIC_ASSERT(sizeof(struct homa_grant_hdr) == 34, homa_grant_hdr_size);
 STATIC_ASSERT(sizeof(struct homa_ack_hdr) == 90, homa_ack_hdr_size);
 
 #endif

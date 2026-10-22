@@ -290,7 +290,7 @@ int homa_lib_request(struct homa_context_lib *ctx, int sockfd, const void *data,
   rpc->id = rpc->handle * HOMA_RPC_ID_STRIDE;
   rpc->flags = 0;
   rpc->rx_len = 0;
-  rpc->rx_bitmap = 0;
+  memset(rpc->rx_bitmap, 0, sizeof(rpc->rx_bitmap));
   ctx->delivered[i] = 0;
   ctx->received[i] = 0;
   ctx->replied[i] = 0;

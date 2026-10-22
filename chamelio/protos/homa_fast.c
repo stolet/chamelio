@@ -66,6 +66,18 @@ static __always_inline __u8 rpc_is_tx_ready(struct homa_rpc *rpc);
 static __always_inline void tx_fill_data_hdr(struct homa_data_hdr *data,
     struct homa_socket *sock, struct homa_rpc *rpc, __u32 len);
 
+static __always_inline __u32 tx_initial_credit(struct cham_ebpf_ctx *ctx,
+    __u32 len);
+static __always_inline void grant_wake(struct cham_ebpf_ctx *ctx);
+static __always_inline void grant_append(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot);
+static __always_inline void grant_remove(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc);
+static __always_inline void rx_finish(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc);
+static __always_inline int grant_poll(struct cham_ebpf_ctx *ctx);
+static __always_inline int rx_handle_grant(struct cham_ebpf_ctx *ctx);
+
 int homa_fast_event_rx(struct cham_ebpf_ctx *ctx)
 {
   struct homa_pkt *p = ctx->pkt;
@@ -77,6 +89,8 @@ int homa_fast_event_rx(struct cham_ebpf_ctx *ctx)
   {
     case HOMA_DATA:
       return rx_handle_data(ctx);
+    case HOMA_GRANT:
+      return rx_handle_grant(ctx);
     case HOMA_ACK:
       return rx_handle_ack(ctx);
     case HOMA_NEED_ACK:
@@ -99,6 +113,9 @@ int homa_fast_event_sched(struct cham_ebpf_ctx *ctx)
 
   slot = entry->id;
   sched_pop(&ctx->sched);
+  if (slot == HOMA_GRANT_SCHED_ID)
+    return grant_poll(ctx);
+
   rpc = rpc_at(ctx, slot);
   if (rpc == NULL || rpc->state == HOMA_RPC_FREE)
     return 0;
@@ -304,6 +321,7 @@ static __always_inline void rpc_free(struct cham_ebpf_ctx *ctx,
   struct homa_state *state;
 
   sched_remove(&ctx->sched, slot);
+  rx_finish(ctx, rpc);
 
   if (rpc_is_server(rpc->id))
   {
@@ -421,7 +439,7 @@ static __always_inline struct homa_rpc *rx_rpc_lookup(
   rpc->flags = 0;
   rpc->tx_len = 0;
   rpc->rx_len = 0;
-  rpc->rx_bitmap = 0;
+  __builtin_memset(rpc->rx_bitmap, 0, sizeof(rpc->rx_bitmap));
   rpc->state = HOMA_RPC_REQUEST_RECEIVING;
   rpc->hash_prev = 0;
   rpc->hash_next = 0;
@@ -437,7 +455,8 @@ static __always_inline int rx_handle_data(struct cham_ebpf_ctx *ctx)
   struct homa_rpc *rpc;
   struct homa_queue_entry *qe;
   struct equeue *q;
-  __u32 sock_id, slot, len, offset, seg_len, bit, segments;
+  struct homa_state *state;
+  __u32 sock_id, slot, len, offset, seg_len, bit, word, index;
   __u64 id;
 
   if (!rx_is_pkt_valid(p, ctx->pkt_end))
@@ -470,23 +489,45 @@ static __always_inline int rx_handle_data(struct cham_ebpf_ctx *ctx)
 
   offset = f_beui32(p->data.offset);
   seg_len = f_beui32(p->data.segment_length);
-  bit = 1U << (offset / HOMA_MAX_PAYLOAD);
-  if (rpc->rx_bitmap != 0 && rpc->rx_len != len)
+  state = state_get(ctx);
+  if (state == NULL)
     return -1;
 
-  if (rpc->rx_bitmap & bit)
+  if (!(rpc->flags & HOMA_RPC_RX_ACTIVE))
+  {
+    rpc->rx_len = len;
+    rpc->rx_received = 0;
+    rpc->rx_credit = f_beui32(p->data.incoming);
+    rpc->flags |= HOMA_RPC_RX_ACTIVE;
+    state->incoming += rpc->rx_credit;
+    if (rpc->rx_credit < len)
+      grant_append(ctx, rpc, slot);
+  }
+
+  if (rpc->rx_len != len || offset + seg_len > rpc->rx_credit)
+    return -1;
+
+  index = offset / HOMA_MAX_PAYLOAD;
+  word = index / 32;
+  bit = 1U << (index % 32);
+  if (word >= HOMA_BITMAP_WORDS)
+    return -1;
+
+  if (rpc->rx_bitmap[word] & bit)
     return 0;
 
   if (offset > HOMA_MESSAGE_BYTES || seg_len > HOMA_MESSAGE_BYTES - offset)
     return -1;
 
   ebpf_memcpy(rpc->rx_data + offset, (__u8 *) p + sizeof(*p), seg_len);
-  rpc->rx_len = len;
-  rpc->rx_bitmap |= bit;
-  segments = len == 0 ? 1 : (len + HOMA_MAX_PAYLOAD - 1) / HOMA_MAX_PAYLOAD;
-  if (rpc->rx_bitmap != (1U << segments) - 1)
+  rpc->rx_bitmap[word] |= bit;
+  rpc->rx_received += seg_len;
+  state->incoming -= seg_len;
+  grant_wake(ctx);
+  if (rpc->rx_received != len)
     return 0;
 
+  rx_finish(ctx, rpc);
   rpc->state = rpc_is_server(id) ?
       HOMA_RPC_REQUEST_READY : HOMA_RPC_RESPONSE_READY;
   qe->data.rpc_handle = rpc->handle;
@@ -559,6 +600,7 @@ static __always_inline int deq_handle_tx(struct cham_ebpf_ctx *ctx,
     return 0;
 
   rpc->tx_offset = 0;
+  rpc->tx_credit = tx_initial_credit(ctx, rpc->tx_len);
   rpc->flags |= HOMA_RPC_TX_PENDING;
   return tx_segment(ctx, rpc, slot);
 }
@@ -582,6 +624,9 @@ static __always_inline int tx_segment(struct cham_ebpf_ctx *ctx,
   if (len > HOMA_MAX_PAYLOAD)
     len = HOMA_MAX_PAYLOAD;
 
+  if (offset + len > rpc->tx_credit)
+    return 0;
+
   if (!is_paylen_valid(p, ctx->pkt_end, len))
     return -1;
 
@@ -595,7 +640,8 @@ static __always_inline int tx_segment(struct cham_ebpf_ctx *ctx,
   rpc->tx_offset = offset + len;
   if (rpc->tx_offset < rpc->tx_len)
   {
-    rpc_schedule(ctx, slot, 0);
+    if (rpc->tx_offset < rpc->tx_credit)
+      rpc_schedule(ctx, slot, 0);
   }
   else
   {
@@ -691,7 +737,7 @@ static __always_inline __u8 is_paylen_valid(struct homa_pkt *p,
 static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end)
 {
   __u32 len, offset, seg_len, remaining;
-  __u8 data_pkt, data_hdr, segment_valid, unscheduled, ip_len_valid;
+  __u8 data_pkt, data_hdr, segment_valid, credit_valid, ip_len_valid;
 
   if ((__u8 *) p + sizeof(*p) > (__u8 *) pkt_end)
     return 0;
@@ -710,10 +756,11 @@ static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end)
   remaining = len - offset;
   segment_valid = seg_len == (remaining > HOMA_MAX_PAYLOAD ?
       HOMA_MAX_PAYLOAD : remaining);
-  unscheduled = f_beui32(p->data.incoming) >= len;
+  credit_valid = f_beui32(p->data.incoming) <= len &&
+      f_beui32(p->data.incoming) >= offset + seg_len;
   ip_len_valid = f_beui16(p->ip.len) == sizeof(*p) + seg_len;
 
-  return data_pkt && data_hdr && segment_valid && unscheduled &&
+  return data_pkt && data_hdr && segment_valid && credit_valid &&
       ip_len_valid && is_paylen_valid(p, pkt_end, seg_len);
 }
 
@@ -808,7 +855,7 @@ static __always_inline void tx_fill_data_hdr(struct homa_data_hdr *data,
       rpc->id, HOMA_DATA);
   data->common.doff = (sizeof(*data) / sizeof(__u32)) << 4;
   data->message_length = t_beui32(rpc->tx_len);
-  data->incoming = t_beui32(rpc->tx_len);
+  data->incoming = t_beui32(rpc->tx_credit);
   data->cutoff_version = t_beui16(0);
   data->retransmit = 0;
   data->unused = 0;
@@ -817,4 +864,211 @@ static __always_inline void tx_fill_data_hdr(struct homa_data_hdr *data,
   data->ack_id = t_beui64(0);
   data->ack_sport = t_beui16(0);
   data->ack_dport = t_beui16(0);
+}
+
+static __always_inline __u32 tx_initial_credit(struct cham_ebpf_ctx *ctx,
+    __u32 len)
+{
+  struct homa_state *state = state_get(ctx);
+  __u32 credit;
+
+  if (state == NULL)
+    return 0;
+
+  credit = state->unscheduled_bytes;
+  if (len <= credit)
+    return len;
+
+  return credit / HOMA_MAX_PAYLOAD * HOMA_MAX_PAYLOAD;
+}
+
+static __always_inline void grant_wake(struct cham_ebpf_ctx *ctx)
+{
+  struct homa_state *state = state_get(ctx);
+
+  if (state != NULL && state->grant_head != 0)
+    rpc_schedule(ctx, HOMA_GRANT_SCHED_ID, 0);
+}
+
+static __always_inline void grant_append(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot)
+{
+  struct homa_state *state = state_get(ctx);
+  struct homa_rpc *tail;
+
+  if (state == NULL)
+    return;
+
+  rpc->grant_prev = state->grant_tail;
+  rpc->grant_next = 0;
+  if (state->grant_tail != 0)
+  {
+    tail = rpc_at(ctx, state->grant_tail - 1);
+    if (tail != NULL)
+      tail->grant_next = slot + 1;
+  }
+  else
+  {
+    state->grant_head = slot + 1;
+  }
+
+  state->grant_tail = slot + 1;
+  rpc->flags |= HOMA_RPC_GRANT_QUEUED;
+}
+
+static __always_inline void grant_remove(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc)
+{
+  struct homa_state *state = state_get(ctx);
+  struct homa_rpc *neighbor;
+
+  if (state == NULL || !(rpc->flags & HOMA_RPC_GRANT_QUEUED))
+    return;
+
+  if (rpc->grant_prev != 0)
+  {
+    neighbor = rpc_at(ctx, rpc->grant_prev - 1);
+    if (neighbor != NULL)
+      neighbor->grant_next = rpc->grant_next;
+  }
+  else
+  {
+    state->grant_head = rpc->grant_next;
+  }
+
+  if (rpc->grant_next != 0)
+  {
+    neighbor = rpc_at(ctx, rpc->grant_next - 1);
+    if (neighbor != NULL)
+      neighbor->grant_prev = rpc->grant_prev;
+  }
+  else
+  {
+    state->grant_tail = rpc->grant_prev;
+  }
+
+  rpc->flags &= ~HOMA_RPC_GRANT_QUEUED;
+}
+
+static __always_inline void rx_finish(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc)
+{
+  struct homa_state *state = state_get(ctx);
+
+  if (state == NULL || !(rpc->flags & HOMA_RPC_RX_ACTIVE))
+    return;
+
+  state->incoming -= rpc->rx_credit - rpc->rx_received;
+  rpc->flags &= ~HOMA_RPC_RX_ACTIVE;
+  grant_remove(ctx, rpc);
+  grant_wake(ctx);
+}
+
+static __always_inline int grant_poll(struct cham_ebpf_ctx *ctx)
+{
+  struct homa_state *state = state_get(ctx);
+  struct homa_grant_hdr *grant;
+  struct homa_pkt *p = ctx->pkt;
+  struct homa_socket *sock;
+  struct homa_rpc *rpc;
+  __u32 target, available;
+  __u32 len = sizeof(p->ip) + sizeof(*grant);
+
+  if (state == NULL || state->grant_head == 0)
+    return 0;
+
+  rpc = rpc_at(ctx, state->grant_head - 1);
+  if (rpc == NULL || !(rpc->flags & HOMA_RPC_RX_ACTIVE))
+    return 0;
+
+  sock = sock_at(ctx, rpc->sock_id);
+  if (sock == NULL || sock->state != HOMA_SOCKET_BOUND)
+    return 0;
+
+  if (state->incoming >= state->incoming_limit)
+    return 0;
+
+  available = state->incoming_limit - state->incoming;
+  target = rpc->rx_received + state->grant_bytes;
+  if (target > rpc->rx_len)
+    target = rpc->rx_len;
+
+  if (target <= rpc->rx_credit)
+    return 0;
+
+  if (target - rpc->rx_credit > available)
+    target = rpc->rx_credit + available;
+
+  if (target < rpc->rx_len)
+    target = target / HOMA_MAX_PAYLOAD * HOMA_MAX_PAYLOAD;
+
+  if (target <= rpc->rx_credit)
+    return 0;
+
+  if ((__u8 *) p + len > (__u8 *) ctx->pkt_end)
+    return -1;
+
+  grant = (void *) &p->data;
+  tx_fill_ip_hdr(&p->ip, sock->local_ip, rpc->remote_ip, len);
+  tx_fill_common_hdr(&grant->common, sock->local_port, rpc->remote_port,
+      rpc->id, HOMA_GRANT);
+  grant->offset = t_beui32(target);
+  grant->priority = HOMA_GRANT_PRIORITY;
+  grant->resend_all = 0;
+
+  state->incoming += target - rpc->rx_credit;
+  rpc->rx_credit = target;
+  return len;
+}
+
+static __always_inline int rx_handle_grant(struct cham_ebpf_ctx *ctx)
+{
+  struct homa_pkt *p = ctx->pkt;
+  struct homa_grant_hdr *grant = (void *) &p->data;
+  struct homa_socket *sock;
+  struct homa_rpc *rpc;
+  __u32 sock_id, slot, offset, remote_ip;
+  __u16 remote_port;
+  __u64 id;
+  __u32 len = sizeof(p->ip) + sizeof(*grant);
+
+  if ((__u8 *) p + len > (__u8 *) ctx->pkt_end ||
+      f_beui16(p->ip.len) != len || grant->resend_all != 0)
+    return -1;
+
+  sock = sock_find(ctx, p, &sock_id);
+  if (sock == NULL)
+    return 0;
+
+  id = rx_get_local_rpc_id(p);
+  remote_ip = f_beui32(p->ip.src);
+  remote_port = f_beui16(grant->common.sport);
+  if (rpc_is_server(id))
+  {
+    rpc = rpc_server_find(ctx, id, sock_id, remote_ip, remote_port, &slot);
+  }
+  else
+  {
+    if (id < HOMA_RPC_ID_STRIDE)
+      return 0;
+
+    slot = rpc_get_client_slot(id);
+    rpc = rpc_at(ctx, slot);
+    if (!rpc_is_response_match(rpc, id, sock_id, remote_ip, remote_port))
+      return 0;
+  }
+
+  if (!rpc_is_tx_ready(rpc) || !(rpc->flags & HOMA_RPC_TX_PENDING))
+    return 0;
+
+  offset = f_beui32(grant->offset);
+  if (offset <= rpc->tx_credit || offset > rpc->tx_len)
+    return 0;
+
+  if (offset != rpc->tx_len && offset % HOMA_MAX_PAYLOAD != 0)
+    return -1;
+
+  rpc->tx_credit = offset;
+  rpc_schedule(ctx, slot, 0);
+  return 0;
 }

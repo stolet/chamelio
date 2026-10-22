@@ -64,6 +64,9 @@ int homa_init_context(struct homa_slow *ctx)
   if (state == NULL)
     return -1;
 
+  state->unscheduled_bytes = ctx->config.unscheduled_bytes;
+  state->grant_bytes = ctx->config.grant_bytes;
+  state->incoming_limit = ctx->config.incoming_bytes;
   state->server_free_count = HOMA_CLIENT_RPCS;
   for (i = 0; i < HOMA_CLIENT_RPCS; i++)
     state->server_free[i] = HOMA_MAX_RPCS - i - 1;

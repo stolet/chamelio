@@ -13,8 +13,24 @@
 #define HOMA_MAX_RPCS 256
 /* Client slots; remaining slots are allocated by the fast path. */
 #define HOMA_CLIENT_RPCS (HOMA_MAX_RPCS / 2)
-/* Unscheduled message allowance and reserved bytes per message direction. */
-#define HOMA_MESSAGE_BYTES 16384
+/* Maximum message bytes and reserved storage per direction. */
+#define HOMA_MESSAGE_BYTES 1000000
+/* DATA payload at the physical MTU of 1500 bytes. */
+#define HOMA_MAX_PAYLOAD 1420
+/* Words needed to track all fixed-size message segments. */
+#define HOMA_BITMAP_WORDS \
+  ((HOMA_MESSAGE_BYTES + HOMA_MAX_PAYLOAD * 32 - 1) / \
+      (HOMA_MAX_PAYLOAD * 32))
+/* Default initial bytes sent without a grant. */
+#define HOMA_UNSCHEDULED_BYTES 16384
+/* Default receive window extended by grants. */
+#define HOMA_GRANT_BYTES 16384
+/* Default cap on known incoming bytes when issuing additional grants. */
+#define HOMA_INCOMING_BYTES 65536
+/* Scheduler ID reserved for receiver grant work. */
+#define HOMA_GRANT_SCHED_ID HOMA_MAX_RPCS
+/* Effective initial network priority in the eTRAN artifact. */
+#define HOMA_GRANT_PRIORITY 7
 /* Entries in each application/control or application/fast-path queue. */
 #define HOMA_QUEUE_LENGTH 128
 /* Low wire-ID bit identifies the server side of an RPC. */
@@ -53,6 +69,18 @@ enum homa_socket_state {
 
 /* Single-core server RPC allocation and lookup. */
 struct homa_state {
+  /* Configured initial transmit allowance. */
+  __u32 unscheduled_bytes;
+  /* Configured receive grant window. */
+  __u32 grant_bytes;
+  /* Configured receiver incoming-byte budget. */
+  __u32 incoming_limit;
+  /* Known bytes authorized but not yet received, including unscheduled DATA. */
+  __u32 incoming;
+  /* FIFO grant candidates, slot plus one; only the head receives grants. */
+  __u32 grant_head;
+  /* Last grant candidate, slot plus one. */
+  __u32 grant_tail;
   /* Number of available server slots. */
   __u32 server_free_count;
   /* Stack of available server slot indices. */
@@ -88,6 +116,10 @@ enum homa_rpc_state {
 #define HOMA_RPC_RX_RELEASED 0x1
 /* More DATA segments remain eligible for transmission. */
 #define HOMA_RPC_TX_PENDING 0x2
+/* Receive accounting has been initialized for this message. */
+#define HOMA_RPC_RX_ACTIVE 0x4
+/* RPC belongs to the receiver's pending grant queue. */
+#define HOMA_RPC_GRANT_QUEUED 0x8
 
 /* Shared RPC state and retained message storage. */
 struct homa_rpc {
@@ -103,7 +135,7 @@ struct homa_rpc {
   __u16 remote_port;
   /* RPC lifecycle. */
   __u16 state;
-  /* Receive ownership flags. */
+  /* Transport progress and receive ownership flags. */
   __u16 flags;
   /* Original application's notification queue, preserved on reconnect. */
   __u32 app_qid;
@@ -111,10 +143,20 @@ struct homa_rpc {
   __u32 tx_len;
   /* Next message byte to transmit. */
   __u32 tx_offset;
+  /* Cumulative byte offset authorized for transmission. */
+  __u32 tx_credit;
   /* Total message bytes, fixed by the first received segment. */
   __u32 rx_len;
   /* Received fixed-size segment indices; the final segment may be shorter. */
-  __u32 rx_bitmap;
+  __u32 rx_bitmap[HOMA_BITMAP_WORDS];
+  /* Unique received payload bytes. */
+  __u32 rx_received;
+  /* Cumulative receive offset authorized by unscheduled DATA or grants. */
+  __u32 rx_credit;
+  /* Previous grant candidate slot plus one. */
+  __u32 grant_prev;
+  /* Next grant candidate slot plus one. */
+  __u32 grant_next;
   /* Previous server hash entry plus one; zero means none. */
   __u32 hash_prev;
   /* Next server hash entry plus one; zero means none. */

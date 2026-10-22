@@ -7,6 +7,12 @@
 struct homa_configuration {
   /* Protocol is running in a VM */
   __u32 virt;
+  /* Initial bytes transmitted without receiver authorization. */
+  __u32 unscheduled_bytes;
+  /* Bytes kept outstanding for the active scheduled receive. */
+  __u32 grant_bytes;
+  /* Cap on authorized-but-not-received bytes for additional grants. */
+  __u32 incoming_bytes;
 };
 
 /* Parse options: 0 on success, -1 on error */
