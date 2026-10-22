@@ -15,6 +15,8 @@
 #include "uxsocket.h"
 
 static int queues_init(struct homa_slow *ctx);
+static int socket_close_poll(struct homa_slow *ctx, __u32 sock_id);
+static void disconnect_poll(struct homa_slow *ctx);
 static void app_disconnect(struct homa_slow *ctx);
 static void app_accept(struct homa_slow *ctx);
 static int socket_open(struct homa_slow *ctx, __u32 *sock_id);
@@ -66,7 +68,10 @@ int homa_app_poll(struct homa_slow *ctx)
   if (fds[1].revents != 0)
     app_disconnect(ctx);
 
-  if (fds[0].revents & POLLIN)
+  if (ctx->disconnecting)
+    disconnect_poll(ctx);
+
+  if (!ctx->disconnecting && (fds[0].revents & POLLIN))
     app_accept(ctx);
 
   if (ctx->app_fd >= 0)
@@ -83,8 +88,8 @@ static void app_disconnect(struct homa_slow *ctx)
   cham_disable_queue(ctx->proto, ctx->app_fast_qid, 0);
   close(ctx->app_fd);
   ctx->app_fd = -1;
+  ctx->disconnecting = 1;
   memset(ctx->ports, 0, (UINT16_MAX + 1U) * sizeof(*ctx->ports));
-  memset(ctx->sockets, 0, HOMA_MAX_SOCKETS * sizeof(*ctx->sockets));
 }
 
 static void app_accept(struct homa_slow *ctx)
@@ -187,11 +192,7 @@ static int control_apply(struct homa_slow *ctx,
     case HOMA_QUEUE_BIND:
       return socket_bind(ctx, sock, request);
     case HOMA_QUEUE_CLOSE:
-      if (sock->state == HOMA_SOCKET_BOUND)
-        ctx->ports[sock->local_port] = 0;
-
-      memset(sock, 0, sizeof(*sock));
-      return 0;
+      return socket_close_poll(ctx, *sock_id);
     default:
       return EOPNOTSUPP;
   }
@@ -212,10 +213,100 @@ static void control_poll(struct homa_slow *ctx)
       break;
 
     response->data.result.status = control_apply(ctx, request, &sock_id);
+    if (response->data.result.status == EINPROGRESS)
+      break;
     response->data.result.sock_id = sock_id;
     queue_enqueue(&ctx->slow_app, HOMA_QUEUE_RESULT);
     queue_dequeue(&ctx->app_slow);
   }
+}
+
+static int socket_close_poll(struct homa_slow *ctx, __u32 sock_id)
+{
+  struct homa_socket *sock = &ctx->sockets[sock_id];
+  struct homa_queue_entry *entry;
+  struct homa_rpc *rpc;
+  unsigned int examined = 0;
+
+  if (ctx->closing_sock < 0)
+  {
+    entry = queue_tail(&ctx->slow_fast);
+    if (entry == NULL)
+      return EINPROGRESS;
+
+    ctx->closing_sock = sock_id;
+    ctx->close_cursor = 0;
+    ctx->close_barrier = 0;
+    if (sock->state == HOMA_SOCKET_BOUND)
+      ctx->ports[sock->local_port] = 0;
+
+    entry->data.request.sock_id = sock_id;
+    queue_enqueue(&ctx->slow_fast, HOMA_QUEUE_CLOSE_START);
+  }
+
+  MEM_BARRIER();
+  if (sock->state != HOMA_SOCKET_CLOSING && sock->state != HOMA_SOCKET_CLOSED)
+    return EINPROGRESS;
+
+  while (ctx->close_cursor < HOMA_MAX_RPCS && examined < HOMA_REAP_BATCH)
+  {
+    rpc = &ctx->rpcs[ctx->close_cursor];
+    if (rpc->state != HOMA_RPC_FREE && rpc->sock_id == sock_id &&
+        rpc->app_qid == sock->app_qid)
+    {
+      entry = queue_tail(&ctx->slow_fast);
+      if (entry == NULL)
+        return EINPROGRESS;
+
+      entry->data.rpc_handle = rpc->handle;
+      queue_enqueue(&ctx->slow_fast, HOMA_QUEUE_REAP);
+    }
+
+    ctx->close_cursor++;
+    examined++;
+  }
+
+  if (ctx->close_cursor < HOMA_MAX_RPCS)
+    return EINPROGRESS;
+
+  if (!ctx->close_barrier)
+  {
+    entry = queue_tail(&ctx->slow_fast);
+    if (entry == NULL)
+      return EINPROGRESS;
+
+    entry->data.request.sock_id = sock_id;
+    queue_enqueue(&ctx->slow_fast, HOMA_QUEUE_CLOSE_DONE);
+    ctx->close_barrier = 1;
+  }
+
+  MEM_BARRIER();
+  if (sock->state != HOMA_SOCKET_CLOSED)
+    return EINPROGRESS;
+
+  memset(sock, 0, sizeof(*sock));
+  ctx->closing_sock = -1;
+  return 0;
+}
+
+static void disconnect_poll(struct homa_slow *ctx)
+{
+  unsigned int i;
+
+  if (ctx->closing_sock >= 0 &&
+      socket_close_poll(ctx, ctx->closing_sock) != 0)
+    return;
+
+  for (i = 0; i < HOMA_MAX_SOCKETS; i++)
+  {
+    if (ctx->sockets[i].state != HOMA_SOCKET_FREE)
+    {
+      socket_close_poll(ctx, i);
+      return;
+    }
+  }
+
+  ctx->disconnecting = 0;
 }
 
 static int queues_init(struct homa_slow *ctx)

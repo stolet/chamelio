@@ -17,12 +17,24 @@ struct homa_slow {
   __u32 *ports;
   /* Shared endpoint table. */
   struct homa_socket *sockets;
+  /* Shared RPC table, inspected when an endpoint closes. */
+  struct homa_rpc *rpcs;
   /* Application attachment response with shared queue locations. */
   struct homa_context_info info;
   /* Application-to-slow-path queue view. */
   struct dqueue app_slow;
   /* Slow-path-to-application queue view. */
   struct equeue slow_app;
+  /* Slow-path-to-fast-path cleanup queue, active without an application. */
+  struct equeue slow_fast;
+  /* Endpoint currently being cleaned, or -1. */
+  int closing_sock;
+  /* Next RPC slot to inspect for the current close. */
+  __u32 close_cursor;
+  /* Cleanup barrier has been submitted to the fast path. */
+  int close_barrier;
+  /* Application disconnected; finish cleanup before accepting another. */
+  int disconnecting;
   /* Active application-to-fast-path queue ID. */
   __u16 app_fast_qid;
   /* Active fast-path-to-application queue ID. */

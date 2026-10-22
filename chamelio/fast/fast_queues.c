@@ -207,15 +207,13 @@ static inline int queues_poll_guest_dequeue(struct fast_context *ctx,
 static inline void dqueue_rotate_head(struct guest_fast *g,
     struct cham_dqueue *qcur)
 {
+  if (g->proto.ndqueues == 1)
+    return;
+
+  g->proto.dqueues_head = qcur->next;
+  g->proto.dqueues[qcur->next].prev = PROTOQ_ID_INVALID;
+  qcur->prev = g->proto.dqueues_tail;
   g->proto.dqueues[g->proto.dqueues_tail].next = qcur->id;
   g->proto.dqueues_tail = qcur->id;
-
-  /* When there's only one queue, keep head pointing to it (circular list).
-     Otherwise, advance head to the next queue. */
-  if (g->proto.ndqueues == 1)
-    g->proto.dqueues_head = qcur->id;
-  else
-    g->proto.dqueues_head = qcur->next;
-
   qcur->next = PROTOQ_ID_INVALID;
 }

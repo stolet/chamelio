@@ -47,20 +47,20 @@ int homa_lib_socket(struct homa_context_lib *ctx);
 /* Bind an IPv4 endpoint; port zero selects an ephemeral port. */
 int homa_lib_bind(struct homa_context_lib *ctx, int sockfd,
     const struct sockaddr *addr, socklen_t addrlen);
-/* Close an endpoint and release its port. */
+/* Close an endpoint, invalidate its receive buffers, and reclaim its RPCs. */
 int homa_lib_close(struct homa_context_lib *ctx, int sockfd);
 /* Submit up to 1420 bytes; store a local handle in rpc_id, return 0 or -1.
- * At most 128 outgoing RPCs are retained until transport restart in step 2. */
+ * Up to 128 client RPCs may be outstanding; released slots are reusable. */
 int homa_lib_request(struct homa_context_lib *ctx, int sockfd, const void *data,
     size_t len, const struct sockaddr *peer, socklen_t peerlen, __u64 *rpc_id);
-/* Submit up to 1420 reply bytes using a received request handle. */
+/* Submit up to 1420 reply bytes; a released request handle remains valid. */
 int homa_lib_reply(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id,
     const void *data, size_t len);
 /* Poll complete messages without blocking; return the number of events. */
 int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
     int maxevents);
-/* Release the application reference; transport state is retained in step 2.
- * At most 128 incoming RPCs are retained until transport restart. */
+/* Release received bytes independently of transport completion; retry EAGAIN.
+ * A server may still reply using the handle after releasing its request. */
 int homa_lib_release(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id);
 
 #endif

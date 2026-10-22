@@ -260,10 +260,10 @@ static inline void handle_disableq(struct fast_context *ctx,
     p->dqueues_tail = q->prev;
 
   if (q->next != PROTOQ_ID_INVALID)
-    p->dqueues[q->next].prev = PROTOQ_ID_INVALID;
+    p->dqueues[q->next].prev = q->prev;
 
   if (q->prev != PROTOQ_ID_INVALID)
-    p->dqueues[q->prev].next = PROTOQ_ID_INVALID;
+    p->dqueues[q->prev].next = q->next;
 
   q->next = PROTOQ_ID_INVALID;
   q->prev = PROTOQ_ID_INVALID;

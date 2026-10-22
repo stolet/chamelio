@@ -16,10 +16,14 @@ static int upload_fast_path(struct proto_lib *proto);
 int homa_init_context(struct homa_slow *ctx)
 {
   struct guest_lib *guest;
-  void *rpcs;
+  struct homa_state *state;
+  struct proto_queue_lib *queue;
+  __u32 i;
 
   ctx->listen_fd = -1;
   ctx->app_fd = -1;
+  ctx->closing_sock = -1;
+  ctx->disconnecting = 0;
 
   if (ctx->config.virt)
   {
@@ -52,15 +56,30 @@ int homa_init_context(struct homa_slow *ctx)
   if (ctx->sockets == NULL)
     return -1;
 
-  rpcs = map_new(ctx->proto, HOMA_MAX_RPCS, sizeof(struct homa_rpc));
-  if (rpcs == NULL)
+  ctx->rpcs = map_new(ctx->proto, HOMA_MAX_RPCS, sizeof(*ctx->rpcs));
+  if (ctx->rpcs == NULL)
     return -1;
 
-  if (map_new(ctx->proto, 1, sizeof(struct homa_state)) == NULL)
+  state = map_new(ctx->proto, 1, sizeof(*state));
+  if (state == NULL)
+    return -1;
+
+  state->server_free_count = HOMA_CLIENT_RPCS;
+  for (i = 0; i < HOMA_CLIENT_RPCS; i++)
+    state->server_free[i] = HOMA_MAX_RPCS - i - 1;
+
+  queue = cham_new_queue(ctx->proto, HOMA_QUEUE_LENGTH,
+      sizeof(struct homa_queue_entry));
+  if (queue == NULL)
+    return -1;
+
+  equeue_init(&ctx->slow_fast, queue->nelems, queue->elsize,
+      (char *) ctx->proto->shm_base + queue->off, queue->off);
+  if (cham_enable_queue(ctx->proto, queue->id, 0) != 0)
     return -1;
 
   ctx->info.sockets_off = (char *) ctx->sockets - (char *) ctx->proto->shm_base;
-  ctx->info.rpcs_off = (char *) rpcs - (char *) ctx->proto->shm_base;
+  ctx->info.rpcs_off = (char *) ctx->rpcs - (char *) ctx->proto->shm_base;
   ctx->info.shm_len = ctx->proto->shm_size;
   ctx->info.shm_off = ctx->proto->shm_off;
 

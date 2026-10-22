@@ -21,6 +21,14 @@ enum homa_queue_type {
   HOMA_QUEUE_TX,
   /* Deliver a complete received message from an RPC slot. */
   HOMA_QUEUE_RX,
+  /* Release an application receive buffer. */
+  HOMA_QUEUE_RELEASE,
+  /* Abort and reclaim an RPC when its endpoint closes. */
+  HOMA_QUEUE_REAP,
+  /* Stop new RPC admission before slow-path cleanup examines the table. */
+  HOMA_QUEUE_CLOSE_START,
+  /* Mark an endpoint closed after its preceding cleanup commands. */
+  HOMA_QUEUE_CLOSE_DONE,
 };
 
 /* Endpoint control request. */
@@ -51,8 +59,8 @@ struct homa_queue_entry {
     struct homa_queue_request request;
     /* Result of the preceding control request. */
     struct homa_queue_result result;
-    /* RPC slot index for data-path commands and notifications. */
-    __u32 rpc_slot;
+    /* Generation-aware RPC handle for commands and notifications. */
+    __u64 rpc_handle;
     /* Keep entries one cache line wide. */
     __u8 raw[63];
   } __attribute__((packed)) data;

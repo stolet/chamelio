@@ -7,6 +7,12 @@
 #define IP_PROTO_HOMA 253
 /* Unscheduled or scheduled message data. */
 #define HOMA_DATA 0x10
+/* Request confirmation that a response has been received. */
+#define HOMA_NEED_ACK 0x17
+/* Confirm receipt of a complete response. */
+#define HOMA_ACK 0x18
+/* Reserved completion records in the baseline standalone ACK format. */
+#define HOMA_ACK_RECORDS 5
 /* Single DATA packet at the physical MTU of 1500 bytes. */
 #define HOMA_MAX_PAYLOAD 1420
 
@@ -50,12 +56,32 @@ struct homa_data_hdr {
   beui32_t offset;
   /* Payload bytes in this segment. */
   beui32_t segment_length;
-  /* Piggybacked completion acknowledgment; zero until step 3. */
+  /* Client wire ID of a completed RPC; zero means no acknowledgment. */
   beui64_t ack_id;
   /* Acknowledged client's port. */
   beui16_t ack_sport;
   /* Acknowledged server's port. */
   beui16_t ack_dport;
+} __attribute__((packed));
+
+/* Completion record in the baseline standalone ACK format. */
+struct homa_ack_record {
+  /* Client's wire RPC ID. */
+  beui64_t id;
+  /* Client's local port. */
+  beui16_t sport;
+  /* Server's local port. */
+  beui16_t dport;
+} __attribute__((packed));
+
+/* Standalone ACK naming one RPC in the common header. */
+struct homa_ack_hdr {
+  /* Client's wire ID and endpoint pair for the acknowledged RPC. */
+  struct homa_common_hdr common;
+  /* Additional ACK records; this implementation sends none. */
+  beui16_t num_acks;
+  /* Reserved additional records; transmitted as zero when unused. */
+  struct homa_ack_record acks[HOMA_ACK_RECORDS];
 } __attribute__((packed));
 
 /* IPv4 and Homa DATA headers, followed by message bytes. */
@@ -68,5 +94,6 @@ struct homa_pkt {
 
 STATIC_ASSERT(sizeof(struct homa_common_hdr) == 28, homa_common_hdr_size);
 STATIC_ASSERT(sizeof(struct homa_data_hdr) == 60, homa_data_hdr_size);
+STATIC_ASSERT(sizeof(struct homa_ack_hdr) == 90, homa_ack_hdr_size);
 
 #endif
