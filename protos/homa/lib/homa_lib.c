@@ -280,7 +280,7 @@ int homa_lib_request(struct homa_context_lib *ctx, int sockfd, const void *data,
   }
 
   rpc = &ctx->rpcs[i];
-  rpc->id = (__u64) (i + 1) * 2;
+  rpc->id = (__u64) (i + 1) * HOMA_RPC_ID_STRIDE;
   rpc->sock_id = sockfd;
   rpc->app_qid = ctx->sockets[sockfd].app_qid;
   rpc->remote_ip = ntohl(in->sin_addr.s_addr);
@@ -308,7 +308,7 @@ int homa_lib_reply(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id,
     return -1;
 
   slot = rpc_id - 1;
-  if (!(rpc->id & 1) || ctx->replied[slot])
+  if (!(rpc->id & HOMA_RPC_SERVER_BIT) || ctx->replied[slot])
   {
     errno = EINVAL;
     return -1;
@@ -365,7 +365,8 @@ int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
     rpc = &ctx->rpcs[slot];
     event = &events[n++];
     memset(event, 0, sizeof(*event));
-    event->type = (rpc->id & 1) ? HOMA_EVENT_REQUEST : HOMA_EVENT_RESPONSE;
+    event->type = (rpc->id & HOMA_RPC_SERVER_BIT) ?
+        HOMA_EVENT_REQUEST : HOMA_EVENT_RESPONSE;
     event->sockfd = rpc->sock_id;
     event->rpc_id = slot + 1;
     event->peer.sin_family = AF_INET;

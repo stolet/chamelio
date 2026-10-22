@@ -3,14 +3,14 @@
 
 #include "ip_hdr.h"
 
-/* eTRAN's experimental IPv4 protocol number. */
+/* Experimental IPv4 protocol number. */
 #define IP_PROTO_HOMA 253
 /* Unscheduled or scheduled message data. */
 #define HOMA_DATA 0x10
 /* Single DATA packet at the physical MTU of 1500 bytes. */
 #define HOMA_MAX_PAYLOAD 1420
 
-/* eTRAN Homa common header, including the TCP-compatible prefix. */
+/* Homa common header, including the TCP-compatible prefix. */
 struct homa_common_hdr {
   /* Source port. */
   beui16_t sport;

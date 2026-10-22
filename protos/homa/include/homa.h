@@ -15,6 +15,10 @@
 #define HOMA_MESSAGE_BYTES 2048
 /* Entries in each application/control or application/fast-path queue. */
 #define HOMA_QUEUE_LENGTH 128
+/* Low wire-ID bit identifies the server side of an RPC. */
+#define HOMA_RPC_SERVER_BIT 1ULL
+/* Client wire IDs advance by two, reserving the low bit for the role. */
+#define HOMA_RPC_ID_STRIDE 2ULL
 
 /* Shared maps in creation order. */
 enum homa_map_id {

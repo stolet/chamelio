@@ -70,9 +70,6 @@ DEFINE_EVENT_STUB(sched, 3)
     g->proto.ebpf_ctx.core = ctx->id;                                         \
     fast_ebpf_ctx_set_pkt(&g->proto.ebpf_ctx, mb, pkt_off,                    \
         comb_virt_gre(ctx));                                                  \
-    if (g->proto.proto_type == CHAM_PROTO_HOMA)                                \
-      g->proto.ebpf_ctx.pkt_end =                                             \
-          rte_pktmbuf_mtod(mb, __u8 *) + mb->data_len;                          \
     rx_ret = (int) event_rx_slot_##slot(&g->proto.ebpf_ctx,                   \
         sizeof(struct cham_ebpf_ctx));                                        \
     if (rx_ret >= 0)                                                          \
