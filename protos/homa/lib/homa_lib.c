@@ -290,6 +290,7 @@ int homa_lib_request(struct homa_context_lib *ctx, int sockfd, const void *data,
   rpc->id = rpc->handle * HOMA_RPC_ID_STRIDE;
   rpc->flags = 0;
   rpc->rx_len = 0;
+  rpc->rx_bitmap = 0;
   ctx->delivered[i] = 0;
   ctx->received[i] = 0;
   ctx->replied[i] = 0;
@@ -490,7 +491,7 @@ static __u32 rpc_slot(__u64 handle)
 
 static int message_valid(const void *data, size_t len)
 {
-  if (len > HOMA_MAX_PAYLOAD)
+  if (len > HOMA_MESSAGE_BYTES)
   {
     errno = EMSGSIZE;
     return 0;

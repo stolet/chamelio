@@ -39,6 +39,8 @@ static __always_inline int rx_handle_ack(struct cham_ebpf_ctx *ctx);
 static __always_inline int rx_handle_need_ack(struct cham_ebpf_ctx *ctx);
 static __always_inline int deq_handle_tx(struct cham_ebpf_ctx *ctx,
     struct homa_rpc *rpc, __u32 slot);
+static __always_inline int tx_segment(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot);
 static __always_inline int tx_control(struct cham_ebpf_ctx *ctx,
     struct homa_socket *sock, __u32 remote_ip, __u16 remote_port,
     __u64 id, __u8 type);
@@ -104,6 +106,9 @@ int homa_fast_event_sched(struct cham_ebpf_ctx *ctx)
   sock = sock_at(ctx, rpc->sock_id);
   if (sock == NULL)
     return 0;
+
+  if (rpc->flags & HOMA_RPC_TX_PENDING)
+    return tx_segment(ctx, rpc, slot);
 
   if (rpc->state == HOMA_RPC_RESPONSE_SENT)
   {
@@ -383,8 +388,9 @@ static __always_inline struct homa_rpc *rx_rpc_lookup(
     return rpc;
   }
 
-  if (rpc_server_find(ctx, id, sock_id, remote_ip, remote_port, slot) != NULL)
-    return NULL;
+  rpc = rpc_server_find(ctx, id, sock_id, remote_ip, remote_port, slot);
+  if (rpc != NULL)
+    return rpc->state == HOMA_RPC_REQUEST_RECEIVING ? rpc : NULL;
 
   state = state_get(ctx);
   if (state == NULL)
@@ -414,6 +420,9 @@ static __always_inline struct homa_rpc *rx_rpc_lookup(
   rpc->remote_port = remote_port;
   rpc->flags = 0;
   rpc->tx_len = 0;
+  rpc->rx_len = 0;
+  rpc->rx_bitmap = 0;
+  rpc->state = HOMA_RPC_REQUEST_RECEIVING;
   rpc->hash_prev = 0;
   rpc->hash_next = 0;
   rpc_server_insert(ctx, rpc, i);
@@ -428,7 +437,7 @@ static __always_inline int rx_handle_data(struct cham_ebpf_ctx *ctx)
   struct homa_rpc *rpc;
   struct homa_queue_entry *qe;
   struct equeue *q;
-  __u32 sock_id, slot, len;
+  __u32 sock_id, slot, len, offset, seg_len, bit, segments;
   __u64 id;
 
   if (!rx_is_pkt_valid(p, ctx->pkt_end))
@@ -459,8 +468,25 @@ static __always_inline int rx_handle_data(struct cham_ebpf_ctx *ctx)
   else if (rpc->app_qid != sock->app_qid)
     return 0;
 
-  ebpf_memcpy(rpc->rx_data, (__u8 *) p + sizeof(*p), len);
+  offset = f_beui32(p->data.offset);
+  seg_len = f_beui32(p->data.segment_length);
+  bit = 1U << (offset / HOMA_MAX_PAYLOAD);
+  if (rpc->rx_bitmap != 0 && rpc->rx_len != len)
+    return -1;
+
+  if (rpc->rx_bitmap & bit)
+    return 0;
+
+  if (offset > HOMA_MESSAGE_BYTES || seg_len > HOMA_MESSAGE_BYTES - offset)
+    return -1;
+
+  ebpf_memcpy(rpc->rx_data + offset, (__u8 *) p + sizeof(*p), seg_len);
   rpc->rx_len = len;
+  rpc->rx_bitmap |= bit;
+  segments = len == 0 ? 1 : (len + HOMA_MAX_PAYLOAD - 1) / HOMA_MAX_PAYLOAD;
+  if (rpc->rx_bitmap != (1U << segments) - 1)
+    return 0;
+
   rpc->state = rpc_is_server(id) ?
       HOMA_RPC_REQUEST_READY : HOMA_RPC_RESPONSE_READY;
   qe->data.rpc_handle = rpc->handle;
@@ -529,29 +555,56 @@ static __always_inline int rx_handle_need_ack(struct cham_ebpf_ctx *ctx)
 static __always_inline int deq_handle_tx(struct cham_ebpf_ctx *ctx,
     struct homa_rpc *rpc, __u32 slot)
 {
+  if (!rpc_is_tx_ready(rpc) || (rpc->flags & HOMA_RPC_TX_PENDING))
+    return 0;
+
+  rpc->tx_offset = 0;
+  rpc->flags |= HOMA_RPC_TX_PENDING;
+  return tx_segment(ctx, rpc, slot);
+}
+
+static __always_inline int tx_segment(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot)
+{
   struct homa_pkt *p = ctx->pkt;
   struct homa_socket *sock;
+  __u32 offset = rpc->tx_offset;
   __u32 len;
-
-  if (!rpc_is_tx_ready(rpc))
-    return 0;
 
   sock = sock_at(ctx, rpc->sock_id);
   if (sock == NULL || sock->state != HOMA_SOCKET_BOUND)
     return 0;
 
-  len = rpc->tx_len;
+  if (rpc->tx_len > HOMA_MESSAGE_BYTES || offset > rpc->tx_len)
+    return -1;
+
+  len = rpc->tx_len - offset;
+  if (len > HOMA_MAX_PAYLOAD)
+    len = HOMA_MAX_PAYLOAD;
+
   if (!is_paylen_valid(p, ctx->pkt_end, len))
+    return -1;
+
+  if (offset > HOMA_MESSAGE_BYTES || len > HOMA_MESSAGE_BYTES - offset)
     return -1;
 
   tx_fill_ip_hdr(&p->ip, sock->local_ip, rpc->remote_ip, sizeof(*p) + len);
   tx_fill_data_hdr(&p->data, sock, rpc, len);
-  ebpf_memcpy((__u8 *) p + sizeof(*p), rpc->tx_data, len);
+  ebpf_memcpy((__u8 *) p + sizeof(*p), rpc->tx_data + offset, len);
 
-  if (rpc_is_server(rpc->id))
+  rpc->tx_offset = offset + len;
+  if (rpc->tx_offset < rpc->tx_len)
   {
-    rpc->state = HOMA_RPC_RESPONSE_SENT;
-    rpc_schedule(ctx, slot, HOMA_NEED_ACK_US);
+    rpc_schedule(ctx, slot, 0);
+  }
+  else
+  {
+    rpc->flags &= ~HOMA_RPC_TX_PENDING;
+    if (rpc_is_server(rpc->id))
+    {
+      rpc->state = HOMA_RPC_RESPONSE_SENT;
+      rpc_schedule(ctx, slot, HOMA_NEED_ACK_US);
+    }
   }
 
   return sizeof(*p) + len;
@@ -637,30 +690,31 @@ static __always_inline __u8 is_paylen_valid(struct homa_pkt *p,
 
 static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end)
 {
-  __u32 len;
-  __u8 ipv4, fixed_ip_hdr, homa, unfragmented;
-  __u8 data_pkt, data_hdr, whole_message, unscheduled, ip_len_valid;
+  __u32 len, offset, seg_len, remaining;
+  __u8 data_pkt, data_hdr, segment_valid, unscheduled, ip_len_valid;
 
   if ((__u8 *) p + sizeof(*p) > (__u8 *) pkt_end)
-    return 0;
-
-  ipv4 = IPH_V(&p->ip) == 4;
-  fixed_ip_hdr = IPH_HL(&p->ip) == sizeof(p->ip) / sizeof(__u32);
-  homa = p->ip.proto == IP_PROTO_HOMA;
-  unfragmented = !(f_beui16(p->ip.offset) & IPV4_FRAGMENT_MASK);
-  if (!ipv4 || !fixed_ip_hdr || !homa || !unfragmented)
     return 0;
 
   len = f_beui32(p->data.message_length);
   data_pkt = p->data.common.type == HOMA_DATA;
   data_hdr = p->data.common.doff == ((sizeof(p->data) / sizeof(__u32)) << 4);
-  whole_message = f_beui32(p->data.offset) == 0 &&
-      f_beui32(p->data.segment_length) == len;
-  unscheduled = f_beui32(p->data.incoming) >= len;
-  ip_len_valid = f_beui16(p->ip.len) == sizeof(*p) + len;
+  offset = f_beui32(p->data.offset);
+  seg_len = f_beui32(p->data.segment_length);
+  if (len > HOMA_MESSAGE_BYTES || offset > len)
+    return 0;
 
-  return data_pkt && data_hdr && whole_message && unscheduled &&
-      ip_len_valid && is_paylen_valid(p, pkt_end, len);
+  if (offset % HOMA_MAX_PAYLOAD != 0 || (len != 0 && offset == len))
+    return 0;
+
+  remaining = len - offset;
+  segment_valid = seg_len == (remaining > HOMA_MAX_PAYLOAD ?
+      HOMA_MAX_PAYLOAD : remaining);
+  unscheduled = f_beui32(p->data.incoming) >= len;
+  ip_len_valid = f_beui16(p->ip.len) == sizeof(*p) + seg_len;
+
+  return data_pkt && data_hdr && segment_valid && unscheduled &&
+      ip_len_valid && is_paylen_valid(p, pkt_end, seg_len);
 }
 
 static __always_inline __u64 rx_get_local_rpc_id(struct homa_pkt *p)
@@ -753,12 +807,12 @@ static __always_inline void tx_fill_data_hdr(struct homa_data_hdr *data,
   tx_fill_common_hdr(&data->common, sock->local_port, rpc->remote_port,
       rpc->id, HOMA_DATA);
   data->common.doff = (sizeof(*data) / sizeof(__u32)) << 4;
-  data->message_length = t_beui32(len);
-  data->incoming = t_beui32(len);
+  data->message_length = t_beui32(rpc->tx_len);
+  data->incoming = t_beui32(rpc->tx_len);
   data->cutoff_version = t_beui16(0);
   data->retransmit = 0;
   data->unused = 0;
-  data->offset = t_beui32(0);
+  data->offset = t_beui32(rpc->tx_offset);
   data->segment_length = t_beui32(len);
   data->ack_id = t_beui64(0);
   data->ack_sport = t_beui16(0);

@@ -49,11 +49,11 @@ int homa_lib_bind(struct homa_context_lib *ctx, int sockfd,
     const struct sockaddr *addr, socklen_t addrlen);
 /* Close an endpoint, invalidate its receive buffers, and reclaim its RPCs. */
 int homa_lib_close(struct homa_context_lib *ctx, int sockfd);
-/* Submit up to 1420 bytes; store a local handle in rpc_id, return 0 or -1.
+/* Submit up to 16 KiB; store a local handle in rpc_id, return 0 or -1.
  * Up to 128 client RPCs may be outstanding; released slots are reusable. */
 int homa_lib_request(struct homa_context_lib *ctx, int sockfd, const void *data,
     size_t len, const struct sockaddr *peer, socklen_t peerlen, __u64 *rpc_id);
-/* Submit up to 1420 reply bytes; a released request handle remains valid. */
+/* Submit up to 16 KiB of reply; a released request handle remains valid. */
 int homa_lib_reply(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id,
     const void *data, size_t len);
 /* Poll complete messages without blocking; return the number of events. */

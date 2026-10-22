@@ -13,8 +13,8 @@
 #define HOMA_MAX_RPCS 256
 /* Client slots; remaining slots are allocated by the fast path. */
 #define HOMA_CLIENT_RPCS (HOMA_MAX_RPCS / 2)
-/* Bytes reserved per message direction for single-packet bring-up. */
-#define HOMA_MESSAGE_BYTES 2048
+/* Unscheduled message allowance and reserved bytes per message direction. */
+#define HOMA_MESSAGE_BYTES 16384
 /* Entries in each application/control or application/fast-path queue. */
 #define HOMA_QUEUE_LENGTH 128
 /* Low wire-ID bit identifies the server side of an RPC. */
@@ -77,6 +77,7 @@ struct homa_socket {
 enum homa_rpc_state {
   HOMA_RPC_FREE,
   HOMA_RPC_WAIT_RESPONSE,
+  HOMA_RPC_REQUEST_RECEIVING,
   HOMA_RPC_REQUEST_READY,
   HOMA_RPC_RESPONSE_SENT,
   HOMA_RPC_RESPONSE_READY,
@@ -85,6 +86,8 @@ enum homa_rpc_state {
 
 /* Application has released the received message. */
 #define HOMA_RPC_RX_RELEASED 0x1
+/* More DATA segments remain eligible for transmission. */
+#define HOMA_RPC_TX_PENDING 0x2
 
 /* Shared RPC state and retained message storage. */
 struct homa_rpc {
@@ -106,8 +109,12 @@ struct homa_rpc {
   __u32 app_qid;
   /* Bytes retained for transmission. */
   __u32 tx_len;
-  /* Complete received message bytes. */
+  /* Next message byte to transmit. */
+  __u32 tx_offset;
+  /* Total message bytes, fixed by the first received segment. */
   __u32 rx_len;
+  /* Received fixed-size segment indices; the final segment may be shorter. */
+  __u32 rx_bitmap;
   /* Previous server hash entry plus one; zero means none. */
   __u32 hash_prev;
   /* Next server hash entry plus one; zero means none. */
