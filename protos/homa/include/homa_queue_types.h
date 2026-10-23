@@ -25,6 +25,8 @@ enum homa_queue_type {
   HOMA_QUEUE_RELEASE,
   /* Abort and reclaim an RPC when its endpoint closes. */
   HOMA_QUEUE_REAP,
+  /* Request completion confirmation for an unacknowledged response. */
+  HOMA_QUEUE_NEED_ACK,
   /* Stop new RPC admission before slow-path cleanup examines the table. */
   HOMA_QUEUE_CLOSE_START,
   /* Mark an endpoint closed after its preceding cleanup commands. */

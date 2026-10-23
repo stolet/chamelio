@@ -31,6 +31,20 @@
 #define HOMA_GRANT_SCHED_ID HOMA_MAX_RPCS
 /* Effective initial network priority in the eTRAN artifact. */
 #define HOMA_GRANT_PRIORITY 7
+/* Highest scheduled priority; unscheduled DATA uses priority seven. */
+#define HOMA_MAX_SCHED_PRIORITY 3
+/* Peers considered in one grant round. */
+#define HOMA_OVERCOMMITMENT 4
+/* Percentage of byte service reserved for the oldest eligible RPC. */
+#define HOMA_FIFO_PERCENT 1
+/* Default aggregate physical link pacing rate in kilobits per second. */
+#define HOMA_LINK_KBPS 100000000
+/* Ethernet header, FCS, preamble and interpacket gap on the physical wire. */
+#define HOMA_WIRE_OVERHEAD 38
+/* IPv4 precedence occupies the top three TOS bits. */
+#define HOMA_PRIORITY_SHIFT 5
+/* Words in the receiver's grant eligibility bitmap. */
+#define HOMA_CANDIDATE_WORDS (HOMA_MAX_RPCS / 32)
 /* Entries in each application/control or application/fast-path queue. */
 #define HOMA_QUEUE_LENGTH 128
 /* Low wire-ID bit identifies the server side of an RPC. */
@@ -67,8 +81,38 @@ enum homa_socket_state {
   HOMA_SOCKET_CLOSED,
 };
 
-/* Single-core server RPC allocation and lookup. */
+/* Compact receiver selection metadata, kept separate from message storage. */
+struct homa_grant_candidate {
+  /* Unique bytes left to receive. */
+  __u32 remaining;
+  /* Additional bytes the receive window currently permits. */
+  __u32 need;
+  /* Remote IPv4 address identifying the peer. */
+  __u32 peer;
+};
+
+/* Single-core scheduling, server RPC allocation and lookup. */
 struct homa_state {
+  /* Aggregate DATA pacing rate. */
+  __u32 link_kbps;
+  /* Next DATA eligibility time in TSC cycles. */
+  __u64 tx_ready_tsc;
+  /* First pending transmit in admission order, including credit waits. */
+  __u32 tx_fifo_head;
+  /* Last pending transmit in admission order. */
+  __u32 tx_fifo_tail;
+  /* Sender byte credits toward oldest-message service. */
+  __u64 tx_fifo_credit;
+  /* Receiver byte credits toward oldest-message service. */
+  __u64 grant_fifo_credit;
+  /* Peers already granted in this round. */
+  __u32 grant_peers[HOMA_OVERCOMMITMENT];
+  /* Number of peers already granted in this round. */
+  __u32 grant_count;
+  /* Eligible grant candidates, one bit per RPC slot. */
+  __u32 grant_bits[HOMA_CANDIDATE_WORDS];
+  /* Hot selection metadata for pending receives. */
+  struct homa_grant_candidate candidates[HOMA_MAX_RPCS];
   /* Configured initial transmit allowance. */
   __u32 unscheduled_bytes;
   /* Configured receive grant window. */
@@ -77,7 +121,7 @@ struct homa_state {
   __u32 incoming_limit;
   /* Known bytes authorized but not yet received, including unscheduled DATA. */
   __u32 incoming;
-  /* FIFO grant candidates, slot plus one; only the head receives grants. */
+  /* First pending receive, slot plus one. */
   __u32 grant_head;
   /* Last grant candidate, slot plus one. */
   __u32 grant_tail;
@@ -120,6 +164,10 @@ enum homa_rpc_state {
 #define HOMA_RPC_RX_ACTIVE 0x4
 /* RPC belongs to the receiver's pending grant queue. */
 #define HOMA_RPC_GRANT_QUEUED 0x8
+/* RPC belongs to the eligible DATA queue. */
+#define HOMA_RPC_TX_QUEUED 0x10
+/* RPC belongs to the transmit admission-order queue. */
+#define HOMA_RPC_TX_FIFO_QUEUED 0x20
 
 /* Shared RPC state and retained message storage. */
 struct homa_rpc {
@@ -145,6 +193,14 @@ struct homa_rpc {
   __u32 tx_offset;
   /* Cumulative byte offset authorized for transmission. */
   __u32 tx_credit;
+  /* Initial unscheduled boundary, preserved as grants increase tx_credit. */
+  __u32 tx_unscheduled;
+  /* Receiver-selected scheduled DATA priority. */
+  __u8 tx_priority;
+  /* Previous pending transmit in admission order, slot plus one. */
+  __u32 tx_fifo_prev;
+  /* Next pending transmit in admission order, slot plus one. */
+  __u32 tx_fifo_next;
   /* Total message bytes, fixed by the first received segment. */
   __u32 rx_len;
   /* Received fixed-size segment indices; the final segment may be shorter. */

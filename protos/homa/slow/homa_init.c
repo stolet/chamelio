@@ -24,6 +24,8 @@ int homa_init_context(struct homa_slow *ctx)
   ctx->app_fd = -1;
   ctx->closing_sock = -1;
   ctx->disconnecting = 0;
+  memset(ctx->ack_handles, 0, sizeof(ctx->ack_handles));
+  memset(ctx->ack_deadlines, 0, sizeof(ctx->ack_deadlines));
 
   if (ctx->config.virt)
   {
@@ -65,6 +67,7 @@ int homa_init_context(struct homa_slow *ctx)
     return -1;
 
   state->unscheduled_bytes = ctx->config.unscheduled_bytes;
+  state->link_kbps = ctx->config.link_kbps;
   state->grant_bytes = ctx->config.grant_bytes;
   state->incoming_limit = ctx->config.incoming_bytes;
   state->server_free_count = HOMA_CLIENT_RPCS;

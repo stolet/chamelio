@@ -17,8 +17,12 @@ struct homa_slow {
   __u32 *ports;
   /* Shared endpoint table. */
   struct homa_socket *sockets;
-  /* Shared RPC table, inspected when an endpoint closes. */
+  /* Shared RPC table, inspected for completion timers and endpoint cleanup. */
   struct homa_rpc *rpcs;
+  /* RPC generation observed by each completion timer. */
+  __u64 ack_handles[HOMA_CLIENT_RPCS];
+  /* Next completion check in monotonic nanoseconds; zero means inactive. */
+  __u64 ack_deadlines[HOMA_CLIENT_RPCS];
   /* Application attachment response with shared queue locations. */
   struct homa_context_info info;
   /* Application-to-slow-path queue view. */
@@ -49,6 +53,8 @@ struct homa_slow {
 int homa_init_context(struct homa_slow *ctx);
 /* Open the local application registration socket. */
 int homa_app_init(struct homa_slow *ctx);
+/* Check completion deadlines and enqueue NEED_ACK work for the fast path. */
+void homa_timer_poll(struct homa_slow *ctx);
 /* Accept applications, detect disconnects, and process endpoint requests. */
 int homa_app_poll(struct homa_slow *ctx);
 

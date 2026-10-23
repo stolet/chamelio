@@ -13,6 +13,8 @@ struct homa_configuration {
   __u32 grant_bytes;
   /* Cap on authorized-but-not-received bytes for additional grants. */
   __u32 incoming_bytes;
+  /* Aggregate physical link pacing rate in kilobits per second. */
+  __u32 link_kbps;
 };
 
 /* Parse options: 0 on success, -1 on error */

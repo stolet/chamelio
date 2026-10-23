@@ -357,7 +357,7 @@ static inline void process_tx_hdrs_gre(struct fast_context *ctx,
   pkt = (struct gre_pkt *) rte_pktmbuf_mtod(mb, __u8 *);
 
   IPH_VHL_SET(&pkt->outer_ip, 4, 5);
-  pkt->outer_ip._tos = 0;
+  pkt->outer_ip._tos = pkt->inner_ip._tos;
   pkt->outer_ip.len = t_beui16(pkt_len + sizeof(struct gre_hdr) 
       + sizeof(struct ip_hdr));
   pkt->outer_ip.id = t_beui16(3);
