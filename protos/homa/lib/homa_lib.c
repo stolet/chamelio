@@ -14,6 +14,10 @@
 #include "uxsocket.h"
 
 struct homa_context_lib {
+  int slow_fd;
+  __u32 rpc_begin;
+  __u32 rpc_end;
+  __u32 app_qid;
   void *shm_base;
   size_t shm_len;
   struct homa_socket *sockets;
@@ -27,10 +31,9 @@ struct homa_context_lib {
   struct dqueue fast_app;
 };
 
-static int slow_fd = -1;
-static struct homa_context_lib *context;
+static __thread int slow_fd = -1;
 
-static int slow_alive(void);
+static int slow_alive(struct homa_context_lib *ctx);
 static struct homa_socket *socket_get(struct homa_context_lib *ctx, int sockfd);
 static struct homa_rpc *rpc_get(struct homa_context_lib *ctx, int sockfd,
     __u64 rpc_id);
@@ -80,11 +83,8 @@ struct homa_context_lib *homa_lib_ctx_new(void)
   size_t received = 0;
   ssize_t ret;
 
-  if (slow_fd < 0 || context != NULL)
-  {
-    errno = slow_fd < 0 ? ENOTCONN : EALREADY;
+  if (slow_fd < 0 && homa_lib_connect_slow() != 0)
     return NULL;
-  }
 
   if (uxsocket_read_one_msg(slow_fd, &marker, &shm_fd) != 0 ||
       marker != -1 || shm_fd < 0)
@@ -124,6 +124,13 @@ struct homa_context_lib *homa_lib_ctx_new(void)
     goto failed;
   }
 
+  if (info.rpc_begin >= info.rpc_end || info.rpc_end > HOMA_CLIENT_RPCS ||
+      info.app_qid >= MAX_PROTO_QUEUES)
+  {
+    errno = EPROTO;
+    goto failed;
+  }
+
   ctx = calloc(1, sizeof(*ctx));
   if (ctx == NULL)
     goto failed;
@@ -140,6 +147,9 @@ struct homa_context_lib *homa_lib_ctx_new(void)
   ctx->shm_len = info.shm_len;
   ctx->sockets = (void *) ((char *) ctx->shm_base + info.sockets_off);
   ctx->rpcs = (void *) ((char *) ctx->shm_base + info.rpcs_off);
+  ctx->rpc_begin = info.rpc_begin;
+  ctx->rpc_end = info.rpc_end;
+  ctx->app_qid = info.app_qid;
 
   equeue_init(&ctx->app_slow, HOMA_QUEUE_LENGTH,
       sizeof(struct homa_queue_entry),
@@ -154,7 +164,8 @@ struct homa_context_lib *homa_lib_ctx_new(void)
       sizeof(struct homa_queue_entry),
       (char *) ctx->shm_base + info.fast_app_off, info.fast_app_off);
 
-  context = ctx;
+  ctx->slow_fd = slow_fd;
+  slow_fd = -1;
   return ctx;
 
 failed:
@@ -170,13 +181,6 @@ failed:
 
 void homa_lib_disconnect_slow(void)
 {
-  if (context != NULL)
-  {
-    munmap(context->shm_base, context->shm_len);
-    free(context);
-    context = NULL;
-  }
-
   if (slow_fd >= 0)
   {
     close(slow_fd);
@@ -186,8 +190,12 @@ void homa_lib_disconnect_slow(void)
 
 void homa_lib_ctx_free(struct homa_context_lib *ctx)
 {
-  if (ctx != NULL && ctx == context)
-    homa_lib_disconnect_slow();
+  if (ctx == NULL)
+    return;
+
+  close(ctx->slow_fd);
+  munmap(ctx->shm_base, ctx->shm_len);
+  free(ctx);
 }
 
 int homa_lib_socket(struct homa_context_lib *ctx)
@@ -269,13 +277,13 @@ int homa_lib_request(struct homa_context_lib *ctx, int sockfd, const void *data,
     return -1;
   }
 
-  for (i = 0; i < HOMA_CLIENT_RPCS; i++)
+  for (i = ctx->rpc_begin; i < ctx->rpc_end; i++)
   {
     if (ctx->rpcs[i].state == HOMA_RPC_FREE)
       break;
   }
 
-  if (i == HOMA_CLIENT_RPCS)
+  if (i == ctx->rpc_end)
   {
     errno = ENOBUFS;
     return -1;
@@ -363,7 +371,7 @@ int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
   __u64 handle;
   int n = 0;
 
-  if (ctx == NULL || ctx != context || slow_fd < 0)
+  if (ctx == NULL)
   {
     errno = ENOTCONN;
     return -1;
@@ -389,7 +397,7 @@ int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
     MEM_BARRIER();
     rpc = &ctx->rpcs[slot];
     if (rpc->handle != handle || rpc->state == HOMA_RPC_FREE ||
-        rpc->app_qid != ctx->sockets[rpc->sock_id].app_qid)
+        rpc->app_qid != ctx->app_qid)
     {
       queue_dequeue(&ctx->fast_app);
       continue;
@@ -463,14 +471,15 @@ int homa_lib_release(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id)
 
 static struct homa_socket *socket_get(struct homa_context_lib *ctx, int sockfd)
 {
-  if (ctx == NULL || ctx != context || slow_fd < 0)
+  if (ctx == NULL)
   {
     errno = ENOTCONN;
     return NULL;
   }
 
   if (sockfd < 0 || sockfd >= HOMA_MAX_SOCKETS ||
-      ctx->sockets[sockfd].state == HOMA_SOCKET_FREE)
+      ctx->sockets[sockfd].state == HOMA_SOCKET_FREE ||
+      ctx->sockets[sockfd].app_qid != ctx->app_qid)
   {
     errno = EBADF;
     return NULL;
@@ -534,12 +543,12 @@ static int message_valid(const void *data, size_t len)
   return 1;
 }
 
-static int slow_alive(void)
+static int slow_alive(struct homa_context_lib *ctx)
 {
   char byte;
   ssize_t ret;
 
-  ret = recv(slow_fd, &byte, sizeof(byte), MSG_PEEK | MSG_DONTWAIT);
+  ret = recv(ctx->slow_fd, &byte, sizeof(byte), MSG_PEEK | MSG_DONTWAIT);
   if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR))
     return 0;
 
@@ -554,7 +563,7 @@ static int control_request(struct homa_context_lib *ctx, __u8 type,
   int status;
   int result;
 
-  if (ctx == NULL || ctx != context || slow_fd < 0)
+  if (ctx == NULL)
   {
     errno = ENOTCONN;
     return -1;
@@ -579,7 +588,7 @@ static int control_request(struct homa_context_lib *ctx, __u8 type,
 
   while ((entry = queue_head(&ctx->slow_app)) == NULL)
   {
-    if (slow_alive() != 0)
+    if (slow_alive(ctx) != 0)
       return -1;
   }
 

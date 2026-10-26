@@ -18,47 +18,56 @@ struct homa_rpc_timer {
   __u32 attempts;
 };
 
-/* Single-core protocol registration and application control state. */
-struct homa_slow {
-  /* Slow-path configuration */
-  struct homa_configuration config;
-
-  /* Registered Chamelio protocol and its shared-memory mapping. */
-  struct proto_lib *proto;
-  /* Port map: zero means free, otherwise endpoint index plus one. */
-  __u32 *ports;
-  /* Shared endpoint table. */
-  struct homa_socket *sockets;
-  /* Shared RPC table, inspected for completion timers and endpoint cleanup. */
-  struct homa_rpc *rpcs;
-  /* Recovery observations, private to the slow path. */
-  struct homa_rpc_timer timers[HOMA_MAX_RPCS];
+/* Application attachment and endpoint cleanup state. */
+struct homa_app {
   /* Application attachment response with shared queue locations. */
   struct homa_context_info info;
   /* Application-to-slow-path queue view. */
   struct dqueue app_slow;
   /* Slow-path-to-application queue view. */
   struct equeue slow_app;
-  /* Slow-path-to-fast-path cleanup queue, active without an application. */
-  struct equeue slow_fast;
-  /* Received recovery packet metadata from the fast path. */
-  struct dqueue fast_slow;
   /* Endpoint currently being cleaned, or -1. */
   int closing_sock;
   /* Next RPC slot to inspect for the current close. */
   __u32 close_cursor;
   /* Cleanup barrier has been submitted to the fast path. */
   int close_barrier;
-  /* Application disconnected; finish cleanup before accepting another. */
+  /* Application disconnected; finish cleanup before reusing this slot. */
   int disconnecting;
   /* Active application-to-fast-path queue ID. */
   __u16 app_fast_qid;
   /* Active fast-path-to-application queue ID. */
   __u16 fast_app_qid;
-  /* Listening application socket. */
-  int listen_fd;
+  /* Context-reset command has been submitted. */
+  int reset_pending;
   /* Active application connection, or -1. */
   int app_fd;
+};
+
+/* Protocol registration and application control state. */
+struct homa_slow {
+  /* Slow-path configuration. */
+  struct homa_configuration config;
+  /* Registered protocol and shared-memory mapping. */
+  struct proto_lib *proto;
+  /* Port to endpoint index plus one; zero means unbound. */
+  __u32 *ports;
+  /* Shared endpoint table. */
+  struct homa_socket *sockets;
+  /* Shared RPC table. */
+  struct homa_rpc *rpcs;
+  /* Shared attachment ownership and reset barriers. */
+  struct homa_context *contexts;
+  /* Cleanup and recovery commands for core zero. */
+  struct equeue slow_fast;
+  /* Received recovery metadata from core zero. */
+  struct dqueue fast_slow;
+  /* Application attachments with reserved RPC slot ranges. */
+  struct homa_app apps[HOMA_MAX_CONTEXTS];
+  /* Slow-path observations for each RPC generation. */
+  struct homa_rpc_timer timers[HOMA_MAX_RPCS];
+  /* Listening application socket. */
+  int listen_fd;
 };
 
 /* Register Homa, allocate shared resources, and upload the fast path. */

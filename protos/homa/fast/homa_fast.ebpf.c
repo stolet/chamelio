@@ -92,6 +92,8 @@ static __always_inline int tx_resend_request(struct cham_ebpf_ctx *ctx,
     struct homa_queue_recovery *recovery);
 
 /* DEQ helpers */
+static __always_inline int deq_context_reset(struct cham_ebpf_ctx *ctx,
+    __u32 id);
 static __always_inline int deq_handle_tx(struct cham_ebpf_ctx *ctx,
     struct homa_rpc *rpc, __u32 slot);
 static __always_inline __u8 deq_is_recovery_stale(struct homa_rpc *rpc,
@@ -159,6 +161,9 @@ int event_rx(struct cham_ebpf_ctx *ctx)
 {
   struct homa_pkt *p = ctx->pkt;
 
+  if (ctx->core != 0)
+    return -1;
+
   if (!rx_is_common_valid(p, ctx->pkt_end))
     return -1;
 
@@ -186,6 +191,9 @@ int event_sched(struct cham_ebpf_ctx *ctx)
 {
   struct cham_sched_entry *entry;
 
+  if (ctx->core != 0)
+    return 0;
+
   entry = ebpf_sched_head(&ctx->sched, sizeof(*entry));
   if (entry == NULL)
     return 0;
@@ -208,8 +216,14 @@ int event_deq(struct cham_ebpf_ctx *ctx)
   __u32 slot;
   __u64 handle;
 
+  if (ctx->core != 0)
+    return 0;
+
   if ((__u8 *) qe + sizeof(*qe) > (__u8 *) ctx->shm_end)
     return -1;
+
+  if (qe->type == HOMA_QUEUE_CONTEXT_RESET)
+    return deq_context_reset(ctx, qe->data.context_id);
 
   if (qe->type == HOMA_QUEUE_CLOSE_START)
   {
@@ -1939,4 +1953,25 @@ static __always_inline __u8 rpc_is_tx_eligible(struct homa_rpc *rpc)
   __u8 has_credit = rpc->tx_offset < rpc->tx_credit;
 
   return pending && (empty_range || has_credit);
+}
+
+static __always_inline int deq_context_reset(struct cham_ebpf_ctx *ctx,
+    __u32 id)
+{
+  struct homa_context *context;
+
+  if (id >= HOMA_MAX_CONTEXTS)
+    return 0;
+
+  context = ebpf_map_lookup(ctx->maps[HOMA_CONTEXT_MAP].addr, id,
+      sizeof(*context));
+  if (context == NULL || context->state != HOMA_CONTEXT_CLOSING)
+    return 0;
+
+  if (context->app_qid >= MAX_PROTO_QUEUES)
+    return 0;
+
+  ctx->equeues[context->app_qid].eq.tail = 0;
+  context->state = HOMA_CONTEXT_FREE;
+  return 0;
 }

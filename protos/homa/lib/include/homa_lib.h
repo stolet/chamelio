@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <sys/socket.h>
 
-/* Single-threaded application context; private to the library. */
+/* Single-threaded context; up to eight independent contexts may coexist. */
 struct homa_context_lib;
 
 /* Complete message or error delivered by homa_lib_poll. */
@@ -34,13 +34,13 @@ struct homa_event {
   int status;
 };
 
-/* Connect to the Homa slow path; one connection per process. */
+/* Prepare this thread's next context attachment to the Homa slow path. */
 int homa_lib_connect_slow(void);
-/* Attach the single application context and map its queues. */
+/* Attach an independent context and map its queues; connect if necessary. */
 struct homa_context_lib *homa_lib_ctx_new(void);
 /* Release the context and its endpoints, then disconnect from the slow path. */
 void homa_lib_ctx_free(struct homa_context_lib *ctx);
-/* Close an attachment, including one whose context creation failed. */
+/* Close this thread's pending attachment before context creation. */
 void homa_lib_disconnect_slow(void);
 /* Create an endpoint; return its nonnegative descriptor or -1 with errno. */
 int homa_lib_socket(struct homa_context_lib *ctx);
@@ -50,7 +50,7 @@ int homa_lib_bind(struct homa_context_lib *ctx, int sockfd,
 /* Close an endpoint, invalidate its receive buffers, and reclaim its RPCs. */
 int homa_lib_close(struct homa_context_lib *ctx, int sockfd);
 /* Submit up to 1,000,000 bytes; store a handle in rpc_id, return 0 or -1.
- * Up to 128 client RPCs may be outstanding; released slots are reusable. */
+ * Up to 16 client RPCs per context may be outstanding; slots are reusable. */
 int homa_lib_request(struct homa_context_lib *ctx, int sockfd, const void *data,
     size_t len, const struct sockaddr *peer, socklen_t peerlen, __u64 *rpc_id);
 /* Submit up to 1,000,000 reply bytes; a released request handle stays valid. */

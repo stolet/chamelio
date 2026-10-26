@@ -21,9 +21,12 @@ int homa_init_context(struct homa_slow *ctx)
   __u32 i;
 
   ctx->listen_fd = -1;
-  ctx->app_fd = -1;
-  ctx->closing_sock = -1;
-  ctx->disconnecting = 0;
+  memset(ctx->apps, 0, sizeof(ctx->apps));
+  for (i = 0; i < HOMA_MAX_CONTEXTS; i++)
+  {
+    ctx->apps[i].app_fd = -1;
+    ctx->apps[i].closing_sock = -1;
+  }
   memset(ctx->timers, 0, sizeof(ctx->timers));
 
   if (ctx->config.virt)
@@ -42,13 +45,6 @@ int homa_init_context(struct homa_slow *ctx)
   if (ctx->proto == NULL)
     return -1;
 
-  if (ctx->proto->n_fp_cores != 1)
-  {
-    fprintf(stderr, "Homa requires one fast-path core\n");
-    errno = EOPNOTSUPP;
-    return -1;
-  }
-
   ctx->ports = map_new(ctx->proto, UINT16_MAX + 1U, sizeof(*ctx->ports));
   if (ctx->ports == NULL)
     return -1;
@@ -63,6 +59,11 @@ int homa_init_context(struct homa_slow *ctx)
 
   state = map_new(ctx->proto, 1, sizeof(*state));
   if (state == NULL)
+    return -1;
+
+  ctx->contexts = map_new(ctx->proto, HOMA_MAX_CONTEXTS,
+      sizeof(*ctx->contexts));
+  if (ctx->contexts == NULL)
     return -1;
 
   state->unscheduled_bytes = ctx->config.unscheduled_bytes;
@@ -91,11 +92,6 @@ int homa_init_context(struct homa_slow *ctx)
   dqueue_init(&ctx->fast_slow, queue->nelems, queue->elsize,
       (char *) ctx->proto->shm_base + queue->off, queue->off);
   state->recovery_qid = queue->id;
-
-  ctx->info.sockets_off = (char *) ctx->sockets - (char *) ctx->proto->shm_base;
-  ctx->info.rpcs_off = (char *) ctx->rpcs - (char *) ctx->proto->shm_base;
-  ctx->info.shm_len = ctx->proto->shm_size;
-  ctx->info.shm_off = ctx->proto->shm_off;
 
   return upload_fast_path(ctx->proto);
 }

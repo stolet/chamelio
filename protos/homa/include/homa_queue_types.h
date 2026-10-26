@@ -53,6 +53,8 @@ enum homa_queue_type {
   HOMA_QUEUE_CLOSE_START,
   /* Mark an endpoint closed after its preceding cleanup commands. */
   HOMA_QUEUE_CLOSE_DONE,
+  /* Reset a detached context's notification cursor after endpoint cleanup. */
+  HOMA_QUEUE_CONTEXT_RESET,
 };
 
 /* Endpoint control request. */
@@ -125,6 +127,8 @@ struct homa_queue_entry {
     struct homa_queue_result result;
     /* Generation-aware RPC handle for commands and notifications. */
     __u64 rpc_handle;
+    /* Context slot whose notification queue must be reset. */
+    __u32 context_id;
     /* Slow-path timeout or retransmission decision. */
     struct homa_queue_recovery recovery;
     /* Received recovery packet or stateless control response. */
@@ -136,6 +140,12 @@ struct homa_queue_entry {
 
 /* Shared resource offsets sent when the application context attaches. */
 struct homa_context_info {
+  /* First client RPC slot reserved by this context. */
+  __u32 rpc_begin;
+  /* Exclusive end of this context's reserved client RPC slots. */
+  __u32 rpc_end;
+  /* Application notification queue identifying the context. */
+  __u32 app_qid;
   /* Mapped length of the protocol's shared memory. */
   __u64 shm_len;
   /* File offset of the protocol's shared memory. */

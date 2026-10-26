@@ -7,12 +7,16 @@
 #define HOMA_APP_SOCKET_PATH "/run/chamelio/homa_app_socket"
 /* Fast-path object relative to the build directory. */
 #define HOMA_EBPF_PATH "protos/homa/fast/homa_fast.bpf.o"
-/* Maximum endpoints in the initial single application context. */
+/* Maximum endpoints shared by application contexts. */
 #define HOMA_MAX_SOCKETS 64
 /* Number of reserved RPC slots. */
 #define HOMA_MAX_RPCS 256
 /* Client slots; remaining slots are allocated by the fast path. */
 #define HOMA_CLIENT_RPCS (HOMA_MAX_RPCS / 2)
+/* Client RPC slots reserved by each application context. */
+#define HOMA_CONTEXT_RPCS 16
+/* Application contexts supported by the reserved client slots. */
+#define HOMA_MAX_CONTEXTS (HOMA_CLIENT_RPCS / HOMA_CONTEXT_RPCS)
 /* Maximum message bytes and reserved storage per direction. */
 #define HOMA_MESSAGE_BYTES 1000000
 /* DATA payload at the physical MTU of 1500 bytes. */
@@ -66,6 +70,7 @@ enum homa_map_id {
   HOMA_SOCKET_MAP,
   HOMA_RPC_MAP,
   HOMA_STATE_MAP,
+  HOMA_CONTEXT_MAP,
 };
 
 /* Shared queues in creation order. */
@@ -95,7 +100,7 @@ struct homa_grant_candidate {
   __u32 peer;
 };
 
-/* Single-core scheduling, server RPC allocation and lookup. */
+/* Core-zero scheduling, server RPC allocation and lookup. */
 struct homa_state {
   /* Fast-to-slow queue carrying received recovery packet metadata. */
   __u32 recovery_qid;
@@ -149,6 +154,21 @@ struct homa_socket {
   __u16 state;
   /* Notification queue belonging to the endpoint's application context. */
   __u32 app_qid;
+};
+
+/* Attachment lifecycle shared by the slow path and core zero. */
+enum homa_context_state {
+  HOMA_CONTEXT_FREE,
+  HOMA_CONTEXT_ACTIVE,
+  HOMA_CONTEXT_CLOSING,
+};
+
+/* Context ownership and the barrier used before reusing its queues. */
+struct homa_context {
+  /* Application notification queue, reset after endpoint cleanup. */
+  __u32 app_qid;
+  /* Attachment lifecycle state. */
+  __u32 state;
 };
 
 /* RPC transport lifecycle; application ownership is tracked separately. */
