@@ -1,4 +1,5 @@
 #include <linux/types.h>
+#include <linux/errno.h>
 #include <bpf/bpf_helpers.h>
 
 #include "cham_fast.h"
@@ -79,7 +80,8 @@ static __always_inline __u8 rpc_is_response_match(struct homa_rpc *rpc,
     __u64 id, __u32 sock_id, __u32 remote_ip, __u16 remote_port);
 static __always_inline __u8 rpc_is_tx_ready(struct homa_rpc *rpc);
 static __always_inline void tx_fill_data_hdr(struct homa_data_hdr *data,
-    struct homa_socket *sock, struct homa_rpc *rpc, __u32 len);
+    struct homa_socket *sock, struct homa_rpc *rpc, __u32 offset,
+    __u32 len);
 
 static __always_inline __u32 tx_initial_credit(struct cham_ebpf_ctx *ctx,
     __u32 len);
@@ -115,6 +117,34 @@ static __always_inline struct homa_rpc *grant_select_fifo(
     struct cham_ebpf_ctx *ctx, __u32 *slot);
 
 static __always_inline __u32 lowest_bit(__u32 bits);
+static __always_inline __u8 rpc_is_id_match(struct homa_rpc *rpc, __u64 id);
+static __always_inline __u8 rpc_is_tx_eligible(struct homa_rpc *rpc);
+static __always_inline __u8 rpc_is_handle_match(struct homa_rpc *rpc,
+    __u64 handle);
+static __always_inline __u8 rpc_is_peer_match(struct homa_rpc *rpc,
+    __u32 sock_id, __u32 remote_ip, __u16 remote_port);
+static __always_inline __u8 deq_is_recovery_stale(struct homa_rpc *rpc,
+    struct homa_queue_recovery *recovery);
+static __always_inline __u8 deq_is_tx_recovery_valid(struct homa_rpc *rpc,
+    struct homa_queue_recovery *recovery);
+static __always_inline __u8 is_msg_range_valid(__u32 offset, __u32 len);
+static __always_inline __u8 rx_is_ack_valid(struct homa_pkt *p,
+    void *pkt_end);
+static __always_inline __u8 rx_is_grant_valid(struct homa_pkt *p,
+    void *pkt_end);
+static __always_inline __u8 tx_is_resend_valid(struct homa_rpc *rpc,
+    __u32 offset, __u32 end);
+static __always_inline int rx_handle_recovery(struct cham_ebpf_ctx *ctx);
+static __always_inline int deq_handle_control(struct cham_ebpf_ctx *ctx,
+    struct homa_queue_packet *packet);
+static __always_inline void tx_resend(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot, __u32 offset, __u32 end, __u8 priority);
+static __always_inline int tx_resend_request(struct cham_ebpf_ctx *ctx,
+    struct homa_socket *sock, struct homa_rpc *rpc,
+    struct homa_queue_recovery *recovery);
+static __always_inline int rpc_fail(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __s32 error);
+static __always_inline __u8 rpc_is_waiting_local(struct homa_rpc *rpc);
 
 SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
@@ -130,6 +160,10 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       return rx_handle_data(ctx);
     case HOMA_GRANT:
       return rx_handle_grant(ctx);
+    case HOMA_RESEND:
+    case HOMA_BUSY:
+    case HOMA_UNKNOWN:
+      return rx_handle_recovery(ctx);
     case HOMA_ACK:
       return rx_handle_ack(ctx);
     case HOMA_NEED_ACK:
@@ -187,13 +221,16 @@ int event_deq(struct cham_ebpf_ctx *ctx)
     return 0;
   }
 
+  if (qe->type == HOMA_QUEUE_CONTROL)
+    return deq_handle_control(ctx, &qe->data.packet);
+
   handle = qe->data.rpc_handle;
   if (handle == 0)
     return 0;
 
   slot = (handle - 1) % HOMA_MAX_RPCS;
   rpc = rpc_at(ctx, slot);
-  if (rpc == NULL || rpc->handle != handle || rpc->state == HOMA_RPC_FREE)
+  if (!rpc_is_handle_match(rpc, handle))
     return 0;
 
   switch (qe->type)
@@ -205,13 +242,68 @@ int event_deq(struct cham_ebpf_ctx *ctx)
       rpc->rx_len = 0;
       rpc_reclaim(ctx, rpc, slot);
       return 0;
+    case HOMA_QUEUE_ERROR_REPORTED:
+      if (rpc->state == HOMA_RPC_FAILED)
+      {
+        rpc->flags |= HOMA_RPC_ERROR_REPORTED;
+        rpc_reclaim(ctx, rpc, slot);
+      }
+      return 0;
+    case HOMA_QUEUE_ABORT:
+    case HOMA_QUEUE_CREDIT:
+    case HOMA_QUEUE_RETRANSMIT:
+      if (deq_is_recovery_stale(rpc, &qe->data.recovery))
+        return 0;
+
+      if (qe->type == HOMA_QUEUE_ABORT)
+        return rpc_fail(ctx, rpc, ECONNRESET);
+
+      if (!deq_is_tx_recovery_valid(rpc, &qe->data.recovery))
+        return 0;
+
+      if (qe->data.recovery.credit > rpc->tx_credit)
+        rpc->tx_credit = qe->data.recovery.credit;
+
+      if (qe->type == HOMA_QUEUE_RETRANSMIT)
+      {
+        if (!is_msg_range_valid(qe->data.recovery.offset,
+            qe->data.recovery.length))
+          return 0;
+
+        tx_resend(ctx, rpc, slot, qe->data.recovery.offset,
+            qe->data.recovery.offset + qe->data.recovery.length,
+            qe->data.recovery.priority);
+        return 0;
+      }
+
+      rpc->progress++;
+      tx_add(ctx, rpc, slot);
+      sock = sock_at(ctx, rpc->sock_id);
+      if (sock == NULL || sock->state != HOMA_SOCKET_BOUND)
+        return 0;
+
+      return tx_control(ctx, sock, rpc->remote_ip, rpc->remote_port,
+          rpc->id, HOMA_BUSY);
+    case HOMA_QUEUE_FAIL:
+    case HOMA_QUEUE_RESEND:
     case HOMA_QUEUE_NEED_ACK:
-      if (rpc->state != HOMA_RPC_RESPONSE_SENT)
+      if (deq_is_recovery_stale(rpc, &qe->data.recovery) ||
+          rpc_is_waiting_local(rpc))
+        return 0;
+
+      if (qe->type == HOMA_QUEUE_FAIL)
+        return rpc_fail(ctx, rpc, ETIMEDOUT);
+
+      if (qe->type == HOMA_QUEUE_NEED_ACK &&
+          rpc->state != HOMA_RPC_RESPONSE_SENT)
         return 0;
 
       sock = sock_at(ctx, rpc->sock_id);
       if (sock == NULL || sock->state != HOMA_SOCKET_BOUND)
         return 0;
+
+      if (qe->type == HOMA_QUEUE_RESEND)
+        return tx_resend_request(ctx, sock, rpc, &qe->data.recovery);
 
       return tx_control(ctx, sock, rpc->remote_ip, rpc->remote_port,
           rpc->id, HOMA_NEED_ACK);
@@ -281,8 +373,8 @@ static __always_inline struct homa_rpc *rpc_server_find(
     if (rpc == NULL)
       return NULL;
 
-    if (rpc->id == id && rpc->sock_id == sock_id &&
-        rpc->remote_ip == remote_ip && rpc->remote_port == remote_port)
+    if (rpc->id == id &&
+        rpc_is_peer_match(rpc, sock_id, remote_ip, remote_port))
     {
       *slot = link - 1;
       return rpc;
@@ -377,8 +469,10 @@ static __always_inline void rpc_reclaim(struct cham_ebpf_ctx *ctx,
   __u8 released = (rpc->flags & HOMA_RPC_RX_RELEASED) != 0;
   __u8 client_done = rpc->state == HOMA_RPC_RESPONSE_READY;
   __u8 server_done = rpc->state == HOMA_RPC_RESPONSE_ACKED;
+  __u8 failed = rpc->state == HOMA_RPC_FAILED &&
+      (rpc->flags & HOMA_RPC_ERROR_REPORTED);
 
-  if (released && (client_done || server_done))
+  if (released && (client_done || server_done || failed))
     rpc_free(ctx, rpc, slot);
 }
 
@@ -462,6 +556,8 @@ static __always_inline struct homa_rpc *rx_rpc_lookup(
   rpc->remote_ip = remote_ip;
   rpc->remote_port = remote_port;
   rpc->flags = 0;
+  rpc->progress = 0;
+  rpc->error = 0;
   rpc->tx_len = 0;
   rpc->rx_len = 0;
   __builtin_memset(rpc->rx_bitmap, 0, sizeof(rpc->rx_bitmap));
@@ -541,12 +637,13 @@ static __always_inline int rx_handle_data(struct cham_ebpf_ctx *ctx)
   if (rpc->rx_bitmap[word] & bit)
     return 0;
 
-  if (offset > HOMA_MESSAGE_BYTES || seg_len > HOMA_MESSAGE_BYTES - offset)
+  if (!is_msg_range_valid(offset, seg_len))
     return -1;
 
   ebpf_memcpy(rpc->rx_data + offset, (__u8 *) p + sizeof(*p), seg_len);
   rpc->rx_bitmap[word] |= bit;
   rpc->rx_received += seg_len;
+  rpc->progress++;
   state->incoming -= seg_len;
   grant_refresh(ctx, rpc, slot);
   grant_wake(ctx);
@@ -556,11 +653,15 @@ static __always_inline int rx_handle_data(struct cham_ebpf_ctx *ctx)
   rx_finish(ctx, rpc);
   rpc->state = rpc_is_server(id) ?
       HOMA_RPC_REQUEST_READY : HOMA_RPC_RESPONSE_READY;
+  rpc->flags |= HOMA_RPC_RX_COMPLETE;
   qe->data.rpc_handle = rpc->handle;
   queue_enqueue(q, HOMA_QUEUE_RX);
 
   if (!rpc_is_server(id))
   {
+    tx_remove(ctx, rpc);
+    tx_fifo_remove(ctx, rpc);
+    rpc->flags &= ~(HOMA_RPC_TX_PENDING | HOMA_RPC_RETRANSMIT);
     rpc->tx_len = 0;
     return tx_control(ctx, sock, rpc->remote_ip, rpc->remote_port,
         rpc->id, HOMA_ACK);
@@ -573,10 +674,8 @@ static __always_inline int rx_handle_ack(struct cham_ebpf_ctx *ctx)
 {
   struct homa_pkt *p = ctx->pkt;
   struct homa_ack_hdr *ack = (void *) &p->data;
-  __u32 len = sizeof(p->ip) + sizeof(*ack);
 
-  if ((__u8 *) ctx->pkt + len > (__u8 *) ctx->pkt_end ||
-      f_beui16(p->ip.len) != len || f_beui16(ack->num_acks) != 0)
+  if (!rx_is_ack_valid(p, ctx->pkt_end))
     return -1;
 
   rx_ack_server(ctx, f_beui64(ack->common.sender_id), f_beui32(p->ip.src),
@@ -608,10 +707,9 @@ static __always_inline int rx_handle_need_ack(struct cham_ebpf_ctx *ctx)
   remote_port = f_beui16(p->data.common.sport);
   slot = rpc_get_client_slot(id);
   rpc = slot < HOMA_CLIENT_RPCS ? rpc_at(ctx, slot) : NULL;
-  if (rpc != NULL && rpc->id == id && rpc->state != HOMA_RPC_FREE)
+  if (rpc_is_id_match(rpc, id))
   {
-    if (rpc->sock_id != sock_id || rpc->remote_ip != remote_ip ||
-        rpc->remote_port != remote_port ||
+    if (!rpc_is_peer_match(rpc, sock_id, remote_ip, remote_port) ||
         rpc->state == HOMA_RPC_WAIT_RESPONSE)
       return 0;
   }
@@ -629,7 +727,10 @@ static __always_inline int deq_handle_tx(struct cham_ebpf_ctx *ctx,
   rpc->tx_credit = tx_initial_credit(ctx, rpc->tx_len);
   rpc->tx_unscheduled = rpc->tx_credit;
   rpc->tx_priority = HOMA_MAX_SCHED_PRIORITY;
-  rpc->flags |= HOMA_RPC_TX_PENDING;
+  rpc->flags |= HOMA_RPC_TX_PENDING | HOMA_RPC_TX_STARTED;
+  rpc->resend_offset = 0;
+  rpc->resend_end = 0;
+  rpc->progress++;
   tx_fifo_add(ctx, rpc, slot);
   tx_add(ctx, rpc, slot);
   return 0;
@@ -640,7 +741,8 @@ static __always_inline int tx_segment(struct cham_ebpf_ctx *ctx,
 {
   struct homa_pkt *p = ctx->pkt;
   struct homa_socket *sock;
-  __u32 offset = rpc->tx_offset;
+  __u8 retransmit = (rpc->flags & HOMA_RPC_RETRANSMIT) != 0;
+  __u32 offset = retransmit ? rpc->resend_offset : rpc->tx_offset;
   __u32 len;
 
   sock = sock_at(ctx, rpc->sock_id);
@@ -660,28 +762,38 @@ static __always_inline int tx_segment(struct cham_ebpf_ctx *ctx,
   if (!is_paylen_valid(p, ctx->pkt_end, len))
     return -1;
 
-  if (offset > HOMA_MESSAGE_BYTES || len > HOMA_MESSAGE_BYTES - offset)
+  if (!is_msg_range_valid(offset, len))
     return -1;
 
   tx_fill_ip_hdr(&p->ip, sock->local_ip, rpc->remote_ip, sizeof(*p) + len);
-  tx_fill_data_hdr(&p->data, sock, rpc, len);
-  p->ip._tos = (offset < rpc->tx_unscheduled ? HOMA_GRANT_PRIORITY :
-      rpc->tx_priority) << HOMA_PRIORITY_SHIFT;
+  tx_fill_data_hdr(&p->data, sock, rpc, offset, len);
+  p->ip._tos = (retransmit ? rpc->resend_priority :
+      (offset < rpc->tx_unscheduled ? HOMA_GRANT_PRIORITY :
+      rpc->tx_priority)) << HOMA_PRIORITY_SHIFT;
   ebpf_memcpy((__u8 *) p + sizeof(*p), rpc->tx_data + offset, len);
 
-  rpc->tx_offset = offset + len;
-  if (rpc->tx_offset < rpc->tx_len)
+  if (retransmit)
   {
-    if (rpc->tx_offset < rpc->tx_credit)
-      tx_add(ctx, rpc, slot);
+    rpc->resend_offset = offset + len;
+    if (rpc->resend_offset >= rpc->resend_end)
+      rpc->flags &= ~HOMA_RPC_RETRANSMIT;
   }
   else
   {
-    rpc->flags &= ~HOMA_RPC_TX_PENDING;
-    tx_fifo_remove(ctx, rpc);
-    if (rpc_is_server(rpc->id))
-      rpc->state = HOMA_RPC_RESPONSE_SENT;
+    rpc->tx_offset = offset + len;
+    rpc->progress++;
+    if (rpc->tx_offset == rpc->tx_len)
+    {
+      rpc->flags &= ~HOMA_RPC_TX_PENDING;
+      if (rpc_is_server(rpc->id))
+        rpc->state = HOMA_RPC_RESPONSE_SENT;
+    }
   }
+
+  if (!(rpc->flags & (HOMA_RPC_TX_PENDING | HOMA_RPC_RETRANSMIT)))
+    tx_fifo_remove(ctx, rpc);
+  else
+    tx_add(ctx, rpc, slot);
 
   tx_charge(ctx, sizeof(*p) + len);
   return sizeof(*p) + len;
@@ -770,6 +882,7 @@ static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end)
 {
   __u32 len, offset, seg_len, remaining;
   __u8 data_pkt, data_hdr, segment_valid, credit_valid, ip_len_valid;
+  __u8 offset_aligned, offset_valid, empty_message;
 
   if ((__u8 *) p + sizeof(*p) > (__u8 *) pkt_end)
     return 0;
@@ -782,7 +895,10 @@ static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end)
   if (len > HOMA_MESSAGE_BYTES || offset > len)
     return 0;
 
-  if (offset % HOMA_MAX_PAYLOAD != 0 || (len != 0 && offset == len))
+  offset_aligned = offset % HOMA_MAX_PAYLOAD == 0;
+  empty_message = len == 0;
+  offset_valid = empty_message || offset != len;
+  if (!offset_aligned || !offset_valid)
     return 0;
 
   remaining = len - offset;
@@ -881,7 +997,8 @@ static __always_inline __u8 rpc_is_tx_ready(struct homa_rpc *rpc)
 }
 
 static __always_inline void tx_fill_data_hdr(struct homa_data_hdr *data,
-    struct homa_socket *sock, struct homa_rpc *rpc, __u32 len)
+    struct homa_socket *sock, struct homa_rpc *rpc, __u32 offset,
+    __u32 len)
 {
   tx_fill_common_hdr(&data->common, sock->local_port, rpc->remote_port,
       rpc->id, HOMA_DATA);
@@ -889,9 +1006,9 @@ static __always_inline void tx_fill_data_hdr(struct homa_data_hdr *data,
   data->message_length = t_beui32(rpc->tx_len);
   data->incoming = t_beui32(rpc->tx_credit);
   data->cutoff_version = t_beui16(0);
-  data->retransmit = 0;
+  data->retransmit = (rpc->flags & HOMA_RPC_RETRANSMIT) != 0;
   data->unused = 0;
-  data->offset = t_beui32(rpc->tx_offset);
+  data->offset = t_beui32(offset);
   data->segment_length = t_beui32(len);
   data->ack_id = t_beui64(0);
   data->ack_sport = t_beui16(0);
@@ -1068,6 +1185,7 @@ static __always_inline int grant_poll(struct cham_ebpf_ctx *ctx)
   delta = target - rpc->rx_credit;
   state->incoming += delta;
   rpc->rx_credit = target;
+  rpc->progress++;
   state->grant_fifo_credit += (__u64) delta * HOMA_FIFO_PERCENT;
   if (fifo)
     state->grant_fifo_credit -= (__u64) delta * 100;
@@ -1102,11 +1220,8 @@ static __always_inline int rx_handle_grant(struct cham_ebpf_ctx *ctx)
   __u32 sock_id, slot, offset, remote_ip;
   __u16 remote_port;
   __u64 id;
-  __u32 len = sizeof(p->ip) + sizeof(*grant);
 
-  if ((__u8 *) p + len > (__u8 *) ctx->pkt_end ||
-      f_beui16(p->ip.len) != len || grant->resend_all != 0 ||
-      grant->priority > HOMA_GRANT_PRIORITY)
+  if (!rx_is_grant_valid(p, ctx->pkt_end))
     return -1;
 
   sock = sock_find(ctx, p, &sock_id);
@@ -1142,6 +1257,7 @@ static __always_inline int rx_handle_grant(struct cham_ebpf_ctx *ctx)
     return -1;
 
   rpc->tx_credit = offset;
+  rpc->progress++;
   rpc->tx_priority = grant->priority;
   tx_add(ctx, rpc, slot);
   return 0;
@@ -1165,8 +1281,9 @@ static __always_inline void tx_add(struct cham_ebpf_ctx *ctx,
   if (rpc->flags & HOMA_RPC_TX_QUEUED)
     return;
 
-  if (!(rpc->flags & HOMA_RPC_TX_PENDING) ||
-      (remaining != 0 && rpc->tx_offset >= rpc->tx_credit))
+  if (rpc->flags & HOMA_RPC_RETRANSMIT)
+    remaining = rpc->resend_end - rpc->resend_offset;
+  else if (!rpc_is_tx_eligible(rpc))
     return;
 
   sched_add(&ctx->sched, slot, remaining + 1, 0);
@@ -1408,7 +1525,7 @@ static __always_inline void tx_fifo_add(struct cham_ebpf_ctx *ctx,
   struct homa_state *state = state_get(ctx);
   struct homa_rpc *tail;
 
-  if (state == NULL)
+  if (state == NULL || (rpc->flags & HOMA_RPC_TX_FIFO_QUEUED))
     return;
 
   rpc->tx_fifo_prev = state->tx_fifo_tail;
@@ -1534,4 +1651,284 @@ static __always_inline __u32 lowest_bit(__u32 bits)
     index++;
 
   return index;
+}
+
+static __always_inline int rx_handle_recovery(struct cham_ebpf_ctx *ctx)
+{
+  struct homa_pkt *p = ctx->pkt;
+  struct homa_resend_hdr *resend = (void *) &p->data;
+  struct homa_queue_entry *entry;
+  struct homa_state *state = state_get(ctx);
+  struct equeue *q;
+  __u32 len = sizeof(p->ip) + sizeof(resend->common);
+  __u8 type;
+
+  if (state == NULL || state->recovery_qid >= MAX_PROTO_QUEUES)
+    return 0;
+
+  q = &ctx->equeues[state->recovery_qid].eq;
+  entry = ebpf_queue_tail(q, sizeof(*entry));
+  if (entry == NULL)
+    return 0;
+
+  entry->data.packet.id = rx_get_local_rpc_id(p);
+  entry->data.packet.local_ip = f_beui32(p->ip.dst);
+  entry->data.packet.remote_ip = f_beui32(p->ip.src);
+  entry->data.packet.local_port = f_beui16(p->data.common.dport);
+  entry->data.packet.remote_port = f_beui16(p->data.common.sport);
+  entry->data.packet.offset = 0;
+  entry->data.packet.length = 0;
+  entry->data.packet.priority = 0;
+  entry->data.packet.sock_id = 0;
+  entry->data.packet.type = p->data.common.type;
+  if (p->data.common.type == HOMA_RESEND)
+  {
+    len = sizeof(p->ip) + sizeof(*resend);
+    if ((__u8 *) p + len > (__u8 *) ctx->pkt_end ||
+        f_beui16(p->ip.len) != len)
+      return -1;
+
+    entry->data.packet.offset = f_beui32(resend->offset);
+    entry->data.packet.length = f_beui32(resend->length);
+    entry->data.packet.priority = resend->priority;
+    type = HOMA_QUEUE_RX_RESEND;
+  }
+  else
+  {
+    if (f_beui16(p->ip.len) != len)
+      return -1;
+
+    type = p->data.common.type == HOMA_BUSY ?
+        HOMA_QUEUE_RX_BUSY : HOMA_QUEUE_RX_UNKNOWN;
+  }
+
+  queue_enqueue(q, type);
+  return 0;
+}
+
+static __always_inline int deq_handle_control(struct cham_ebpf_ctx *ctx,
+    struct homa_queue_packet *packet)
+{
+  struct homa_socket *sock = sock_at(ctx, packet->sock_id);
+
+  if (sock == NULL || sock->state != HOMA_SOCKET_BOUND)
+    return 0;
+
+  if (sock->local_ip != packet->local_ip ||
+      sock->local_port != packet->local_port)
+    return 0;
+
+  if (packet->type != HOMA_BUSY && packet->type != HOMA_UNKNOWN)
+    return -1;
+
+  return tx_control(ctx, sock, packet->remote_ip, packet->remote_port,
+      packet->id, packet->type);
+}
+
+static __always_inline void tx_resend(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot, __u32 offset, __u32 end, __u8 priority)
+{
+  if (!tx_is_resend_valid(rpc, offset, end))
+    return;
+
+  tx_remove(ctx, rpc);
+  if (rpc->flags & HOMA_RPC_RETRANSMIT)
+  {
+    if (offset > rpc->resend_offset)
+      offset = rpc->resend_offset;
+    if (end < rpc->resend_end)
+      end = rpc->resend_end;
+  }
+
+  rpc->resend_offset = offset;
+  rpc->resend_end = end;
+  rpc->resend_priority = priority;
+  rpc->flags |= HOMA_RPC_RETRANSMIT;
+  tx_fifo_add(ctx, rpc, slot);
+  tx_add(ctx, rpc, slot);
+}
+
+static __always_inline int tx_resend_request(struct cham_ebpf_ctx *ctx,
+    struct homa_socket *sock, struct homa_rpc *rpc,
+    struct homa_queue_recovery *recovery)
+{
+  struct homa_pkt *p = ctx->pkt;
+  struct homa_resend_hdr *resend = (void *) &p->data;
+  __u32 len = sizeof(p->ip) + sizeof(*resend);
+
+  if ((__u8 *) p + len > (__u8 *) ctx->pkt_end)
+    return -1;
+
+  tx_fill_ip_hdr(&p->ip, sock->local_ip, rpc->remote_ip, len);
+  tx_fill_common_hdr(&resend->common, sock->local_port, rpc->remote_port,
+      rpc->id, HOMA_RESEND);
+  resend->offset = t_beui32(recovery->offset);
+  resend->length = t_beui32(recovery->length);
+  resend->priority = HOMA_GRANT_PRIORITY;
+  tx_charge(ctx, len);
+  return len;
+}
+
+static __always_inline int rpc_fail(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __s32 error)
+{
+  struct homa_queue_entry *entry;
+  struct equeue *q;
+
+  if (rpc->state == HOMA_RPC_FAILED || rpc->app_qid >= MAX_PROTO_QUEUES)
+    return 0;
+
+  q = &ctx->equeues[rpc->app_qid].eq;
+  entry = ebpf_queue_tail(q, sizeof(*entry));
+  if (entry == NULL)
+    return 0;
+
+  tx_remove(ctx, rpc);
+  tx_fifo_remove(ctx, rpc);
+  rx_finish(ctx, rpc);
+  rpc->flags &= ~(HOMA_RPC_TX_PENDING | HOMA_RPC_RETRANSMIT);
+  rpc->tx_len = 0;
+  if (!(rpc->flags & HOMA_RPC_RX_COMPLETE))
+  {
+    rpc->flags |= HOMA_RPC_RX_RELEASED;
+    rpc->rx_len = 0;
+  }
+
+  rpc->error = error;
+  rpc->state = HOMA_RPC_FAILED;
+  entry->data.rpc_handle = rpc->handle;
+  queue_enqueue(q, HOMA_QUEUE_ERROR);
+  return 0;
+}
+
+static __always_inline __u8 rpc_is_waiting_local(struct homa_rpc *rpc)
+{
+  __u8 tx_queued = (rpc->flags & HOMA_RPC_TX_QUEUED) != 0;
+  __u8 tx_started = (rpc->flags & HOMA_RPC_TX_STARTED) != 0;
+  __u8 rx_active = (rpc->flags & HOMA_RPC_RX_ACTIVE) != 0;
+  __u8 not_started = !tx_started && !rx_active;
+  __u8 waiting_grant = rx_active && rpc->rx_received == rpc->rx_credit &&
+      rpc->rx_credit < rpc->rx_len;
+  __u8 waiting_reply = rpc->state == HOMA_RPC_REQUEST_READY && !tx_started;
+
+  return tx_queued || not_started || waiting_grant || waiting_reply;
+}
+
+static __always_inline __u8 rpc_is_handle_match(struct homa_rpc *rpc,
+    __u64 handle)
+{
+  __u8 same_generation, active;
+
+  if (rpc == NULL)
+    return 0;
+
+  same_generation = rpc->handle == handle;
+  active = rpc->state != HOMA_RPC_FREE;
+  return same_generation && active;
+}
+
+static __always_inline __u8 rpc_is_peer_match(struct homa_rpc *rpc,
+    __u32 sock_id, __u32 remote_ip, __u16 remote_port)
+{
+  __u8 same_socket = rpc->sock_id == sock_id;
+  __u8 same_address = rpc->remote_ip == remote_ip;
+  __u8 same_port = rpc->remote_port == remote_port;
+
+  return same_socket && same_address && same_port;
+}
+
+static __always_inline __u8 deq_is_recovery_stale(struct homa_rpc *rpc,
+    struct homa_queue_recovery *recovery)
+{
+  __u8 progressed = rpc->progress != recovery->progress;
+  __u8 failed = rpc->state == HOMA_RPC_FAILED;
+  __u8 completed = rpc->state == HOMA_RPC_RESPONSE_READY ||
+      rpc->state == HOMA_RPC_RESPONSE_ACKED;
+
+  return progressed || failed || completed;
+}
+
+static __always_inline __u8 deq_is_tx_recovery_valid(struct homa_rpc *rpc,
+    struct homa_queue_recovery *recovery)
+{
+  __u8 started = (rpc->flags & HOMA_RPC_TX_STARTED) != 0;
+  __u8 credit_valid = recovery->credit <= rpc->tx_len;
+  __u8 priority_valid = recovery->priority <= HOMA_GRANT_PRIORITY;
+
+  return started && credit_valid && priority_valid;
+}
+
+static __always_inline __u8 is_msg_range_valid(__u32 offset, __u32 len)
+{
+  if (offset > HOMA_MESSAGE_BYTES)
+    return 0;
+
+  return len <= HOMA_MESSAGE_BYTES - offset;
+}
+
+static __always_inline __u8 rx_is_ack_valid(struct homa_pkt *p,
+    void *pkt_end)
+{
+  struct homa_ack_hdr *ack = (void *) &p->data;
+  __u32 len = sizeof(p->ip) + sizeof(*ack);
+  __u8 length_valid, no_extra_acks;
+
+  if ((__u8 *) p + len > (__u8 *) pkt_end)
+    return 0;
+
+  length_valid = f_beui16(p->ip.len) == len;
+  no_extra_acks = f_beui16(ack->num_acks) == 0;
+  return length_valid && no_extra_acks;
+}
+
+static __always_inline __u8 rx_is_grant_valid(struct homa_pkt *p,
+    void *pkt_end)
+{
+  struct homa_grant_hdr *grant = (void *) &p->data;
+  __u32 len = sizeof(p->ip) + sizeof(*grant);
+  __u8 length_valid, no_resend_all, priority_valid;
+
+  if ((__u8 *) p + len > (__u8 *) pkt_end)
+    return 0;
+
+  length_valid = f_beui16(p->ip.len) == len;
+  no_resend_all = grant->resend_all == 0;
+  priority_valid = grant->priority <= HOMA_GRANT_PRIORITY;
+  return length_valid && no_resend_all && priority_valid;
+}
+
+static __always_inline __u8 tx_is_resend_valid(struct homa_rpc *rpc,
+    __u32 offset, __u32 end)
+{
+  __u8 ordered = offset <= end;
+  __u8 transmitted = end <= rpc->tx_offset;
+  __u8 in_bounds = end <= HOMA_MESSAGE_BYTES;
+  __u8 empty_range = offset == end;
+  __u8 empty_message = rpc->tx_len == 0;
+
+  if (!ordered || !transmitted || !in_bounds)
+    return 0;
+
+  return !empty_range || empty_message;
+}
+
+static __always_inline __u8 rpc_is_id_match(struct homa_rpc *rpc, __u64 id)
+{
+  __u8 same_id, active;
+
+  if (rpc == NULL)
+    return 0;
+
+  same_id = rpc->id == id;
+  active = rpc->state != HOMA_RPC_FREE;
+  return same_id && active;
+}
+
+static __always_inline __u8 rpc_is_tx_eligible(struct homa_rpc *rpc)
+{
+  __u8 pending = (rpc->flags & HOMA_RPC_TX_PENDING) != 0;
+  __u8 empty_range = rpc->tx_offset == rpc->tx_len;
+  __u8 has_credit = rpc->tx_offset < rpc->tx_credit;
+
+  return pending && (empty_range || has_credit);
 }

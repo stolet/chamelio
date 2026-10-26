@@ -289,6 +289,8 @@ int homa_lib_request(struct homa_context_lib *ctx, int sockfd, const void *data,
 
   rpc->id = rpc->handle * HOMA_RPC_ID_STRIDE;
   rpc->flags = 0;
+  rpc->progress = 0;
+  rpc->error = 0;
   rpc->rx_len = 0;
   memset(rpc->rx_bitmap, 0, sizeof(rpc->rx_bitmap));
   ctx->delivered[i] = 0;
@@ -320,6 +322,12 @@ int homa_lib_reply(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id,
   if (rpc == NULL || !message_valid(data, len))
     return -1;
 
+  if (rpc->state == HOMA_RPC_FAILED)
+  {
+    errno = rpc->error;
+    return -1;
+  }
+
   slot = rpc_slot(rpc_id);
   if (!(rpc->id & HOMA_RPC_SERVER_BIT) || ctx->replied[slot])
   {
@@ -349,6 +357,7 @@ int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
 {
   struct homa_queue_entry *entry;
   struct homa_event *event;
+  struct homa_queue_entry *reported;
   struct homa_rpc *rpc;
   __u32 slot;
   __u64 handle;
@@ -369,7 +378,8 @@ int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
   while (n < maxevents && (entry = queue_head(&ctx->fast_app)) != NULL)
   {
     handle = entry->data.rpc_handle;
-    if (entry->type != HOMA_QUEUE_RX || handle == 0)
+    if ((entry->type != HOMA_QUEUE_RX && entry->type != HOMA_QUEUE_ERROR) ||
+        handle == 0)
     {
       errno = EPROTO;
       return -1;
@@ -385,20 +395,38 @@ int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
       continue;
     }
 
+    reported = NULL;
+    if (entry->type == HOMA_QUEUE_ERROR)
+    {
+      reported = queue_tail(&ctx->app_fast);
+      if (reported == NULL)
+        break;
+    }
+
     event = &events[n++];
     memset(event, 0, sizeof(*event));
-    event->type = (rpc->id & HOMA_RPC_SERVER_BIT) ?
-        HOMA_EVENT_REQUEST : HOMA_EVENT_RESPONSE;
     event->sockfd = rpc->sock_id;
     event->rpc_id = handle;
     event->peer.sin_family = AF_INET;
     event->peer.sin_addr.s_addr = htonl(rpc->remote_ip);
     event->peer.sin_port = htons(rpc->remote_port);
-    event->data = rpc->rx_data;
-    event->len = rpc->rx_len;
-    ctx->delivered[slot] = handle;
-    ctx->received[slot] = 1;
-    ctx->replied[slot] = 0;
+    if (entry->type == HOMA_QUEUE_ERROR)
+    {
+      event->type = HOMA_EVENT_ERROR;
+      event->status = rpc->error;
+      reported->data.rpc_handle = handle;
+      queue_enqueue(&ctx->app_fast, HOMA_QUEUE_ERROR_REPORTED);
+    }
+    else
+    {
+      event->type = (rpc->id & HOMA_RPC_SERVER_BIT) ?
+          HOMA_EVENT_REQUEST : HOMA_EVENT_RESPONSE;
+      event->data = rpc->rx_data;
+      event->len = rpc->rx_len;
+      ctx->delivered[slot] = handle;
+      ctx->received[slot] = 1;
+      ctx->replied[slot] = 0;
+    }
     queue_dequeue(&ctx->fast_app);
   }
 

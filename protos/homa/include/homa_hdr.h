@@ -10,6 +10,12 @@
 #define HOMA_DATA 0x10
 /* Authorize DATA through a cumulative message offset. */
 #define HOMA_GRANT 0x11
+/* Request retransmission of a byte range, also recovering lost grants. */
+#define HOMA_RESEND 0x12
+/* The peer has no state for the named RPC. */
+#define HOMA_UNKNOWN 0x13
+/* The peer is alive but has intentionally delayed transmission. */
+#define HOMA_BUSY 0x14
 /* Request confirmation that a response has been received. */
 #define HOMA_NEED_ACK 0x17
 /* Confirm receipt of a complete response. */
@@ -77,6 +83,18 @@ struct homa_grant_hdr {
   __u8 resend_all;
 } __attribute__((packed));
 
+/* Receiver request for a missing byte range in the eTRAN wire format. */
+struct homa_resend_hdr {
+  /* Receiver's local RPC ID and endpoint pair. */
+  struct homa_common_hdr common;
+  /* First missing byte. */
+  beui32_t offset;
+  /* Requested bytes; zero asks whether the peer still owns the RPC. */
+  beui32_t length;
+  /* Network priority for retransmitted DATA. */
+  __u8 priority;
+} __attribute__((packed));
+
 /* Completion record in the baseline standalone ACK format. */
 struct homa_ack_record {
   /* Client's wire RPC ID. */
@@ -108,6 +126,7 @@ struct homa_pkt {
 STATIC_ASSERT(sizeof(struct homa_common_hdr) == 28, homa_common_hdr_size);
 STATIC_ASSERT(sizeof(struct homa_data_hdr) == 60, homa_data_hdr_size);
 STATIC_ASSERT(sizeof(struct homa_grant_hdr) == 34, homa_grant_hdr_size);
+STATIC_ASSERT(sizeof(struct homa_resend_hdr) == 37, homa_resend_hdr_size);
 STATIC_ASSERT(sizeof(struct homa_ack_hdr) == 90, homa_ack_hdr_size);
 
 #endif

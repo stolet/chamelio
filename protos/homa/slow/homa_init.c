@@ -24,8 +24,7 @@ int homa_init_context(struct homa_slow *ctx)
   ctx->app_fd = -1;
   ctx->closing_sock = -1;
   ctx->disconnecting = 0;
-  memset(ctx->ack_handles, 0, sizeof(ctx->ack_handles));
-  memset(ctx->ack_deadlines, 0, sizeof(ctx->ack_deadlines));
+  memset(ctx->timers, 0, sizeof(ctx->timers));
 
   if (ctx->config.virt)
   {
@@ -83,6 +82,15 @@ int homa_init_context(struct homa_slow *ctx)
       (char *) ctx->proto->shm_base + queue->off, queue->off);
   if (cham_enable_queue(ctx->proto, queue->id, 0) != 0)
     return -1;
+
+  queue = cham_new_queue(ctx->proto, HOMA_QUEUE_LENGTH,
+      sizeof(struct homa_queue_entry));
+  if (queue == NULL)
+    return -1;
+
+  dqueue_init(&ctx->fast_slow, queue->nelems, queue->elsize,
+      (char *) ctx->proto->shm_base + queue->off, queue->off);
+  state->recovery_qid = queue->id;
 
   ctx->info.sockets_off = (char *) ctx->sockets - (char *) ctx->proto->shm_base;
   ctx->info.rpcs_off = (char *) ctx->rpcs - (char *) ctx->proto->shm_base;

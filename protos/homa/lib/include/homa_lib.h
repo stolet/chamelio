@@ -56,11 +56,12 @@ int homa_lib_request(struct homa_context_lib *ctx, int sockfd, const void *data,
 /* Submit up to 1,000,000 reply bytes; a released request handle stays valid. */
 int homa_lib_reply(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id,
     const void *data, size_t len);
-/* Poll complete messages without blocking; return the number of events. */
+/* Poll messages and RPC failures without blocking; return the event count. */
 int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
     int maxevents);
 /* Release received bytes independently of transport completion; retry EAGAIN.
- * A server may still reply using the handle after releasing its request. */
+ * A server may still reply using the handle after releasing its request.
+ * Failure preserves received bytes until release, but disallows replies. */
 int homa_lib_release(struct homa_context_lib *ctx, int sockfd, __u64 rpc_id);
 
 #endif

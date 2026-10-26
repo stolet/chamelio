@@ -32,6 +32,7 @@ int main(int argc, char **argv)
 
   while (1)
   {
+    homa_recovery_poll(&ctx);
     homa_timer_poll(&ctx);
     homa_app_poll(&ctx);
   }

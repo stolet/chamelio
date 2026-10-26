@@ -53,6 +53,10 @@
 #define HOMA_RPC_ID_STRIDE 2ULL
 /* Interval between requests for a missing completion ACK. */
 #define HOMA_NEED_ACK_US 1000
+/* Interval between recovery probes without network progress. */
+#define HOMA_RECOVERY_US 1000
+/* Maximum unanswered recovery probes before reporting failure. */
+#define HOMA_MAX_RETRIES 10
 /* Maximum RPC metadata entries examined per slow-path cleanup poll. */
 #define HOMA_REAP_BATCH 8
 
@@ -93,6 +97,8 @@ struct homa_grant_candidate {
 
 /* Single-core scheduling, server RPC allocation and lookup. */
 struct homa_state {
+  /* Fast-to-slow queue carrying received recovery packet metadata. */
+  __u32 recovery_qid;
   /* Aggregate DATA pacing rate. */
   __u32 link_kbps;
   /* Next DATA eligibility time in TSC cycles. */
@@ -154,6 +160,7 @@ enum homa_rpc_state {
   HOMA_RPC_RESPONSE_SENT,
   HOMA_RPC_RESPONSE_READY,
   HOMA_RPC_RESPONSE_ACKED,
+  HOMA_RPC_FAILED,
 };
 
 /* Application has released the received message. */
@@ -168,6 +175,14 @@ enum homa_rpc_state {
 #define HOMA_RPC_TX_QUEUED 0x10
 /* RPC belongs to the transmit admission-order queue. */
 #define HOMA_RPC_TX_FIFO_QUEUED 0x20
+/* The fast path has accepted the outgoing message. */
+#define HOMA_RPC_TX_STARTED 0x40
+/* A complete receive event has been queued for the application. */
+#define HOMA_RPC_RX_COMPLETE 0x80
+/* The application has consumed the failure event. */
+#define HOMA_RPC_ERROR_REPORTED 0x100
+/* A retained DATA range is queued for retransmission. */
+#define HOMA_RPC_RETRANSMIT 0x200
 
 /* Shared RPC state and retained message storage. */
 struct homa_rpc {
@@ -187,6 +202,16 @@ struct homa_rpc {
   __u16 flags;
   /* Original application's notification queue, preserved on reconnect. */
   __u32 app_qid;
+  /* Network or normal transmit progress observed by the slow path. */
+  __u64 progress;
+  /* Positive errno for a failed RPC. */
+  __s32 error;
+  /* First retained byte to retransmit. */
+  __u32 resend_offset;
+  /* Exclusive end of the retained retransmission range. */
+  __u32 resend_end;
+  /* Receiver-selected priority for retransmitted DATA. */
+  __u8 resend_priority;
   /* Bytes retained for transmission. */
   __u32 tx_len;
   /* Next message byte to transmit. */
