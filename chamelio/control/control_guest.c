@@ -5,6 +5,28 @@
 #include "control_guest.h"
 #include "log.h"
 #include "queue_fns.h"
+#include "netvirt.h"
+#include "ip_hdr.h"
+#include "gre_hdr.h"
+
+int control_guest_proto_info(struct control_context *ctx,
+    struct guest_control *g, struct queue_new_proto_res *res)
+{
+  struct netvirt_entry *entry;
+
+  res->local_ip = ctx->config->ip;
+  res->mtu = FAST_MTU;
+  if (!ctx->config->virt_gre)
+    return 0;
+
+  entry = netvirt_table_get(ctx->gid_table, g->id, ctx->config->ip);
+  if (entry == NULL)
+    return -1;
+
+  res->local_ip = entry->inner_ip;
+  res->mtu -= sizeof(struct ip_hdr) + sizeof(struct gre_hdr);
+  return 0;
+}
 
 void control_guest_new_proto(struct control_context *ctx,
     struct guest_control *g, struct queue_entry *qe_req)
@@ -26,6 +48,7 @@ void control_guest_new_proto(struct control_context *ctx,
   res->n_fp_cores = 0;
   res->shm_len = 0;
   res->local_ip = 0;
+  res->mtu = 0;
 
   switch (req->proto_type)
   {
@@ -50,6 +73,12 @@ void control_guest_new_proto(struct control_context *ctx,
       return;
   }
 
+  if (control_guest_proto_info(ctx, g, res) != 0)
+  {
+    queue_enqueue(g->cham_guest_q, QUEUE_NEW_PROTO_RES);
+    return;
+  }
+
   p->guest = g;
   p->proto_type = req->proto_type;
   p->nqueues = 0;
@@ -57,7 +86,6 @@ void control_guest_new_proto(struct control_context *ctx,
   res->success = 1;
   res->n_fp_cores = ctx->config->fp_cores_max;
   res->shm_len = ctx->config->shm_len;
-  res->local_ip = ctx->config->ip;
 
   ret = queue_enqueue(g->cham_guest_q, QUEUE_NEW_PROTO_RES);
   assert(ret == 0);

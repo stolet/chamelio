@@ -4,7 +4,7 @@
 
 #define NS_PER_US 1000ULL
 
-static int recovery_range(struct homa_rpc *rpc,
+static int recovery_range(struct homa_slow *ctx, struct homa_rpc *rpc,
     struct homa_queue_recovery *recovery);
 static int is_waiting_local(struct homa_rpc *rpc);
 static int is_finished(__u16 state);
@@ -71,7 +71,7 @@ void homa_timer_poll(struct homa_slow *ctx)
     else
     {
       type = HOMA_QUEUE_RESEND;
-      if (!recovery_range(rpc, &recovery))
+      if (!recovery_range(ctx, rpc, &recovery))
         continue;
     }
 
@@ -86,7 +86,7 @@ void homa_timer_poll(struct homa_slow *ctx)
   }
 }
 
-static int recovery_range(struct homa_rpc *rpc,
+static int recovery_range(struct homa_slow *ctx, struct homa_rpc *rpc,
     struct homa_queue_recovery *recovery)
 {
   __u32 index, offset, end, bit, word;
@@ -95,25 +95,25 @@ static int recovery_range(struct homa_rpc *rpc,
   if (!(rpc->flags & HOMA_RPC_RX_ACTIVE))
   {
     if (!(rpc->id & HOMA_RPC_SERVER_BIT))
-      recovery->length = HOMA_MAX_PAYLOAD;
+      recovery->length = ctx->payload_bytes;
     return 1;
   }
 
   if (credit > rpc->rx_len || credit > HOMA_MESSAGE_BYTES)
     return 0;
 
-  for (index = 0; index * HOMA_MAX_PAYLOAD < credit; index++)
+  for (index = 0; index * ctx->payload_bytes < credit; index++)
   {
     word = index / 32;
     bit = 1U << (index % 32);
     if (rpc->rx_bitmap[word] & bit)
       continue;
 
-    offset = index * HOMA_MAX_PAYLOAD;
+    offset = index * ctx->payload_bytes;
     end = offset;
     do
     {
-      end += HOMA_MAX_PAYLOAD;
+      end += ctx->payload_bytes;
       index++;
       if (end >= credit)
         break;

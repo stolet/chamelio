@@ -21,10 +21,12 @@
 #define HOMA_MESSAGE_BYTES 1000000
 /* DATA payload at the physical MTU of 1500 bytes. */
 #define HOMA_MAX_PAYLOAD 1420
+/* DATA payload with outer IPv4 and keyed GRE at a physical MTU of 1500. */
+#define HOMA_MIN_PAYLOAD 1392
 /* Words needed to track all fixed-size message segments. */
 #define HOMA_BITMAP_WORDS \
-  ((HOMA_MESSAGE_BYTES + HOMA_MAX_PAYLOAD * 32 - 1) / \
-      (HOMA_MAX_PAYLOAD * 32))
+  ((HOMA_MESSAGE_BYTES + HOMA_MIN_PAYLOAD * 32 - 1) / \
+      (HOMA_MIN_PAYLOAD * 32))
 /* Default initial bytes sent without a grant. */
 #define HOMA_UNSCHEDULED_BYTES 16384
 /* Default receive window extended by grants. */
@@ -102,6 +104,8 @@ struct homa_grant_candidate {
 
 /* Core-zero scheduling, server RPC allocation and lookup. */
 struct homa_state {
+  /* Segment payload size selected from the registered inner MTU. */
+  __u32 payload_bytes;
   /* Fast-to-slow queue carrying received recovery packet metadata. */
   __u32 recovery_qid;
   /* Aggregate DATA pacing rate. */

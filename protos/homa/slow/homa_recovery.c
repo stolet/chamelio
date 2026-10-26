@@ -6,7 +6,8 @@
 #define NS_PER_US 1000ULL
 
 static int is_restart_allowed(struct homa_rpc *rpc);
-static int is_resend_valid(struct homa_queue_packet *packet);
+static int is_resend_valid(struct homa_slow *ctx,
+    struct homa_queue_packet *packet);
 static int is_tx_delayed(struct homa_rpc *rpc);
 static int is_rpc_match(struct homa_rpc *rpc,
     struct homa_queue_packet *packet, __u32 sock_id);
@@ -98,7 +99,7 @@ static __u8 packet_handle(struct homa_slow *ctx,
     return HOMA_QUEUE_RETRANSMIT;
   }
 
-  if (!is_resend_valid(packet))
+  if (!is_resend_valid(ctx, packet))
     return HOMA_QUEUE_EMPTY;
 
   timer_reset(ctx, handle, progress);
@@ -119,7 +120,8 @@ static __u8 packet_handle(struct homa_slow *ctx,
 
   end = packet->offset + packet->length;
   if (end < rpc->tx_len)
-    end = (end + HOMA_MAX_PAYLOAD - 1) / HOMA_MAX_PAYLOAD * HOMA_MAX_PAYLOAD;
+    end = (end + ctx->payload_bytes - 1) / ctx->payload_bytes *
+        ctx->payload_bytes;
   if (end > rpc->tx_len)
     end = rpc->tx_len;
 
@@ -205,7 +207,8 @@ static int is_restart_allowed(struct homa_rpc *rpc)
   return waiting_response && !receiving && started;
 }
 
-static int is_resend_valid(struct homa_queue_packet *packet)
+static int is_resend_valid(struct homa_slow *ctx,
+    struct homa_queue_packet *packet)
 {
   int length_valid, offset_aligned, priority_valid;
 
@@ -213,7 +216,7 @@ static int is_resend_valid(struct homa_queue_packet *packet)
     return 0;
 
   length_valid = packet->length <= HOMA_MESSAGE_BYTES - packet->offset;
-  offset_aligned = packet->offset % HOMA_MAX_PAYLOAD == 0;
+  offset_aligned = packet->offset % ctx->payload_bytes == 0;
   priority_valid = packet->priority <= HOMA_GRANT_PRIORITY;
   return length_valid && offset_aligned && priority_valid;
 }

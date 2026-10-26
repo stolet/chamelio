@@ -50,6 +50,8 @@ struct homa_slow {
   struct homa_configuration config;
   /* Registered protocol and shared-memory mapping. */
   struct proto_lib *proto;
+  /* Segment payload size used by fast-path DATA and slow-path recovery. */
+  __u32 payload_bytes;
   /* Port to endpoint index plus one; zero means unbound. */
   __u32 *ports;
   /* Shared endpoint table. */

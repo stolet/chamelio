@@ -107,6 +107,8 @@ struct queue_new_proto_res {
   __u32 local_ip;
   /* Size of shm region */
   __u64 shm_len;
+  /* Maximum inner IPv4 packet size after encapsulation overhead. */
+  __u32 mtu;
 } __attribute__((packed));
 
 /* Request to create queues for the protocol */

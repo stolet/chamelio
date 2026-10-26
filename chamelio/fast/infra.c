@@ -343,6 +343,13 @@ static inline void process_tx_chksum_gre(struct rte_mbuf *mb)
           RTE_MBUF_F_TX_IP_CKSUM |
           RTE_MBUF_F_TX_UDP_CKSUM;
       break;
+    case IP_PROTO_HOMA:
+      mb->ol_flags = RTE_MBUF_F_TX_OUTER_IPV4 |
+          RTE_MBUF_F_TX_OUTER_IP_CKSUM |
+          RTE_MBUF_F_TX_TUNNEL_GRE |
+          RTE_MBUF_F_TX_IPV4 |
+          RTE_MBUF_F_TX_IP_CKSUM;
+      break;
     default:
       LOG_WARN("Got unknown inner type in ip header");
       break;

@@ -160,6 +160,7 @@ struct proto_lib *cham_new_proto_bare(struct guest_lib *g, __u8 proto_type)
   p->nmaps = 0;
   p->n_fp_cores = res->n_fp_cores;
   p->local_ip = res->local_ip;
+  p->mtu = res->mtu;
   p->shm_fd = g->shm_fd;
   p->shm_off = 0;
 
@@ -644,6 +645,7 @@ static int handle_proto_res(struct proto_lib *p, struct queue_entry *qe)
 
   p->n_fp_cores = res->n_fp_cores;
   p->local_ip = res->local_ip;
+  p->mtu = res->mtu;
   p->shm_size = res->shm_len;
   return 0;
 }

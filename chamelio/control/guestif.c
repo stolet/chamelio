@@ -18,6 +18,7 @@
 #include "queue_types.h"
 #include "uxsocket.h"
 #include "netvirt.h"
+#include "control_guest.h"
 
 #define EP_LISTEN_GUEST 1
 #define EP_GUEST 2
@@ -457,6 +458,7 @@ static inline void uxsocket_receive(struct control_context *ctx,
   gev->proto_res.n_fp_cores = ctx->config->fp_cores_max;
   gev->proto_res.shm_len = ctx->config->shm_len;
   gev->proto_res.local_ip = ctx->config->ip;
+  gev->proto_res.mtu = 0;
 
   switch (gev->proto_req.proto_type)
   {
@@ -476,6 +478,9 @@ static inline void uxsocket_receive(struct control_context *ctx,
     default:
       goto send_proto_res;
   }
+
+  if (control_guest_proto_info(ctx, gev->guest, &gev->proto_res) != 0)
+    goto send_proto_res;
 
   p->guest = gev->guest;
   p->proto_type = gev->proto_req.proto_type;

@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "homa_slow.h"
+#include "homa_hdr.h"
 #include "queue_fns.h"
 
 static void *map_new(struct proto_lib *proto, __u32 nelems, __u32 elsize);
@@ -19,6 +20,7 @@ int homa_init_context(struct homa_slow *ctx)
   struct homa_state *state;
   struct proto_queue_lib *queue;
   __u32 i;
+  int plain_mtu, gre_mtu;
 
   ctx->listen_fd = -1;
   memset(ctx->apps, 0, sizeof(ctx->apps));
@@ -45,6 +47,16 @@ int homa_init_context(struct homa_slow *ctx)
   if (ctx->proto == NULL)
     return -1;
 
+  plain_mtu = ctx->proto->mtu == sizeof(struct homa_pkt) + HOMA_MAX_PAYLOAD;
+  gre_mtu = ctx->proto->mtu == sizeof(struct homa_pkt) + HOMA_MIN_PAYLOAD;
+  if (!plain_mtu && !gre_mtu)
+  {
+    errno = EOPNOTSUPP;
+    return -1;
+  }
+
+  ctx->payload_bytes = ctx->proto->mtu - sizeof(struct homa_pkt);
+
   ctx->ports = map_new(ctx->proto, UINT16_MAX + 1U, sizeof(*ctx->ports));
   if (ctx->ports == NULL)
     return -1;
@@ -67,6 +79,7 @@ int homa_init_context(struct homa_slow *ctx)
     return -1;
 
   state->unscheduled_bytes = ctx->config.unscheduled_bytes;
+  state->payload_bytes = ctx->payload_bytes;
   state->link_kbps = ctx->config.link_kbps;
   state->grant_bytes = ctx->config.grant_bytes;
   state->incoming_limit = ctx->config.incoming_bytes;

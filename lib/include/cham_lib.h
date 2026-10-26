@@ -79,6 +79,8 @@ struct proto_lib {
   __u32 n_fp_cores;
   /* Local IP address */
   __u32 local_ip;
+  /* Maximum inner IPv4 packet size after encapsulation overhead. */
+  __u32 mtu;
     /* VFIO structure used to map shared memory in guest */
   struct vfio vfio;
   

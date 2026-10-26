@@ -28,6 +28,7 @@ static __u64 (*ebpf_rate_delay_tsc)(__u32 bytes, __u32 rate_kbps) =
 #define HOMA_IP_TTL 64
 
 /* Miscellaneous helpers */
+static __always_inline __u32 msg_payload_bytes(struct cham_ebpf_ctx *ctx);
 static __always_inline struct homa_state *state_get(struct cham_ebpf_ctx *ctx);
 static __always_inline __u8 is_paylen_valid(struct homa_pkt *p,
     void *pkt_end, __u32 len);
@@ -45,7 +46,8 @@ static __always_inline int rx_handle_ack(struct cham_ebpf_ctx *ctx);
 static __always_inline int rx_handle_need_ack(struct cham_ebpf_ctx *ctx);
 static __always_inline __u8 rx_is_common_valid(struct homa_pkt *p,
     void *pkt_end);
-static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end);
+static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end,
+    __u32 payload);
 static __always_inline __u64 rx_get_local_rpc_id(struct homa_pkt *p);
 static __always_inline void rx_finish(struct cham_ebpf_ctx *ctx,
     struct homa_rpc *rpc);
@@ -593,6 +595,7 @@ static __always_inline struct homa_rpc *rx_rpc_lookup(
 
 static __always_inline int rx_handle_data(struct cham_ebpf_ctx *ctx)
 {
+  __u32 payload = msg_payload_bytes(ctx);
   struct homa_pkt *p = ctx->pkt;
   struct homa_socket *sock;
   struct homa_rpc *rpc;
@@ -602,7 +605,7 @@ static __always_inline int rx_handle_data(struct cham_ebpf_ctx *ctx)
   __u32 sock_id, slot, len, offset, seg_len, bit, word, index;
   __u64 id;
 
-  if (!rx_is_pkt_valid(p, ctx->pkt_end))
+  if (!rx_is_pkt_valid(p, ctx->pkt_end, payload))
     return -1;
 
   len = f_beui32(p->data.message_length);
@@ -650,7 +653,7 @@ static __always_inline int rx_handle_data(struct cham_ebpf_ctx *ctx)
   if (rpc->rx_len != len || offset + seg_len > rpc->rx_credit)
     return -1;
 
-  index = offset / HOMA_MAX_PAYLOAD;
+  index = offset / payload;
   word = index / 32;
   bit = 1U << (index % 32);
   if (word >= HOMA_BITMAP_WORDS)
@@ -761,6 +764,7 @@ static __always_inline int deq_handle_tx(struct cham_ebpf_ctx *ctx,
 static __always_inline int tx_segment(struct cham_ebpf_ctx *ctx,
     struct homa_rpc *rpc, __u32 slot)
 {
+  __u32 payload = msg_payload_bytes(ctx);
   struct homa_pkt *p = ctx->pkt;
   struct homa_socket *sock;
   __u8 retransmit = (rpc->flags & HOMA_RPC_RETRANSMIT) != 0;
@@ -775,8 +779,8 @@ static __always_inline int tx_segment(struct cham_ebpf_ctx *ctx,
     return -1;
 
   len = rpc->tx_len - offset;
-  if (len > HOMA_MAX_PAYLOAD)
-    len = HOMA_MAX_PAYLOAD;
+  if (len > payload)
+    len = payload;
 
   if (offset + len > rpc->tx_credit)
     return 0;
@@ -900,7 +904,8 @@ static __always_inline __u8 is_paylen_valid(struct homa_pkt *p,
   return single_packet && in_bounds;
 }
 
-static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end)
+static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end,
+    __u32 payload)
 {
   __u32 len, offset, seg_len, remaining;
   __u8 data_pkt, data_hdr, segment_valid, credit_valid, ip_len_valid;
@@ -917,15 +922,15 @@ static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end)
   if (len > HOMA_MESSAGE_BYTES || offset > len)
     return 0;
 
-  offset_aligned = offset % HOMA_MAX_PAYLOAD == 0;
+  offset_aligned = offset % payload == 0;
   empty_message = len == 0;
   offset_valid = empty_message || offset != len;
   if (!offset_aligned || !offset_valid)
     return 0;
 
   remaining = len - offset;
-  segment_valid = seg_len == (remaining > HOMA_MAX_PAYLOAD ?
-      HOMA_MAX_PAYLOAD : remaining);
+  segment_valid = seg_len == (remaining > payload ?
+      payload : remaining);
   credit_valid = f_beui32(p->data.incoming) <= len &&
       f_beui32(p->data.incoming) >= offset + seg_len;
   ip_len_valid = f_beui16(p->ip.len) == sizeof(*p) + seg_len;
@@ -1040,6 +1045,7 @@ static __always_inline void tx_fill_data_hdr(struct homa_data_hdr *data,
 static __always_inline __u32 tx_initial_credit(struct cham_ebpf_ctx *ctx,
     __u32 len)
 {
+  __u32 payload = msg_payload_bytes(ctx);
   struct homa_state *state = state_get(ctx);
   __u32 credit;
 
@@ -1050,7 +1056,7 @@ static __always_inline __u32 tx_initial_credit(struct cham_ebpf_ctx *ctx,
   if (len <= credit)
     return len;
 
-  return credit / HOMA_MAX_PAYLOAD * HOMA_MAX_PAYLOAD;
+  return credit / payload * payload;
 }
 
 static __always_inline void grant_wake(struct cham_ebpf_ctx *ctx)
@@ -1144,6 +1150,7 @@ static __always_inline void rx_finish(struct cham_ebpf_ctx *ctx,
 
 static __always_inline int grant_poll(struct cham_ebpf_ctx *ctx)
 {
+  __u32 payload = msg_payload_bytes(ctx);
   struct homa_state *state = state_get(ctx);
   struct homa_grant_hdr *grant;
   struct homa_pkt *p = ctx->pkt;
@@ -1188,7 +1195,7 @@ static __always_inline int grant_poll(struct cham_ebpf_ctx *ctx)
     target = rpc->rx_credit + available;
 
   if (target < rpc->rx_len)
-    target = target / HOMA_MAX_PAYLOAD * HOMA_MAX_PAYLOAD;
+    target = target / payload * payload;
 
   if (target <= rpc->rx_credit)
     return 0;
@@ -1235,6 +1242,7 @@ static __always_inline int grant_poll(struct cham_ebpf_ctx *ctx)
 
 static __always_inline int rx_handle_grant(struct cham_ebpf_ctx *ctx)
 {
+  __u32 payload = msg_payload_bytes(ctx);
   struct homa_pkt *p = ctx->pkt;
   struct homa_grant_hdr *grant = (void *) &p->data;
   struct homa_socket *sock;
@@ -1275,7 +1283,7 @@ static __always_inline int rx_handle_grant(struct cham_ebpf_ctx *ctx)
   if (offset <= rpc->tx_credit || offset > rpc->tx_len)
     return 0;
 
-  if (offset != rpc->tx_len && offset % HOMA_MAX_PAYLOAD != 0)
+  if (offset != rpc->tx_len && offset % payload != 0)
     return -1;
 
   rpc->tx_credit = offset;
@@ -1329,6 +1337,7 @@ static __always_inline void tx_charge(struct cham_ebpf_ctx *ctx, __u32 len)
 
 static __always_inline int tx_poll(struct cham_ebpf_ctx *ctx)
 {
+  __u32 payload = msg_payload_bytes(ctx);
   struct homa_state *state = state_get(ctx);
   struct homa_rpc *rpc, *oldest;
   struct cham_sched_entry *entry;
@@ -1348,7 +1357,7 @@ static __always_inline int tx_poll(struct cham_ebpf_ctx *ctx)
     return 0;
 
   slot = entry->id;
-  fifo = state->tx_fifo_credit >= 100ULL * HOMA_MAX_PAYLOAD;
+  fifo = state->tx_fifo_credit >= 100ULL * payload;
   if (fifo)
   {
     link = state->tx_fifo_head;
@@ -1391,6 +1400,7 @@ static __always_inline int tx_poll(struct cham_ebpf_ctx *ctx)
 static __always_inline void grant_refresh(struct cham_ebpf_ctx *ctx,
     struct homa_rpc *rpc, __u32 slot)
 {
+  __u32 payload = msg_payload_bytes(ctx);
   struct homa_state *state = state_get(ctx);
   struct homa_grant_candidate *candidate;
   __u32 target, word, bit;
@@ -1412,7 +1422,7 @@ static __always_inline void grant_refresh(struct cham_ebpf_ctx *ctx,
   if (target >= rpc->rx_len)
     target = rpc->rx_len;
   else
-    target = target / HOMA_MAX_PAYLOAD * HOMA_MAX_PAYLOAD;
+    target = target / payload * payload;
 
   candidate->remaining = rpc->rx_len - rpc->rx_received;
   candidate->need = target > rpc->rx_credit ? target - rpc->rx_credit : 0;
@@ -1974,4 +1984,14 @@ static __always_inline int deq_context_reset(struct cham_ebpf_ctx *ctx,
   ctx->equeues[context->app_qid].eq.tail = 0;
   context->state = HOMA_CONTEXT_FREE;
   return 0;
+}
+
+static __always_inline __u32 msg_payload_bytes(struct cham_ebpf_ctx *ctx)
+{
+  struct homa_state *state = state_get(ctx);
+
+  if (state != NULL && state->payload_bytes == HOMA_MIN_PAYLOAD)
+    return HOMA_MIN_PAYLOAD;
+
+  return HOMA_MAX_PAYLOAD;
 }
