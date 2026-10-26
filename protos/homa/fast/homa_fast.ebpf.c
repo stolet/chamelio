@@ -27,11 +27,91 @@ static __u64 (*ebpf_rate_delay_tsc)(__u32 bytes, __u32 rate_kbps) =
 #define IPV4_FRAGMENT_MASK 0x3fff
 #define HOMA_IP_TTL 64
 
-static __always_inline struct homa_rpc *rpc_at(struct cham_ebpf_ctx *ctx,
-    __u32 slot);
+/* Miscellaneous helpers */
+static __always_inline struct homa_state *state_get(struct cham_ebpf_ctx *ctx);
+static __always_inline __u8 is_paylen_valid(struct homa_pkt *p,
+    void *pkt_end, __u32 len);
+static __always_inline __u32 lowest_bit(__u32 bits);
+static __always_inline __u8 is_msg_range_valid(__u32 offset, __u32 len);
+
+/* RX helpers */
+static __always_inline void rx_ack_server(struct cham_ebpf_ctx *ctx,
+    __u64 client_id, __u32 remote_ip, __u16 client_port, __u16 server_port);
+static __always_inline struct homa_rpc *rx_rpc_lookup(
+    struct cham_ebpf_ctx *ctx, __u64 id, __u32 sock_id, __u32 remote_ip,
+    __u16 remote_port, __u32 *slot);
+static __always_inline int rx_handle_data(struct cham_ebpf_ctx *ctx);
+static __always_inline int rx_handle_ack(struct cham_ebpf_ctx *ctx);
+static __always_inline int rx_handle_need_ack(struct cham_ebpf_ctx *ctx);
+static __always_inline __u8 rx_is_common_valid(struct homa_pkt *p,
+    void *pkt_end);
+static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end);
+static __always_inline __u64 rx_get_local_rpc_id(struct homa_pkt *p);
+static __always_inline void rx_finish(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc);
+static __always_inline int rx_handle_grant(struct cham_ebpf_ctx *ctx);
+static __always_inline struct homa_grant_candidate *candidate_at(
+    struct homa_state *state, __u32 slot);
+static __always_inline __u8 rx_is_ack_valid(struct homa_pkt *p,
+    void *pkt_end);
+static __always_inline __u8 rx_is_grant_valid(struct homa_pkt *p,
+    void *pkt_end);
+static __always_inline int rx_handle_recovery(struct cham_ebpf_ctx *ctx);
+
+/* TX helpers */
+static __always_inline int tx_segment(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot);
+static __always_inline int tx_control(struct cham_ebpf_ctx *ctx,
+    struct homa_socket *sock, __u32 remote_ip, __u16 remote_port,
+    __u64 id, __u8 type);
+static __always_inline void tx_fill_ip_hdr(struct ip_hdr *ip,
+    __u32 local_ip, __u32 remote_ip, __u32 len);
+static __always_inline void tx_fill_common_hdr(struct homa_common_hdr *common,
+    __u16 local_port, __u16 remote_port, __u64 id, __u8 type);
+static __always_inline void tx_fill_data_hdr(struct homa_data_hdr *data,
+    struct homa_socket *sock, struct homa_rpc *rpc, __u32 offset,
+    __u32 len);
+static __always_inline __u32 tx_initial_credit(struct cham_ebpf_ctx *ctx,
+    __u32 len);
+static __always_inline void tx_remove(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc);
+static __always_inline void tx_add(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot);
+static __always_inline void tx_charge(struct cham_ebpf_ctx *ctx, __u32 len);
+static __always_inline int tx_poll(struct cham_ebpf_ctx *ctx);
+static __always_inline void tx_fifo_add(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot);
+static __always_inline void tx_fifo_remove(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc);
+static __always_inline __u8 tx_is_resend_valid(struct homa_rpc *rpc,
+    __u32 offset, __u32 end);
+static __always_inline void tx_resend(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot, __u32 offset, __u32 end, __u8 priority);
+static __always_inline int tx_resend_request(struct cham_ebpf_ctx *ctx,
+    struct homa_socket *sock, struct homa_rpc *rpc,
+    struct homa_queue_recovery *recovery);
+
+/* DEQ helpers */
+static __always_inline int deq_handle_tx(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot);
+static __always_inline __u8 deq_is_recovery_stale(struct homa_rpc *rpc,
+    struct homa_queue_recovery *recovery);
+static __always_inline __u8 deq_is_tx_recovery_valid(struct homa_rpc *rpc,
+    struct homa_queue_recovery *recovery);
+static __always_inline int deq_handle_control(struct cham_ebpf_ctx *ctx,
+    struct homa_queue_packet *packet);
+
+/* Socket helpers */
 static __always_inline struct homa_socket *sock_at(struct cham_ebpf_ctx *ctx,
     __u32 sock_id);
-static __always_inline struct homa_state *state_get(struct cham_ebpf_ctx *ctx);
+static __always_inline struct homa_socket *sock_find(struct cham_ebpf_ctx *ctx,
+    struct homa_pkt *p, __u32 *sock_id);
+static __always_inline __u8 sock_is_rx_match(struct homa_socket *sock,
+    struct homa_pkt *p);
+
+/* RPC helpers */
+static __always_inline struct homa_rpc *rpc_at(struct cham_ebpf_ctx *ctx,
+    __u32 slot);
 static __always_inline __u32 rpc_hash(__u64 id, __u32 sock_id,
     __u32 remote_ip, __u16 remote_port);
 static __always_inline struct homa_rpc *rpc_server_find(
@@ -45,107 +125,35 @@ static __always_inline void rpc_free(struct cham_ebpf_ctx *ctx,
     struct homa_rpc *rpc, __u32 slot);
 static __always_inline void rpc_reclaim(struct cham_ebpf_ctx *ctx,
     struct homa_rpc *rpc, __u32 slot);
-static __always_inline void rx_ack_server(struct cham_ebpf_ctx *ctx,
-    __u64 client_id, __u32 remote_ip, __u16 client_port, __u16 server_port);
-static __always_inline struct homa_rpc *rx_rpc_lookup(
-    struct cham_ebpf_ctx *ctx, __u64 id, __u32 sock_id, __u32 remote_ip,
-    __u16 remote_port, __u32 *slot);
-static __always_inline int rx_handle_data(struct cham_ebpf_ctx *ctx);
-static __always_inline int rx_handle_ack(struct cham_ebpf_ctx *ctx);
-static __always_inline int rx_handle_need_ack(struct cham_ebpf_ctx *ctx);
-static __always_inline int deq_handle_tx(struct cham_ebpf_ctx *ctx,
-    struct homa_rpc *rpc, __u32 slot);
-static __always_inline int tx_segment(struct cham_ebpf_ctx *ctx,
-    struct homa_rpc *rpc, __u32 slot);
-static __always_inline int tx_control(struct cham_ebpf_ctx *ctx,
-    struct homa_socket *sock, __u32 remote_ip, __u16 remote_port,
-    __u64 id, __u8 type);
-static __always_inline __u8 rx_is_common_valid(struct homa_pkt *p,
-    void *pkt_end);
-static __always_inline void tx_fill_ip_hdr(struct ip_hdr *ip,
-    __u32 local_ip, __u32 remote_ip, __u32 len);
-static __always_inline void tx_fill_common_hdr(struct homa_common_hdr *common,
-    __u16 local_port, __u16 remote_port, __u64 id, __u8 type);
-static __always_inline __u8 is_paylen_valid(struct homa_pkt *p,
-    void *pkt_end, __u32 len);
-static __always_inline __u8 rx_is_pkt_valid(struct homa_pkt *p, void *pkt_end);
-static __always_inline __u64 rx_get_local_rpc_id(struct homa_pkt *p);
-static __always_inline struct homa_socket *sock_find(struct cham_ebpf_ctx *ctx,
-    struct homa_pkt *p, __u32 *sock_id);
-static __always_inline __u8 sock_is_rx_match(struct homa_socket *sock,
-    struct homa_pkt *p);
 static __always_inline __u8 rpc_is_server(__u64 id);
 static __always_inline __u32 rpc_get_client_slot(__u64 id);
 static __always_inline __u8 rpc_is_response_match(struct homa_rpc *rpc,
     __u64 id, __u32 sock_id, __u32 remote_ip, __u16 remote_port);
 static __always_inline __u8 rpc_is_tx_ready(struct homa_rpc *rpc);
-static __always_inline void tx_fill_data_hdr(struct homa_data_hdr *data,
-    struct homa_socket *sock, struct homa_rpc *rpc, __u32 offset,
-    __u32 len);
-
-static __always_inline __u32 tx_initial_credit(struct cham_ebpf_ctx *ctx,
-    __u32 len);
-static __always_inline void grant_wake(struct cham_ebpf_ctx *ctx);
-static __always_inline void grant_append(struct cham_ebpf_ctx *ctx,
-    struct homa_rpc *rpc, __u32 slot);
-static __always_inline void grant_remove(struct cham_ebpf_ctx *ctx,
-    struct homa_rpc *rpc);
-static __always_inline void rx_finish(struct cham_ebpf_ctx *ctx,
-    struct homa_rpc *rpc);
-static __always_inline int grant_poll(struct cham_ebpf_ctx *ctx);
-static __always_inline int rx_handle_grant(struct cham_ebpf_ctx *ctx);
-
-static __always_inline void tx_remove(struct cham_ebpf_ctx *ctx,
-    struct homa_rpc *rpc);
-static __always_inline void tx_add(struct cham_ebpf_ctx *ctx,
-    struct homa_rpc *rpc, __u32 slot);
-static __always_inline void tx_charge(struct cham_ebpf_ctx *ctx, __u32 len);
-static __always_inline int tx_poll(struct cham_ebpf_ctx *ctx);
-static __always_inline void grant_refresh(struct cham_ebpf_ctx *ctx,
-    struct homa_rpc *rpc, __u32 slot);
-static __always_inline struct homa_rpc *grant_select(
-    struct cham_ebpf_ctx *ctx, __u32 *slot, __u8 fifo);
-
-static __always_inline struct homa_grant_candidate *candidate_at(
-    struct homa_state *state, __u32 slot);
-
-static __always_inline void tx_fifo_add(struct cham_ebpf_ctx *ctx,
-    struct homa_rpc *rpc, __u32 slot);
-static __always_inline void tx_fifo_remove(struct cham_ebpf_ctx *ctx,
-    struct homa_rpc *rpc);
-static __always_inline struct homa_rpc *grant_select_fifo(
-    struct cham_ebpf_ctx *ctx, __u32 *slot);
-
-static __always_inline __u32 lowest_bit(__u32 bits);
 static __always_inline __u8 rpc_is_id_match(struct homa_rpc *rpc, __u64 id);
 static __always_inline __u8 rpc_is_tx_eligible(struct homa_rpc *rpc);
 static __always_inline __u8 rpc_is_handle_match(struct homa_rpc *rpc,
     __u64 handle);
 static __always_inline __u8 rpc_is_peer_match(struct homa_rpc *rpc,
     __u32 sock_id, __u32 remote_ip, __u16 remote_port);
-static __always_inline __u8 deq_is_recovery_stale(struct homa_rpc *rpc,
-    struct homa_queue_recovery *recovery);
-static __always_inline __u8 deq_is_tx_recovery_valid(struct homa_rpc *rpc,
-    struct homa_queue_recovery *recovery);
-static __always_inline __u8 is_msg_range_valid(__u32 offset, __u32 len);
-static __always_inline __u8 rx_is_ack_valid(struct homa_pkt *p,
-    void *pkt_end);
-static __always_inline __u8 rx_is_grant_valid(struct homa_pkt *p,
-    void *pkt_end);
-static __always_inline __u8 tx_is_resend_valid(struct homa_rpc *rpc,
-    __u32 offset, __u32 end);
-static __always_inline int rx_handle_recovery(struct cham_ebpf_ctx *ctx);
-static __always_inline int deq_handle_control(struct cham_ebpf_ctx *ctx,
-    struct homa_queue_packet *packet);
-static __always_inline void tx_resend(struct cham_ebpf_ctx *ctx,
-    struct homa_rpc *rpc, __u32 slot, __u32 offset, __u32 end, __u8 priority);
-static __always_inline int tx_resend_request(struct cham_ebpf_ctx *ctx,
-    struct homa_socket *sock, struct homa_rpc *rpc,
-    struct homa_queue_recovery *recovery);
 static __always_inline int rpc_fail(struct cham_ebpf_ctx *ctx,
     struct homa_rpc *rpc, __s32 error);
 static __always_inline __u8 rpc_is_waiting_local(struct homa_rpc *rpc);
 
+/* Grant helpers */
+static __always_inline void grant_wake(struct cham_ebpf_ctx *ctx);
+static __always_inline void grant_append(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot);
+static __always_inline void grant_remove(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc);
+static __always_inline int grant_poll(struct cham_ebpf_ctx *ctx);
+static __always_inline void grant_refresh(struct cham_ebpf_ctx *ctx,
+    struct homa_rpc *rpc, __u32 slot);
+static __always_inline struct homa_rpc *grant_select(
+    struct cham_ebpf_ctx *ctx, __u32 *slot, __u8 fifo);
+static __always_inline struct homa_rpc *grant_select_fifo(
+    struct cham_ebpf_ctx *ctx, __u32 *slot);
+      
 SEC("chamelio/event_rx")
 int event_rx(struct cham_ebpf_ctx *ctx)
 {
