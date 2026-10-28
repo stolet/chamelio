@@ -30,6 +30,8 @@ int main(int argc, char **argv)
     abort();
   }
 
+  LOG_INFO("Homa initialized");
+
   while (1)
   {
     homa_recovery_poll(&ctx);
