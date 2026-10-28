@@ -15,6 +15,8 @@ struct homa_configuration {
   __u32 incoming_bytes;
   /* Aggregate physical link pacing rate in kilobits per second. */
   __u32 link_kbps;
+  /* Client RPC slots reserved per application context. */
+  __u32 context_rpcs;
 };
 
 /* Parse options: 0 on success, -1 on error */

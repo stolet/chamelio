@@ -115,6 +115,9 @@ static void app_accept(struct homa_slow *ctx)
 
   for (i = 0; i < HOMA_MAX_CONTEXTS; i++)
   {
+    if (i >= HOMA_CLIENT_RPCS / ctx->config.context_rpcs)
+      break;
+
     if (ctx->apps[i].app_fd < 0 && !ctx->apps[i].disconnecting)
     {
       app = &ctx->apps[i];
@@ -400,8 +403,8 @@ static int queues_init(struct homa_slow *ctx, struct homa_app *app)
           HOMA_QUEUE_LENGTH * sizeof(struct homa_queue_entry));
   }
 
-  app->info.rpc_begin = (app - ctx->apps) * HOMA_CONTEXT_RPCS;
-  app->info.rpc_end = app->info.rpc_begin + HOMA_CONTEXT_RPCS;
+  app->info.rpc_begin = (app - ctx->apps) * ctx->config.context_rpcs;
+  app->info.rpc_end = app->info.rpc_begin + ctx->config.context_rpcs;
   app->info.app_qid = app->fast_app_qid;
   app->info.sockets_off =
       (char *) ctx->sockets - (char *) ctx->proto->shm_base;

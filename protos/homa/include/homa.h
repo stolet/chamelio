@@ -13,7 +13,7 @@
 #define HOMA_MAX_RPCS 256
 /* Client slots; remaining slots are allocated by the fast path. */
 #define HOMA_CLIENT_RPCS (HOMA_MAX_RPCS / 2)
-/* Client RPC slots reserved by each application context. */
+/* Default client RPC slots reserved by each application context. */
 #define HOMA_CONTEXT_RPCS 16
 /* Application contexts supported by the reserved client slots. */
 #define HOMA_MAX_CONTEXTS (HOMA_CLIENT_RPCS / HOMA_CONTEXT_RPCS)
