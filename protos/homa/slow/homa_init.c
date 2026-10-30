@@ -65,7 +65,8 @@ int homa_init_context(struct homa_slow *ctx)
   if (ctx->sockets == NULL)
     return -1;
 
-  ctx->rpcs = map_new(ctx->proto, HOMA_MAX_RPCS, sizeof(*ctx->rpcs));
+  ctx->rpcs = map_new(ctx->proto,
+      ctx->config.rpc_slots + HOMA_SERVER_RPCS, sizeof(*ctx->rpcs));
   if (ctx->rpcs == NULL)
     return -1;
 
@@ -83,9 +84,10 @@ int homa_init_context(struct homa_slow *ctx)
   state->link_kbps = ctx->config.link_kbps;
   state->grant_bytes = ctx->config.grant_bytes;
   state->incoming_limit = ctx->config.incoming_bytes;
-  state->server_free_count = HOMA_CLIENT_RPCS;
-  for (i = 0; i < HOMA_CLIENT_RPCS; i++)
-    state->server_free[i] = HOMA_MAX_RPCS - i - 1;
+  state->client_rpcs = ctx->config.rpc_slots;
+  state->server_free_count = HOMA_SERVER_RPCS;
+  for (i = 0; i < HOMA_SERVER_RPCS; i++)
+    state->server_free[i] = ctx->config.rpc_slots + HOMA_SERVER_RPCS - i - 1;
 
   queue = cham_new_queue(ctx->proto, HOMA_QUEUE_LENGTH,
       sizeof(struct homa_queue_entry));

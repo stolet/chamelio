@@ -17,6 +17,7 @@ struct homa_context_lib {
   int slow_fd;
   __u32 rpc_begin;
   __u32 rpc_end;
+  __u32 rpc_count;
   __u32 app_qid;
   void *shm_base;
   size_t shm_len;
@@ -81,6 +82,7 @@ struct homa_context_lib *homa_lib_ctx_new(void)
   int saved_errno;
   int64_t marker;
   size_t received = 0;
+  size_t rpc_count;
   ssize_t ret;
 
   if (slow_fd < 0 && homa_lib_connect_slow() != 0)
@@ -110,6 +112,15 @@ struct homa_context_lib *homa_lib_ctx_new(void)
     received += ret;
   }
 
+  if (info.client_rpcs < HOMA_MAX_CONTEXTS ||
+      info.client_rpcs > HOMA_MAX_CLIENT_RPCS ||
+      info.client_rpcs % HOMA_MAX_CONTEXTS != 0)
+  {
+    errno = EPROTO;
+    goto failed;
+  }
+
+  rpc_count = info.client_rpcs + HOMA_SERVER_RPCS;
   if (info.shm_len == 0 || !queue_offset_valid(&info, info.app_slow_off) ||
       !queue_offset_valid(&info, info.slow_app_off) ||
       !queue_offset_valid(&info, info.app_fast_off) ||
@@ -118,13 +129,13 @@ struct homa_context_lib *homa_lib_ctx_new(void)
       sizeof(struct homa_socket) * HOMA_MAX_SOCKETS >
           info.shm_len - info.sockets_off ||
       info.rpcs_off > info.shm_len ||
-      sizeof(struct homa_rpc) * HOMA_MAX_RPCS > info.shm_len - info.rpcs_off)
+      sizeof(struct homa_rpc) * rpc_count > info.shm_len - info.rpcs_off)
   {
     errno = EPROTO;
     goto failed;
   }
 
-  if (info.rpc_begin >= info.rpc_end || info.rpc_end > HOMA_CLIENT_RPCS ||
+  if (info.rpc_begin >= info.rpc_end || info.rpc_end > info.client_rpcs ||
       info.app_qid >= MAX_PROTO_QUEUES)
   {
     errno = EPROTO;
@@ -149,6 +160,7 @@ struct homa_context_lib *homa_lib_ctx_new(void)
   ctx->rpcs = (void *) ((char *) ctx->shm_base + info.rpcs_off);
   ctx->rpc_begin = info.rpc_begin;
   ctx->rpc_end = info.rpc_end;
+  ctx->rpc_count = rpc_count;
   ctx->app_qid = info.app_qid;
 
   equeue_init(&ctx->app_slow, HOMA_QUEUE_LENGTH,
@@ -394,6 +406,12 @@ int homa_lib_poll(struct homa_context_lib *ctx, struct homa_event *events,
     }
 
     slot = rpc_slot(handle);
+    if (slot >= ctx->rpc_count)
+    {
+      errno = EPROTO;
+      return -1;
+    }
+
     MEM_BARRIER();
     rpc = &ctx->rpcs[slot];
     if (rpc->handle != handle || rpc->state == HOMA_RPC_FREE ||
@@ -510,6 +528,12 @@ static struct homa_rpc *rpc_get(struct homa_context_lib *ctx, int sockfd,
   }
 
   slot = rpc_slot(rpc_id);
+  if (slot >= ctx->rpc_count)
+  {
+    errno = EINVAL;
+    return NULL;
+  }
+
   rpc = &ctx->rpcs[slot];
   if (rpc->handle != rpc_id || rpc->state == HOMA_RPC_FREE ||
       rpc->sock_id != (__u32) sockfd || ctx->delivered[slot] != rpc_id)

@@ -22,7 +22,7 @@ void homa_timer_poll(struct homa_slow *ctx)
   __u8 type;
   int timer_running, new_rpc, progressed;
 
-  for (slot = 0; slot < HOMA_MAX_RPCS; slot++)
+  for (slot = 0; slot < ctx->config.rpc_slots + HOMA_SERVER_RPCS; slot++)
   {
     rpc = &ctx->rpcs[slot];
     timer = &ctx->timers[slot];

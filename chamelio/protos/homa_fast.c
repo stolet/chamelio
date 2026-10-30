@@ -12,6 +12,7 @@
 
 /* Miscellaneous helpers */
 static __always_inline __u32 msg_payload_bytes(struct cham_ebpf_ctx *ctx);
+static __always_inline __u32 client_rpc_count(struct cham_ebpf_ctx *ctx);
 static __always_inline struct homa_state *state_get(struct cham_ebpf_ctx *ctx);
 static __always_inline __u8 is_paylen_valid(struct homa_pkt *p,
     void *pkt_end, __u32 len);
@@ -129,12 +130,12 @@ static __always_inline __u8 rpc_is_waiting_local(struct homa_rpc *rpc);
 /* Grant helpers */
 static __always_inline void grant_refresh(struct cham_ebpf_ctx *ctx,
     struct homa_rpc *rpc, __u32 slot);
-static __always_inline struct homa_rpc *grant_select(
-    struct cham_ebpf_ctx *ctx, __u32 *slot, __u8 fifo);
+static __always_inline __u32 grant_select(
+    struct cham_ebpf_ctx *ctx, __u8 fifo);
 static __always_inline struct homa_grant_candidate *candidate_at(
     struct homa_state *state, __u32 slot);
-static __always_inline struct homa_rpc *grant_select_fifo(
-    struct cham_ebpf_ctx *ctx, __u32 *slot);
+static __always_inline __u32 grant_select_fifo(
+    struct cham_ebpf_ctx *ctx);
 static __always_inline int grant_poll(struct cham_ebpf_ctx *ctx);
 static __always_inline void grant_wake(struct cham_ebpf_ctx *ctx);
 static __always_inline void grant_append(struct cham_ebpf_ctx *ctx,
@@ -323,7 +324,7 @@ int homa_fast_event_deq(struct cham_ebpf_ctx *ctx)
 static __always_inline struct homa_rpc *rpc_at(struct cham_ebpf_ctx *ctx,
     __u32 slot)
 {
-  if (slot >= HOMA_MAX_RPCS)
+  if (slot >= client_rpc_count(ctx) + HOMA_SERVER_RPCS)
     return NULL;
 
   return ebpf_map_lookup(ctx->maps[HOMA_RPC_MAP].addr, slot,
@@ -353,7 +354,7 @@ static __always_inline __u32 rpc_hash(__u64 id, __u32 sock_id,
   __u32 hash = client_id ^ (client_id >> 32) ^ remote_ip ^
       (remote_ip >> 16) ^ remote_port ^ sock_id;
 
-  return hash & (HOMA_CLIENT_RPCS - 1);
+  return hash & (HOMA_SERVER_RPCS - 1);
 }
 
 static __always_inline struct homa_rpc *rpc_server_find(
@@ -368,9 +369,10 @@ static __always_inline struct homa_rpc *rpc_server_find(
     return NULL;
 
   link = state->server_buckets[rpc_hash(id, sock_id, remote_ip, remote_port)];
-  for (i = 0; i < HOMA_CLIENT_RPCS; i++)
+  for (i = 0; i < HOMA_SERVER_RPCS; i++)
   {
-    if (link <= HOMA_CLIENT_RPCS || link > HOMA_MAX_RPCS)
+    if (link <= state->client_rpcs ||
+        link > state->client_rpcs + HOMA_SERVER_RPCS)
       return NULL;
 
     rpc = rpc_at(ctx, link - 1);
@@ -456,7 +458,7 @@ static __always_inline void rpc_free(struct cham_ebpf_ctx *ctx,
   {
     rpc_server_remove(ctx, rpc);
     state = state_get(ctx);
-    if (state != NULL && state->server_free_count < HOMA_CLIENT_RPCS)
+    if (state != NULL && state->server_free_count < HOMA_SERVER_RPCS)
       state->server_free[state->server_free_count++] = slot;
   }
 
@@ -518,7 +520,7 @@ static __always_inline struct homa_rpc *rx_rpc_lookup(
       return NULL;
 
     i = rpc_get_client_slot(id);
-    if (i >= HOMA_CLIENT_RPCS)
+    if (i >= client_rpc_count(ctx))
       return NULL;
 
     rpc = rpc_at(ctx, i);
@@ -538,11 +540,12 @@ static __always_inline struct homa_rpc *rx_rpc_lookup(
     return NULL;
 
   count = state->server_free_count;
-  if (count == 0 || count > HOMA_CLIENT_RPCS)
+  if (count == 0 || count > HOMA_SERVER_RPCS)
     return NULL;
 
-  i = state->server_free[(count - 1) & (HOMA_CLIENT_RPCS - 1)];
-  if (i < HOMA_CLIENT_RPCS || i >= HOMA_MAX_RPCS)
+  i = state->server_free[(count - 1) & (HOMA_SERVER_RPCS - 1)];
+  if (i < state->client_rpcs ||
+      i >= state->client_rpcs + HOMA_SERVER_RPCS)
     return NULL;
 
   rpc = rpc_at(ctx, i);
@@ -711,7 +714,7 @@ static __always_inline int rx_handle_need_ack(struct cham_ebpf_ctx *ctx)
   remote_ip = f_beui32(p->ip.src);
   remote_port = f_beui16(p->data.common.sport);
   slot = rpc_get_client_slot(id);
-  rpc = slot < HOMA_CLIENT_RPCS ? rpc_at(ctx, slot) : NULL;
+  rpc = slot < client_rpc_count(ctx) ? rpc_at(ctx, slot) : NULL;
   if (rpc_is_id_match(rpc, id))
   {
     if (!rpc_is_peer_match(rpc, sock_id, remote_ip, remote_port) ||
@@ -1145,8 +1148,8 @@ static __always_inline int grant_poll(struct cham_ebpf_ctx *ctx)
     return 0;
 
   fifo = state->grant_fifo_credit >= 100ULL * state->grant_bytes;
-  rpc = grant_select(ctx, &slot, fifo);
-  if (rpc == NULL)
+  slot = grant_select(ctx, fifo);
+  if (slot == HOMA_MAX_RPCS)
   {
     if (state->grant_count != 0)
     {
@@ -1155,6 +1158,10 @@ static __always_inline int grant_poll(struct cham_ebpf_ctx *ctx)
     }
     return 0;
   }
+
+  rpc = rpc_at(ctx, slot);
+  if (rpc == NULL)
+    return 0;
 
   sock = sock_at(ctx, rpc->sock_id);
   if (sock == NULL || sock->state != HOMA_SOCKET_BOUND)
@@ -1343,6 +1350,9 @@ static __always_inline int tx_poll(struct cham_ebpf_ctx *ctx)
     link = state->tx_fifo_head;
     for (i = 0; i < HOMA_MAX_RPCS; i++)
     {
+      if (i >= state->client_rpcs + HOMA_SERVER_RPCS)
+        break;
+
       if (link == 0)
         break;
 
@@ -1411,8 +1421,8 @@ static __always_inline void grant_refresh(struct cham_ebpf_ctx *ctx,
     *eligible &= ~bit;
 }
 
-static __always_inline struct homa_rpc *grant_select(
-    struct cham_ebpf_ctx *ctx, __u32 *slot, __u8 fifo)
+static __always_inline __u32 grant_select(
+    struct cham_ebpf_ctx *ctx, __u8 fifo)
 {
   struct homa_state *state = state_get(ctx);
   struct homa_grant_candidate *candidate;
@@ -1430,13 +1440,16 @@ static __always_inline struct homa_rpc *grant_select(
   __u8 same_peer, replaced;
 
   if (state == NULL)
-    return NULL;
+    return HOMA_MAX_RPCS;
 
   if (fifo)
-    return grant_select_fifo(ctx, slot);
+    return grant_select_fifo(ctx);
 
   for (word = 0; word < HOMA_CANDIDATE_WORDS; word++)
   {
+    if (word * 32 >= state->client_rpcs + HOMA_SERVER_RPCS)
+      break;
+
     bits = state->grant_bits[word];
     for (i = 0; i < 32; i++)
     {
@@ -1508,10 +1521,9 @@ static __always_inline struct homa_rpc *grant_select(
   }
 
   if (best == HOMA_MAX_RPCS)
-    return NULL;
+    return HOMA_MAX_RPCS;
 
-  *slot = best;
-  return rpc_at(ctx, best);
+  return best;
 }
 
 static __always_inline struct homa_grant_candidate *candidate_at(
@@ -1584,29 +1596,37 @@ static __always_inline void tx_fifo_remove(struct cham_ebpf_ctx *ctx,
   rpc->flags &= ~HOMA_RPC_TX_FIFO_QUEUED;
 }
 
-static __always_inline struct homa_rpc *grant_select_fifo(
-    struct cham_ebpf_ctx *ctx, __u32 *slot)
+static __always_inline __u32 grant_select_fifo(
+    struct cham_ebpf_ctx *ctx)
 {
   struct homa_state *state = state_get(ctx);
   struct homa_grant_candidate *candidate;
   struct homa_rpc *rpc;
-  __u32 link;
+  __u32 link, index;
   __u64 i, j;
   __u8 same_peer;
 
   if (state == NULL)
-    return NULL;
+    return HOMA_MAX_RPCS;
 
   link = state->grant_head;
   for (i = 0; i < HOMA_MAX_RPCS; i++)
   {
+    if (i >= state->client_rpcs + HOMA_SERVER_RPCS)
+      break;
+
     if (link == 0)
       break;
 
-    rpc = rpc_at(ctx, link - 1);
-    candidate = candidate_at(state, link - 1);
-    if (rpc == NULL || candidate == NULL)
-      return NULL;
+    index = link - 1;
+    rpc = rpc_at(ctx, index);
+    if (rpc == NULL)
+      return HOMA_MAX_RPCS;
+
+    link = ((volatile struct homa_rpc *) rpc)->grant_next;
+    candidate = candidate_at(state, index);
+    if (candidate == NULL)
+      return HOMA_MAX_RPCS;
 
     same_peer = 0;
     for (j = 0; j < HOMA_OVERCOMMITMENT; j++)
@@ -1616,13 +1636,11 @@ static __always_inline struct homa_rpc *grant_select_fifo(
     }
     if (!same_peer && candidate->need != 0)
     {
-      *slot = link - 1;
-      return rpc;
+      return index;
     }
-    link = rpc->grant_next;
   }
 
-  return NULL;
+  return HOMA_MAX_RPCS;
 }
 
 
@@ -1965,4 +1983,11 @@ static __always_inline __u32 msg_payload_bytes(struct cham_ebpf_ctx *ctx)
     return HOMA_MIN_PAYLOAD;
 
   return HOMA_MAX_PAYLOAD;
+}
+
+static __always_inline __u32 client_rpc_count(struct cham_ebpf_ctx *ctx)
+{
+  struct homa_state *state = state_get(ctx);
+
+  return state == NULL ? 0 : state->client_rpcs;
 }

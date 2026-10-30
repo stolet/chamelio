@@ -115,9 +115,6 @@ static void app_accept(struct homa_slow *ctx)
 
   for (i = 0; i < HOMA_MAX_CONTEXTS; i++)
   {
-    if (i >= HOMA_CLIENT_RPCS / ctx->config.context_rpcs)
-      break;
-
     if (ctx->apps[i].app_fd < 0 && !ctx->apps[i].disconnecting)
     {
       app = &ctx->apps[i];
@@ -279,7 +276,8 @@ static int socket_close_poll(struct homa_slow *ctx, struct homa_app *app,
   if (sock->state != HOMA_SOCKET_CLOSING && sock->state != HOMA_SOCKET_CLOSED)
     return EINPROGRESS;
 
-  while (app->close_cursor < HOMA_MAX_RPCS && examined < HOMA_REAP_BATCH)
+  while (app->close_cursor < ctx->config.rpc_slots + HOMA_SERVER_RPCS &&
+      examined < HOMA_REAP_BATCH)
   {
     rpc = &ctx->rpcs[app->close_cursor];
     if (rpc->state != HOMA_RPC_FREE && rpc->sock_id == sock_id &&
@@ -297,7 +295,7 @@ static int socket_close_poll(struct homa_slow *ctx, struct homa_app *app,
     examined++;
   }
 
-  if (app->close_cursor < HOMA_MAX_RPCS)
+  if (app->close_cursor < ctx->config.rpc_slots + HOMA_SERVER_RPCS)
     return EINPROGRESS;
 
   if (!app->close_barrier)
@@ -363,6 +361,7 @@ static void disconnect_poll(struct homa_slow *ctx, struct homa_app *app)
 static int queues_init(struct homa_slow *ctx, struct homa_app *app)
 {
   struct proto_queue_lib *queue;
+  __u32 context_rpcs = ctx->config.rpc_slots / HOMA_MAX_CONTEXTS;
   __u64 *offsets[] = {
     &app->info.app_slow_off,
     &app->info.slow_app_off,
@@ -403,8 +402,9 @@ static int queues_init(struct homa_slow *ctx, struct homa_app *app)
           HOMA_QUEUE_LENGTH * sizeof(struct homa_queue_entry));
   }
 
-  app->info.rpc_begin = (app - ctx->apps) * ctx->config.context_rpcs;
-  app->info.rpc_end = app->info.rpc_begin + ctx->config.context_rpcs;
+  app->info.rpc_begin = (app - ctx->apps) * context_rpcs;
+  app->info.rpc_end = app->info.rpc_begin + context_rpcs;
+  app->info.client_rpcs = ctx->config.rpc_slots;
   app->info.app_qid = app->fast_app_qid;
   app->info.sockets_off =
       (char *) ctx->sockets - (char *) ctx->proto->shm_base;

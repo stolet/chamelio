@@ -9,14 +9,16 @@
 #define HOMA_EBPF_PATH "protos/homa/fast/homa_fast.bpf.o"
 /* Maximum endpoints shared by application contexts. */
 #define HOMA_MAX_SOCKETS 64
-/* Number of reserved RPC slots. */
-#define HOMA_MAX_RPCS 256
-/* Client slots; remaining slots are allocated by the fast path. */
-#define HOMA_CLIENT_RPCS (HOMA_MAX_RPCS / 2)
-/* Default client RPC slots reserved by each application context. */
-#define HOMA_CONTEXT_RPCS 16
-/* Application contexts supported by the reserved client slots. */
-#define HOMA_MAX_CONTEXTS (HOMA_CLIENT_RPCS / HOMA_CONTEXT_RPCS)
+/* Default total client RPC slots. */
+#define HOMA_CLIENT_RPCS 128
+/* Maximum configurable total client RPC slots. */
+#define HOMA_MAX_CLIENT_RPCS 1024
+/* Server slots allocated by the fast path. */
+#define HOMA_SERVER_RPCS 128
+/* Maximum RPC slots and fixed generation stride for local handles. */
+#define HOMA_MAX_RPCS (HOMA_MAX_CLIENT_RPCS + HOMA_SERVER_RPCS)
+/* Application contexts sharing the configured client slots. */
+#define HOMA_MAX_CONTEXTS 8
 /* Maximum message bytes and reserved storage per direction. */
 #define HOMA_MESSAGE_BYTES 1000000
 /* DATA payload at the physical MTU of 1500 bytes. */
@@ -104,6 +106,8 @@ struct homa_grant_candidate {
 
 /* Core-zero scheduling, server RPC allocation and lookup. */
 struct homa_state {
+  /* Configured client slots, followed by the fixed server slot pool. */
+  __u32 client_rpcs;
   /* Segment payload size selected from the registered inner MTU. */
   __u32 payload_bytes;
   /* Fast-to-slow queue carrying received recovery packet metadata. */
@@ -143,9 +147,9 @@ struct homa_state {
   /* Number of available server slots. */
   __u32 server_free_count;
   /* Stack of available server slot indices. */
-  __u32 server_free[HOMA_CLIENT_RPCS];
+  __u32 server_free[HOMA_SERVER_RPCS];
   /* Server RPC hash bucket heads, stored as slot index plus one. */
-  __u32 server_buckets[HOMA_CLIENT_RPCS];
+  __u32 server_buckets[HOMA_SERVER_RPCS];
 };
 
 /* Endpoint state shared with the fast path. */

@@ -147,8 +147,8 @@ static struct homa_rpc *rpc_find(struct homa_slow *ctx,
 
   if (packet->id & HOMA_RPC_SERVER_BIT)
   {
-    begin = HOMA_CLIENT_RPCS;
-    end = HOMA_MAX_RPCS;
+    begin = ctx->config.rpc_slots;
+    end = ctx->config.rpc_slots + HOMA_SERVER_RPCS;
   }
   else
   {
@@ -156,7 +156,7 @@ static struct homa_rpc *rpc_find(struct homa_slow *ctx,
       return NULL;
 
     begin = (packet->id / HOMA_RPC_ID_STRIDE - 1) % HOMA_MAX_RPCS;
-    if (begin >= HOMA_CLIENT_RPCS)
+    if (begin >= ctx->config.rpc_slots)
       return NULL;
     end = begin + 1;
   }

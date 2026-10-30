@@ -12,7 +12,7 @@ enum cfg_params {
   CP_GRANT,
   CP_INCOMING,
   CP_LINK_RATE,
-  CP_CONTEXT_RPCS,
+  CP_RPC_SLOTS,
 };
 
 static struct option opts[] = {
@@ -33,7 +33,7 @@ static struct option opts[] = {
     .val = CP_LINK_RATE },
   { .name = "rpc-slots",
     .has_arg = required_argument,
-    .val = CP_CONTEXT_RPCS },
+    .val = CP_RPC_SLOTS },
   { .name = NULL },
 };
 
@@ -81,8 +81,8 @@ int homa_config_parse(struct homa_configuration *c, int argc, char **argv)
         if (parse_number(optarg, &c->link_kbps, HOMA_LINK_KBPS) != 0)
           goto failed;
         break;
-      case CP_CONTEXT_RPCS:
-        if (parse_number(optarg, &c->context_rpcs, HOMA_CLIENT_RPCS) != 0)
+      case CP_RPC_SLOTS:
+        if (parse_number(optarg, &c->rpc_slots, HOMA_MAX_CLIENT_RPCS) != 0)
           goto failed;
         break;
       case '?':
@@ -103,6 +103,14 @@ int homa_config_parse(struct homa_configuration *c, int argc, char **argv)
       c->incoming_bytes < HOMA_MAX_PAYLOAD)
     goto failed;
 
+  if (c->rpc_slots < HOMA_MAX_CONTEXTS ||
+      c->rpc_slots % HOMA_MAX_CONTEXTS != 0)
+  {
+    fprintf(stderr, "rpc-slots must be a multiple of %u\n",
+        HOMA_MAX_CONTEXTS);
+    goto failed;
+  }
+
   return 0;
 
 failed:
@@ -117,7 +125,7 @@ static int config_defaults(struct homa_configuration *c)
   c->grant_bytes = HOMA_GRANT_BYTES;
   c->incoming_bytes = HOMA_INCOMING_BYTES;
   c->link_kbps = HOMA_LINK_KBPS;
-  c->context_rpcs = HOMA_CONTEXT_RPCS;
+  c->rpc_slots = HOMA_CLIENT_RPCS;
   return 0;
 }
 
@@ -151,9 +159,8 @@ static void print_usage(char *progname)
       "  --link-kbps N                        Link pacing rate [100000000]\n"
       "\n"
       "Application contexts:\n"
-      "  --rpc-slots N                        Application context RPC slots"
-          " [16]\n"
-      "  1..128 slots; at most min(8, 128 / N) contexts can attach.\n"
+      "  --rpc-slots N                        Total client RPC slots [128]\n"
+      "  8..1024 slots, in multiples of 8; divided across 8 contexts.\n"
       "\n"
       , progname);
 }

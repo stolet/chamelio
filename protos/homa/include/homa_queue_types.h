@@ -140,6 +140,8 @@ struct homa_queue_entry {
 
 /* Shared resource offsets sent when the application context attaches. */
 struct homa_context_info {
+  /* Configured total client slots; server slots follow this pool. */
+  __u32 client_rpcs;
   /* First client RPC slot reserved by this context. */
   __u32 rpc_begin;
   /* Exclusive end of this context's reserved client RPC slots. */
