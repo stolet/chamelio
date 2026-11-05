@@ -119,8 +119,8 @@ __u16 tcp_sock_rx_wnd(const struct tcp_sock *sock)
   __u32 wnd;
 
   wnd = sock->rx_len - sock->rx_avail;
-  if (wnd > 65535)
-    wnd = 65535;
+  if (wnd > TCP_MAX_WINDOW)
+    wnd = TCP_MAX_WINDOW;
 
   return (__u16) wnd;
 }

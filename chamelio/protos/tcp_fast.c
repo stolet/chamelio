@@ -966,6 +966,8 @@ static inline void tx_fill_hdr(struct tcp_pkt_inner *tcp_pkt,
     sock->flags &= ~TCP_SOCK_FLAG_SEND_ECE;
   }
   rxwnd = sock->rx_len - sock->rx_avail;
+  if (rxwnd > TCP_MAX_WINDOW)
+    rxwnd = TCP_MAX_WINDOW;
   tcp_pkt->tcp.src = t_beui16(sock->local_port);
   tcp_pkt->tcp.dest = t_beui16(sock->remote_port);
   tcp_pkt->tcp.seqno = t_beui32(sock->tx_seq + sock->tx_pending);

@@ -50,6 +50,8 @@ enum tcp_sock_state {
 
 /* Payload size for plain IPv4/TCP packets without TCP options. */
 #define TCP_PAYLOAD_MSS 1460
+/* Maximum receive window without TCP window scaling. */
+#define TCP_MAX_WINDOW 65535
 /* Ignore timestamp RTT samples that are implausibly large. */
 #define TCP_MAX_RTT 100000
 
