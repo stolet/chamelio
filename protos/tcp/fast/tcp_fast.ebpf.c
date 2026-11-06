@@ -285,7 +285,6 @@ int event_rx(struct cham_ebpf_ctx *ctx)
   if (rx_bump > 0)
   {
     rx_copy_payload(ctx->shm_base, sock, payload, rx_bump);
-    rx_sock_bump_rx(sock, rx_bump);
     ret = rx_enqueue_rx_bump(&ctx->equeues[sock->app_bump_qid].eq, sock, rx_bump,
         f_beui16(tcp_pkt->tcp.src), f_beui32(tcp_pkt->ip.src));
     if (ret != 0)
@@ -293,6 +292,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       ebpf_spin_unlock(&sock->lock);
       return -1;
     }
+    rx_sock_bump_rx(sock, rx_bump);
   }
   
   ret = tx_fill_ack(ctx, sock);
