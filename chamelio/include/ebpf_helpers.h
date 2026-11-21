@@ -36,6 +36,8 @@ enum ebpf_helper_id
 #define EBPF_EXT_HELPER_QUEUE_DEQUEUE "_bpf_helper_ext_1013"
 #define EBPF_EXT_HELPER_RDTSC "_bpf_helper_ext_1014"
 #define EBPF_EXT_HELPER_RATE_DELAY_TSC "_bpf_helper_ext_1015"
+#define EBPF_EXT_HELPER_SPIN_LOCK "_bpf_helper_ext_1016"
+#define EBPF_EXT_HELPER_SPIN_UNLOCK "_bpf_helper_ext_1017"
 #define EBPF_EXT_HELPER_SCHED_REMOVE "_bpf_helper_ext_1018"
 #define EBPF_EXT_HELPER_NOW_US "_bpf_helper_ext_1019"
 

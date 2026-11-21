@@ -120,9 +120,9 @@ static const struct ebpf_helper_desc ebpf_helpers[] = {
   { EBPF_HELPER_RATE_DELAY_TSC,
       "ebpf_rate_delay_tsc", ebpf_rate_delay_tsc, 1 },
   { EBPF_HELPER_SPIN_LOCK,
-      "ebpf_spin_lock", ebpf_spin_lock, 0 },
+      "ebpf_spin_lock", ebpf_spin_lock, 1 },
   { EBPF_HELPER_SPIN_UNLOCK,
-      "ebpf_spin_unlock", ebpf_spin_unlock, 0 },
+      "ebpf_spin_unlock", ebpf_spin_unlock, 1 },
   { EBPF_HELPER_SCHED_REMOVE,
       "sched_remove", sched_remove, 1 },
 };

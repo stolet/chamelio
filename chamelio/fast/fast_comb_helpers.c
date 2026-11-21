@@ -7,6 +7,7 @@
 #include "queue_types.h"
 #include "scheduler.h"
 #include "utils.h"
+#include "utils_sync.h"
 
 static inline int comb_sched_remove(struct cham_scheduler *sched, __u32 id);
 
@@ -317,6 +318,18 @@ DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_NOW_US, ext_now_us)
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_RATE_DELAY_TSC, ext_rate_delay_tsc)
 {
   return comb_rate_delay_tsc((__u32) arg1, (__u32) arg2);
+}
+
+DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_SPIN_LOCK, ext_spin_lock)
+{
+  util_spin_lock((volatile __u32 *)(uintptr_t) arg1);
+  return 0;
+}
+
+DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_SPIN_UNLOCK, ext_spin_unlock)
+{
+  util_spin_unlock((volatile __u32 *)(uintptr_t) arg1);
+  return 0;
 }
 
 DEFINE_EBPF_HELPER(EBPF_EXT_HELPER_SCHED_REMOVE, ext_sched_remove)
