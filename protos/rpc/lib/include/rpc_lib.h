@@ -184,6 +184,9 @@ struct rpc_server_lib
   void *rx_buf;
   /* Length of the shared RX ring */
   __u32 rx_len;
+  /* App-JSQ mode: requests dropped by the dispatcher because no eligible
+   * worker had space. Written only by the dispatcher thread. */
+  __u64 disp_drops;
 };
 
 struct rpc_lib
@@ -261,7 +264,9 @@ int rpc_set_ebpf_lwl(struct rpc_server_lib *server,
 int rpc_call_complete_svc(struct rpc_worker_lib *w, __u8 service_id);
 
 /* Dispatch one pending request from the shared ring to the worker with fewest
- * jobs_pending. Call in a tight loop from the dispatcher thread. */
+ * jobs_pending. Call in a tight loop from the dispatcher thread.
+ * Returns 0 on dispatch; -1 with errno EAGAIN if the ring is empty, or
+ * ENOBUFS if the request was dropped (no eligible worker had space). */
 int rpc_app_dispatch(struct rpc_server_lib *server);
 /* Set the service class for a given service ID */
 int rpc_set_service_class(struct rpc_server_lib *server,

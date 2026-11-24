@@ -429,6 +429,7 @@ struct rpc_server_lib *rpc_new_server(struct rpc_context_lib *ctx, __u32 ip, __u
   server->nworkers = 0;
   server->services = NULL;
   server->id = INVALID_ID;
+  server->disp_drops = 0;
 
   eq = ctx->app_slow_q;
   qe = queue_tail(eq);
@@ -926,48 +927,17 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 
       ring_read(&md, shbuf, curr_head, srvr->rx_len, meta_sz);
 
-      // if (curr_head + meta_sz <= srvr->rx_len)
-      // {
-      //   memcpy(&md, shbuf + curr_head, meta_sz);
-      // }
-      // else
-      // {
-      //   n1 = srvr->rx_len - curr_head;
-      //   n2 = meta_sz - n1;
-      //   memcpy(&md, shbuf + curr_head, n1);
-      //   memcpy((__u8 *)&md + n1, shbuf, n2);
-      // }
-
       // copy hdr
       hdr_pos = (curr_head + meta_sz) % srvr->rx_len;
 
       ring_read(&hdr, shbuf, hdr_pos, srvr->rx_len,
                 sizeof(struct rpc_hdr));
 
-      // if (hdr_pos + sizeof(struct rpc_hdr) <= srvr->rx_len)
-      // {
-      //   memcpy(&hdr, shbuf + hdr_pos, sizeof(struct rpc_hdr));
-      // }
-      // else
-      // {
-      //   n1 = srvr->rx_len - hdr_pos;
-      //   n2 = (__u32)sizeof(struct rpc_hdr) - n1;
-      //   memcpy(&hdr, shbuf + hdr_pos, n1);
-      //   memcpy((__u8 *)&hdr + n1, shbuf, n2);
-      // }
-
       hdr.service.x = ntohs(hdr.service.x);
       hdr.len.x = ntohs(hdr.len.x);
       hdr.rid.x = ntohl(hdr.rid.x);
 
       entry_len = meta_sz + hdr.len.x;
-
-      // if (avail < entry_len)
-      // {
-      //   __sync_lock_release(&srvr->rx_lock);
-      //   errno = EAGAIN;
-      //   return -1;
-      // }
 
       if (hdr.len.x > w->rx_len - w->rx_avail)
       {
@@ -1013,17 +983,6 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
 
       ring_read(&hdr, w->rx_buf, w->rx_head, w->rx_len, sizeof(struct rpc_hdr));
 
-      // if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len)
-      // {
-      //   n1 = w->rx_len - w->rx_head;
-      //   n2 = sizeof(struct rpc_hdr) - n1;
-      //   memcpy(&hdr, w->rx_buf + w->rx_head, n1);
-      //   memcpy(((__u8 *)&hdr) + n1, w->rx_buf, n2);
-      // }
-      // else
-      // {
-      //   memcpy(&hdr, w->rx_buf + w->rx_head, sizeof(struct rpc_hdr));
-      // }
       hdr.service.x = ntohs(hdr.service.x);
       hdr.len.x = ntohs(hdr.len.x);
       hdr.rid.x = ntohl(hdr.rid.x);
@@ -1040,18 +999,6 @@ int rpc_handle_call(struct rpc_worker_lib *w, __u32 *rid,
   {
     ring_read(&hdr, (__u8 *)w->rx_buf, w->rx_head, w->rx_len,
               sizeof(struct rpc_hdr));
-
-    // if (w->rx_head + sizeof(struct rpc_hdr) > w->rx_len)
-    // {
-    //   n1 = w->rx_len - w->rx_head;
-    //   n2 = sizeof(struct rpc_hdr) - n1;
-    //   memcpy(&hdr, (__u8 *)w->rx_buf + w->rx_head, n1);
-    //   memcpy((__u8 *)&hdr + n1, w->rx_buf, n2);
-    // }
-    // else
-    // {
-    //   memcpy(&hdr, (__u8 *)w->rx_buf + w->rx_head, sizeof(struct rpc_hdr));
-    // }
 
     hdr.service.x = ntohs(hdr.service.x);
     hdr.len.x = ntohs(hdr.len.x);
@@ -1568,8 +1515,15 @@ int rpc_app_dispatch(struct rpc_server_lib *server)
 
   if (!best_w)
   {
-    // __sync_lock_release(&srvr->rx_lock);
-    errno = EAGAIN;
+    /* No eligible worker has room: drop the request, mirroring the eBPF
+     * fast path which drops when worker selection fails. Consuming the
+     * entry also avoids head-of-line blocking of later requests. */
+    __atomic_store_n(&srvr->rx_head,
+                     (curr_head + entry_len) % srvr->rx_len,
+                     __ATOMIC_RELEASE);
+    __atomic_store_n(&server->disp_drops, server->disp_drops + 1,
+                     __ATOMIC_RELAXED);
+    errno = ENOBUFS;
     return -1;
   }
 

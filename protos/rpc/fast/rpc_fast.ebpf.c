@@ -403,7 +403,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
           }
         }
 
-        //TODO: ask Mat if we should allow aggressive borrowing of long workers for short requests
+        // TODO: ask Mat if we should allow aggressive borrowing of long workers for short requests
         /* A short request may borrow an idle long worker only when every
          * long worker is idle. Prefer an idle short worker when available. */
         long_pool_idle = 1;
@@ -482,6 +482,7 @@ int event_rx(struct cham_ebpf_ctx *ctx)
       ebpf_memcpy(rx_base, payload + part, payload_len - part);
     }
     worker->rx_avail += payload_len;
+    // increase the jobs_pending counter
     __sync_fetch_and_add(&worker->jobs_pending, 1);
 
     if (worker->app_bump_qid >= MAX_PROTO_QUEUES)
