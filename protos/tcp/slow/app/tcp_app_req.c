@@ -57,18 +57,16 @@ int tcp_app_poll(struct tcp_slow_context *ctx)
   msg_nr = 0;
   app_nr = 0;
   ctx_nr = 0;
-  while (msg_nr < SLOW_BATCH_SIZE && ctx->n_apps != 0)
+  while (msg_nr < SLOW_BATCH_SIZE && app_nr < ctx->n_apps)
   {
     app = &ctx->apps[ctx->next_app];
     if (ctx_nr >= app->n_ctxs)
     {
       app_nr++;
       ctx->next_app = (ctx->next_app + 1) % ctx->n_apps;
-      app = &ctx->apps[ctx->next_app];
+      ctx_nr = 0;
+      continue;
     }
-
-    if (app_nr >= ctx->n_apps || app->n_ctxs == 0)
-      break;
 
     actx = &app->ctxs[app->next_ctx];
     q = actx->app_slow_q;
@@ -118,7 +116,7 @@ int tcp_app_poll(struct tcp_slow_context *ctx)
     queue_dequeue(q);
   }
 
-  return 0;
+  return msg_nr;
 }
 
 /*** Request Handlers *********************************************************/

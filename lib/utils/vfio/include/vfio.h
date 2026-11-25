@@ -22,6 +22,9 @@ struct vfio {
     size_t shm_off;
 };
 
+/* Initialize VFIO and map shared memory without enabling interrupts. */
 int vfio_init(struct vfio *vfio);
+/* Bind the notification eventfd to MSI-X vector zero. */
+int vfio_enable_notify(int dev, int fd);
 
 #endif /* ndef GUEST_VFIO_H_ */

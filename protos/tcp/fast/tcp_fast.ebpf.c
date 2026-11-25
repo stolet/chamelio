@@ -124,6 +124,8 @@ static __u16 (*ebpf_ipv4_checksum)(void *ip_hdr) = (void *) 1005;
 static __u16 (*ebpf_ipv4_udptcp_cksum)(void *ip_hdr, void *udp_hdr) = (void *) 1006;
 static __u64 (*ebpf_rdtsc)(void) = (void *) 1014;
 static __u64 (*ebpf_now_us)(void) = (void *) 1019;
+static void (*ebpf_notify_slow)(struct cham_ebpf_ctx *ctx,
+    __u64 grace_ns) = (void *) 1020;
 static __u64 (*ebpf_rate_delay_tsc)(__u32 bytes, __u32 rate_kbps) = (void *) 1015;
 static struct cham_sched_entry * (*ebpf_sched_head)(struct cham_scheduler *sched, __u64 elsize) = (void *) 1007;
 static int (*sched_pop)(struct cham_scheduler *sched) = (void *) 1008;
@@ -610,6 +612,8 @@ static __always_inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
   ret = queue_enqueue(sig_q, TCP_QUEUE_CTL_RX);
   if (ret != 0)
     return -1;
+
+  ebpf_notify_slow(ctx, cfg->notify_grace_ns);
 
   return 0;
 }

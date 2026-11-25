@@ -3,6 +3,7 @@ udp_lib_inc = include_directories('include', '../include')
 deps = [
   dependency('queue_dep'),
   dependency('cham'),
+  dependency('clock_dep'),
 ]
 
 udp_lib_lib = library(

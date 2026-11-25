@@ -4,6 +4,7 @@ udp_slow_srcs = files('udp_slow.c', 'appif.c')
 
 deps = [
   dependency('cham'),
+  dependency('clock_dep'),
   dependency('log_dep'),
   dependency('udp_config_dep'),
 ]

@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <sys/epoll.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -15,6 +17,10 @@ static void tcp_state_publish(struct tcp_slow_context *ctx);
 int main(int argc, char **argv)
 {
   int ret;
+  int busy;
+  int extra_poll = 0;
+  __u64 last_active_ns = 0;
+  struct epoll_event wake_event = { .events = EPOLLIN };
   struct tcp_slow_context ctx;
 
   ret = tcp_config_parse(&ctx.config, argc, argv);
@@ -40,13 +46,38 @@ int main(int argc, char **argv)
     abort();
   }
 
+  if (epoll_ctl(ctx.app_epfd, EPOLL_CTL_ADD, ctx.proto->notify_fd,
+      &wake_event) != 0)
+    abort();
+
   while (1)
   {
-    tcp_appif_poll(&ctx);
-    tcp_app_poll(&ctx);
-    tcp_fast_poll(&ctx);
-    tcp_cc_poll(&ctx);
-    tcp_timeout_poll(&ctx);
+    busy = tcp_appif_poll(&ctx);
+    busy |= tcp_app_poll(&ctx);
+    busy |= tcp_fast_poll(&ctx);
+    busy |= tcp_cc_poll(&ctx);
+    busy |= tcp_timeout_poll(&ctx);
+
+    if (ctx.config.slow_block && clock_canblock(&last_active_ns,
+        &extra_poll, busy, (__u64) ctx.config.slow_poll_us * 1000))
+    {
+      __u64 deadline = ctx.stats_log_tsc + clock_us_to_tsc(1000000);
+      struct to_entry *timer = tomgr_peek(ctx.tomgr);
+
+      if (timer != NULL && timer->to < deadline)
+        deadline = timer->to;
+      if (ctx.n_socks != 0)
+      {
+        __u64 cc_deadline = ctx.cc_poll_tsc +
+            clock_us_to_tsc(ctx.config.cc_control_granularity);
+        if (cc_deadline < deadline)
+          deadline = cc_deadline;
+      }
+      ret = epoll_wait(ctx.app_epfd, &wake_event, 1,
+          clock_deadline_ms(deadline));
+      if (ret < 0 && errno != EINTR)
+        abort();
+    }
 
     if (ctx.stats_log_tsc == 0)
     {

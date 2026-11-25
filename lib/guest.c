@@ -5,6 +5,7 @@
 #include <sys/un.h>
 #include <sys/socket.h>
 #include <sys/mman.h>
+#include <sys/eventfd.h>
 #include <string.h>
 
 #include "include/cham_lib.h"
@@ -71,6 +72,13 @@ struct guest_lib *cham_connect_guest()
 
   g->uxsocket_fd = sock_fd;
   g->shm_fd = shm_fd;
+  if (uxsocket_read_one_msg(sock_fd, &tmp, &g->notify_fd) < 0 ||
+      tmp != 0 || g->notify_fd < 0)
+  {
+    close(shm_fd);
+    free(g);
+    goto close_sockfd;
+  }
 
   return g;
 
@@ -162,6 +170,7 @@ struct proto_lib *cham_new_proto_bare(struct guest_lib *g, __u8 proto_type)
   p->local_ip = res->local_ip;
   p->mtu = res->mtu;
   p->shm_fd = g->shm_fd;
+  p->notify_fd = g->notify_fd;
   p->shm_off = 0;
 
   /* Create allocator that manages shared memory */
@@ -245,6 +254,7 @@ struct proto_lib *cham_new_proto_virt(__u8 proto_type)
   p->nmaps = 0;
   p->n_fp_cores = (__u32) -1;
   p->shm_fd = vfio.dev;
+  p->notify_fd = -1;
   p->shm_off = vfio.shm_off;
 
   /* Create allocator that manages shared memory */
@@ -323,6 +333,25 @@ struct proto_lib *cham_new_proto_virt(__u8 proto_type)
   }
 
   return p;
+}
+
+int cham_init_notify(struct proto_lib *p, int block)
+{
+  int fd;
+
+  if (p->notify_fd >= 0)
+    return 0;
+
+  fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  if (fd < 0)
+    return -1;
+  if (block && vfio_enable_notify(p->shm_fd, fd) != 0)
+  {
+    close(fd);
+    return -1;
+  }
+  p->notify_fd = fd;
+  return 0;
 }
 
 struct proto_queue_lib * cham_new_queue(struct proto_lib *p, 

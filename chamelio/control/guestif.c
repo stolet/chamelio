@@ -180,6 +180,7 @@ error_close:
 static inline int uxsocket_accept(struct control_context *ctx)
 {
   int i, ret, cfd, sfd;
+  int notify_fd = -1;
   void *shm_base;
   char shm_name[30];
   struct epoll_event ev;
@@ -232,6 +233,14 @@ static inline int uxsocket_accept(struct control_context *ctx)
     goto shm_destroy;
   }
 
+  notify_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  if (notify_fd < 0)
+    goto shm_destroy;
+  if (uxsocket_sendfd(cfd, notify_fd, 0) < 0)
+  {
+    goto shm_destroy;
+  }
+
   /* Allocate guest event */
   gev = malloc(sizeof(struct guest_event));
   if (gev == NULL)
@@ -244,6 +253,7 @@ static inline int uxsocket_accept(struct control_context *ctx)
   g = &ctx->guests[ctx->n_guests];
   g->id = ctx->n_guests;
   g->shm_fd = sfd;
+  g->notify_fd = notify_fd;
   g->shm_base = shm_base;
   for (i = 0; i < (int) ctx->config->fp_cores_max; i++)
   {
@@ -339,6 +349,7 @@ static inline int uxsocket_accept(struct control_context *ctx)
 
     new_guest_req = &qe_new_guest->data.new_guest_req;
     new_guest_req->id = g->id;
+    new_guest_req->notify_fd = g->notify_fd;
     new_guest_req->budget = &g->budgets[i].val;
     new_guest_req->shm_base = shm_base;
     new_guest_req->shm_len = ctx->config->shm_len;
@@ -379,6 +390,8 @@ free_alloc:
 free_gev:
   free(gev);
 shm_destroy:
+  if (notify_fd >= 0)
+    close(notify_fd);
   shm_destroy_huge(shm_name, ctx->config->shm_len, shm_base, sfd);
 close_cfd:
   close(cfd);

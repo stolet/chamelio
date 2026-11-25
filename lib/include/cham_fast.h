@@ -56,6 +56,10 @@ struct cham_map {
 
 /* Context passed as a parameter to ebpf functions */
 struct cham_ebpf_ctx {
+  /* Host-only descriptor for slow-path wakeups. */
+  int notify_fd;
+  /* Per-producer timestamp of the previous publication. */
+  __u64 notify_last_ns;
   /* Pointer to packet buffer */
   void *pkt;
   /* Length of shared memory */

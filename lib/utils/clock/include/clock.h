@@ -18,4 +18,12 @@ __u64 clock_tsc_to_us(__u64 tsc);
 /* Current time in nanoseconds */
 __u64 clock_now_ns(void);
 
+/* Publish a wakeup using TAS inter-publication timestamp suppression. */
+void clock_notify(int fd, __u64 *last_ns, __u64 grace_ns);
+/* Require an idle grace interval and one additional poll before sleeping. */
+int clock_canblock(__u64 *last_ns, int *extra_poll, int busy,
+    __u64 grace_ns);
+/* Convert an absolute TSC deadline into a rounded-down epoll timeout. */
+int clock_deadline_ms(__u64 deadline);
+
 #endif

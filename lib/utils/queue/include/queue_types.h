@@ -77,6 +77,8 @@ enum queue_type {
 
 /* Request for registering new guest */
 struct queue_new_guest_req {
+  /* Host descriptor for slow-path wakeups. */
+  int notify_fd;
   /* Guest ID */
   __u8 id;
   /* Pointer to guest/core budget counter shared with control */

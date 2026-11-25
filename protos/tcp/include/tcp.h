@@ -158,6 +158,8 @@ struct tcp_flow_bucket {
 
 /* Shared protocol configuration visible to the fast-path */
 struct tcp_ctl_cfg {
+  /* Notification grace in nanoseconds; all ones disables notifications. */
+  __u64 notify_grace_ns;
   /* Signal queues used by each fast-path core to punt control packets */
   __u16 fast_slow_sig_qids[MAX_FP_CORES];
   /* Packet queues used by each fast-path core to punt control packets */

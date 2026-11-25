@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <linux/vfio.h>
@@ -99,6 +100,23 @@ error_cont:
   close(vfio->cont);
 
   return -1;
+}
+
+int vfio_enable_notify(int dev, int fd)
+{
+  struct
+  {
+    struct vfio_irq_set irq;
+    int fd;
+  } irq;
+
+  memset(&irq, 0, sizeof(irq));
+  irq.irq.argsz = sizeof(irq);
+  irq.irq.flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
+  irq.irq.index = VFIO_PCI_MSIX_IRQ_INDEX;
+  irq.irq.count = 1;
+  irq.fd = fd;
+  return ioctl(dev, VFIO_DEVICE_SET_IRQS, &irq);
 }
 
 int vfio_map_region(int dev, int idx, void **addr, size_t *len, size_t *off)

@@ -20,6 +20,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include "udp_config.h"
+#include "clock.h"
+#include <sys/epoll.h>
 
 int init_udp_slow_context(struct udp_slow_context *ctx);
 
@@ -72,6 +74,9 @@ int init_udp_slow_context(struct udp_slow_context *ctx)
     }
   }
   
+  if (cham_init_notify(p, ctx->config.slow_block) != 0)
+    abort();
+
   fd = open(ctx->config.ebpf_path, O_RDWR);
   if (fd < 0)
   {
@@ -163,19 +168,15 @@ int poll_apps(struct udp_slow_context *ctx)
   msgs_i = 0;
   apps_polled = 0;
   ctxs_polled = 0;
-  while (msgs_i < SLOW_BATCH_SIZE && ctx->n_apps != 0)
+  while (msgs_i < SLOW_BATCH_SIZE && apps_polled < ctx->n_apps)
   {     
     a = &ctx->apps[ctx->next_app];
     if (ctxs_polled >= a->n_ctxs)
     {
       apps_polled++;
       ctx->next_app = (ctx->next_app + 1) % ctx->n_apps;
-      a = &ctx->apps[ctx->next_app];
-    }
-  
-    if (apps_polled >= ctx->n_apps || a->n_ctxs == 0)
-    {
-      break;
+      ctxs_polled = 0;
+      continue;
     }
     
     actx = &a->ctxs[a->next_ctx];
@@ -212,7 +213,7 @@ int poll_apps(struct udp_slow_context *ctx)
     queue_dequeue(q);
   }
 
-  return 0;
+  return msgs_i;
 }
 
 int poll_control(struct udp_slow_context *ctx)
@@ -460,6 +461,10 @@ int handle_bind(struct udp_slow_context *ctx,
 int main(int argc, char **argv)
 {
   int ret;
+  int busy;
+  int extra_poll = 0;
+  __u64 last_active_ns = 0;
+  struct epoll_event wake_event = { .events = EPOLLIN };
   struct udp_slow_context ctx;
   
   ret = udp_config_parse(&ctx.config, argc, argv);
@@ -485,10 +490,21 @@ int main(int argc, char **argv)
     abort();
   }
   
+  if (epoll_ctl(ctx.app_epfd, EPOLL_CTL_ADD, ctx.proto->notify_fd,
+      &wake_event) != 0)
+    abort();
+
   while (1)
   {
-    appif_poll(&ctx);
-    poll_apps(&ctx);
+    busy = appif_poll(&ctx);
+    busy |= poll_apps(&ctx);
+    if (ctx.config.slow_block && clock_canblock(&last_active_ns,
+        &extra_poll, busy, (__u64) ctx.config.slow_poll_us * 1000))
+    {
+      ret = epoll_wait(ctx.app_epfd, &wake_event, 1, -1);
+      if (ret < 0 && errno != EINTR)
+        abort();
+    }
   }
 }
 

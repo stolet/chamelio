@@ -48,6 +48,8 @@ static int load_comb_bytecode(struct control_context *ctx);
 static int register_helpers(struct ebpf_vm_c *vm, int skip_agg_linked);
 static void comb_bc_free(struct comb_bc_blob *bc);
 
+static void ebpf_notify_slow(struct cham_ebpf_ctx *ctx, __u64 grace_ns);
+
 /* Helpers */
 static void ebpf_print(int a);
 static inline void *ebpf_memcpy(void *dst, void *src, size_t n);
@@ -87,6 +89,8 @@ enum agg_event {
 };
 
 static const struct ebpf_helper_desc ebpf_helpers[] = {
+  { EBPF_HELPER_NOTIFY_SLOW,
+      "ebpf_notify_slow", ebpf_notify_slow, 0 },
   { EBPF_HELPER_QUEUE_TAIL, 
       "ebpf_queue_tail", ebpf_queue_tail, 1 },
   { EBPF_HELPER_QUEUE_ENQUEUE, 
@@ -843,4 +847,9 @@ static inline void *ebpf_queue_tail(struct equeue *q, __u64 elsize)
 static inline void *ebpf_queue_head(struct dqueue *q, __u64 elsize)
 {
   return queue_head(q);
+}
+
+static void ebpf_notify_slow(struct cham_ebpf_ctx *ctx, __u64 grace_ns)
+{
+  clock_notify(ctx->notify_fd, &ctx->notify_last_ns, grace_ns);
 }

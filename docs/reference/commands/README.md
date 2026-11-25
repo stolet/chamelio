@@ -104,7 +104,7 @@ Options:
 | `--appq-len=NELEMS` | `128` | Application/slow-path queue elements. |
 | `--bumpq-len=NELEMS` | `65536` | Fast-path bump queue elements. |
 | `--ctlq-len=NELEMS` | `1024` | Control queue elements. |
-| `--block=NR` | none | Use UDP fast-path object for block size `64`, `128`, `256`, `512`, or `1024`. |
+| `--fast-block=NR` | none | Use UDP fast-path object for block size `64`, `128`, `256`, `512`, or `1024`. |
 
 ## TCP Slow Path
 

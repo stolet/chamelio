@@ -10,6 +10,8 @@
 
 enum cfg_params {
   CP_VIRT,
+  CP_SLOW_BLOCK,
+  CP_SLOW_POLL_US,
   CP_RXBUF_SZ,
   CP_TXBUF_SZ,
   CP_APPQ_LEN,
@@ -19,6 +21,10 @@ enum cfg_params {
 };
 
 static struct option opts[] = {
+  { .name = "block", .has_arg = no_argument,
+    .val = CP_SLOW_BLOCK },
+  { .name = "block-us", .has_arg = required_argument,
+    .val = CP_SLOW_POLL_US },
   { .name = "virt",
     .has_arg = no_argument,
     .val = CP_VIRT },
@@ -37,7 +43,7 @@ static struct option opts[] = {
   { .name = "ctlq-len",
     .has_arg = required_argument,
     .val = CP_CTLQ_LEN },
-  { .name = "block",
+  { .name = "fast-block",
     .has_arg = required_argument,
     .val = CP_BLOCK },
 };
@@ -63,6 +69,13 @@ int udp_config_parse(struct udp_configuration *c, int argc, char **argv)
     ret = getopt_long(argc, argv, "", opts, NULL);
     switch (ret)
     {
+      case CP_SLOW_BLOCK:
+        c->slow_block = 1;
+        break;
+      case CP_SLOW_POLL_US:
+        if (parse_u32(optarg, &c->slow_poll_us) != 0)
+          goto failed;
+        break;
       case CP_VIRT:
         c->virt = 1;
         break;
@@ -109,6 +122,8 @@ failed:
 
 static int config_defaults(struct udp_configuration *c)
 {
+  c->slow_block = 0;
+  c->slow_poll_us = 10000;
   c->virt = 0;
   c->virt_gre = 0;
   c->rxbuf_sz = 32768;
@@ -154,7 +169,7 @@ static int parse_block(const char *s, char *ebpf_path, size_t ebpf_path_len)
     path = UDP_EBPF_BYTECODE_1024;
   else
   {
-    fprintf(stderr, "invalid --block value: %s\n", s);
+    fprintf(stderr, "invalid --fast-block value: %s\n", s);
     return -1;
   }
 
@@ -171,6 +186,8 @@ static void print_usage(struct udp_configuration *c, char *progname)
 {
   fprintf(stderr, "Usage: %s [OPTION]...\n"
       "\n"
+      "  --block            Enable idle slow-path blocking\n"
+      "  --block-us=N       Idle grace in us [default: 10000]\n"
       "Memory size:\n"
       "  --rxbuf-sz=BYTES                       RX buffer size in bytes"
           " [default: %u]\n"
@@ -182,7 +199,7 @@ static void print_usage(struct udp_configuration *c, char *progname)
           " [default: %u]\n"
       "  --ctlq-len=NELEMS                      Control queue length in elements"
           " [default: %u]\n"
-      "  --block=NR                             Select block-sized UDP fast path"
+      "  --fast-block=NR                        Select block-sized UDP fast path"
           " (64, 128, 256, 512, 1024)"
           " [default: none]\n"
       "\n"

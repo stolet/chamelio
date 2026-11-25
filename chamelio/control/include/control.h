@@ -68,6 +68,8 @@ struct guest_control {
 
   /* File descriptor for shared memory region for this guest */
   int shm_fd;
+  /* Host descriptor for guest vector zero. */
+  int notify_fd;
   /* Base pointer to the shared memory region for this guest */
   void *shm_base;
   /* Allocator for shared memory region */

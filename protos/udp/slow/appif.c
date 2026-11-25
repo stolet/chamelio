@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <sys/epoll.h>
 #include <sys/un.h>
@@ -49,6 +50,14 @@ int appif_poll(struct udp_slow_context *ctx)
 
   for (i = 0; i < n; i++)
   {
+    if (evs[i].data.ptr == NULL)
+    {
+      __u64 value;
+      if (read(ctx->proto->notify_fd, &value, sizeof(value)) < 0 &&
+          errno != EAGAIN)
+        abort();
+      continue;
+    }
     aev = evs[i].data.ptr;
     switch (aev->type)
     {
@@ -196,6 +205,14 @@ static int uxsocket_accept(struct udp_slow_context *ctx)
   {
     LOG_ERROR("failed to sned shm fd");
     goto close_cfd;
+  }
+
+  if (uxsocket_sendfd(cfd, ctx->proto->notify_fd,
+      ctx->config.slow_block ?
+      (__u64) ctx->config.slow_poll_us * 1000 : ~0ULL) < 0)
+  {
+    close(cfd);
+    return -1;
   }
 
   /* Allocate app event */

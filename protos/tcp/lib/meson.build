@@ -3,6 +3,7 @@ tcp_inc = include_directories('include', '../include')
 deps = [
   dependency('queue_dep'),
   dependency('cham'),
+  dependency('clock_dep'),
 ]
 
 tcp_lib = library(

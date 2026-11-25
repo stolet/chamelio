@@ -60,11 +60,15 @@ struct proto_map_lib {
 struct guest_lib {
   /* Unix socket used to register with Chamelio */
   int uxsocket_fd;
+  /* Host-to-slow-path wakeup descriptor. */
+  int notify_fd;
   /* File descriptor for shared memory region used by this guest */
   int shm_fd;
 };
 
 struct proto_lib {
+  /* Local slow-path wakeup descriptor. */
+  int notify_fd;
   /* Shared memory file descriptor */
   int shm_fd;
   /* Size of shared memory region */
@@ -112,6 +116,8 @@ struct guest_lib * cham_connect_guest();
 struct proto_lib *cham_new_proto_bare(struct guest_lib *g, __u8 proto_type);
 /* Creates a new protocol and maps shared memory region in guest */
 struct proto_lib *cham_new_proto_virt(__u8 proto_type);
+/* Prepare local notifications, enabling VM interrupts only when blocking. */
+int cham_init_notify(struct proto_lib *p, int block);
 
 /* Creates a queue of the specified size in the shared memory of the protocol */
 struct proto_queue_lib * cham_new_queue(struct proto_lib *p, 

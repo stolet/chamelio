@@ -275,6 +275,21 @@ extern "C"
                 .context_descriptor = nullptr,
                 .unsupported = false,
             };
+        case 1020:
+            return EbpfHelperPrototype{
+                .name = "ebpf_notify_slow",
+                .return_type = EBPF_RETURN_TYPE_INTEGER,
+                .argument_type = {
+                    EBPF_ARGUMENT_TYPE_PTR_TO_CTX,
+                    EBPF_ARGUMENT_TYPE_ANYTHING,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                    EBPF_ARGUMENT_TYPE_DONTCARE,
+                },
+                .reallocate_packet = false,
+                .context_descriptor = nullptr,
+                .unsupported = false,
+            };
         case 1019:
             return EbpfHelperPrototype{
                 .name = "ebpf_now_us",
@@ -368,6 +383,7 @@ extern "C"
             case 1016:
             case 1017:
             case 1018:
+            case 1020:
             case 1019:
                 return true;
             default:

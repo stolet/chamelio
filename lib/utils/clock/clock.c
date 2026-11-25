@@ -1,6 +1,11 @@
 #include <time.h>
 #include <linux/types.h>
 #include <unistd.h>
+#include <errno.h>
+#include <limits.h>
+#include <stdlib.h>
+
+#include "clock.h"
 
 static double tsc_per_us = 0.0;
 
@@ -84,4 +89,60 @@ __u64 clock_now_ns(void)
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
   return (__u64)ts.tv_sec * 1000000000ULL + (__u64)ts.tv_nsec;
+}
+
+void clock_notify(int fd, __u64 *last_ns, __u64 grace_ns)
+{
+  __u64 now;
+  __u64 value = 1;
+  ssize_t ret;
+
+  if (grace_ns == ~0ULL)
+    return;
+
+  now = clock_now_ns();
+  if (now - *last_ns > grace_ns)
+  {
+    do
+    {
+      ret = write(fd, &value, sizeof(value));
+    } while (ret < 0 && errno == EINTR);
+    if (ret != sizeof(value) && !(ret < 0 && errno == EAGAIN))
+      abort();
+  }
+  *last_ns = now;
+}
+
+int clock_canblock(__u64 *last_ns, int *extra_poll, int busy,
+    __u64 grace_ns)
+{
+  __u64 now = clock_now_ns();
+
+  if (busy || *last_ns == 0)
+  {
+    *last_ns = now;
+    *extra_poll = 0;
+  }
+  else if (*extra_poll)
+  {
+    *last_ns = now;
+    *extra_poll = 0;
+    return 1;
+  }
+  else if (now - *last_ns > grace_ns)
+  {
+    *extra_poll = 1;
+  }
+  return 0;
+}
+
+int clock_deadline_ms(__u64 deadline)
+{
+  __u64 now = clock_rdtsc();
+  __u64 us;
+
+  if (deadline <= now)
+    return 0;
+  us = clock_tsc_to_us(deadline - now);
+  return us / 1000 >= INT_MAX ? INT_MAX : us / 1000;
 }

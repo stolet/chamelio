@@ -49,7 +49,7 @@ int tcp_timeout_poll(struct tcp_slow_context *ctx)
     sock_on_timeout(ctx, sock);
   }
 
-  return 0;
+  return i;
 }
 
 int tcp_timeout_arm(struct tcp_slow_context *ctx, struct tcp_sock *sock,

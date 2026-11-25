@@ -257,10 +257,8 @@ static int uxsocket_accept(struct control_context *ctx)
     goto close_nfd;
   }
 
-  /* Create and send eventfd so that host can interrupt vm. 
-     IVSHMEM protocol needs this but we don't use this feature 
-     at the moment */
-  if ((ifd = eventfd(0, EFD_SEMAPHORE | EFD_NONBLOCK)) < 0)
+  /* Create and send eventfd so that host can interrupt vm. */
+  if ((ifd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)) < 0)
   {
     LOG_ERROR("failed to create interrupt fd");
     goto close_nfd;
@@ -285,6 +283,7 @@ static int uxsocket_accept(struct control_context *ctx)
   g = &ctx->guests[ctx->n_guests];
   g->id = ctx->n_guests;
   g->shm_fd = sfd;
+  g->notify_fd = ifd;
   g->shm_base = shm_base;
   for (i = 0; i < (int) ctx->config->fp_cores_max; i++)
   {
@@ -378,6 +377,7 @@ static int uxsocket_accept(struct control_context *ctx)
 
     new_guest_req = &qe_new_guest->data.new_guest_req;
     new_guest_req->id = g->id;
+    new_guest_req->notify_fd = g->notify_fd;
     new_guest_req->budget = &g->budgets[i].val;
     new_guest_req->shm_base = shm_base;
     new_guest_req->shm_len = ctx->config->shm_len;

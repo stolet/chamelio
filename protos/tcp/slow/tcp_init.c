@@ -66,6 +66,8 @@ int tcp_init(struct tcp_slow_context *ctx)
   }
 
   proto = tcp_proto_open(ctx);
+  if (cham_init_notify(proto, ctx->config.slow_block) != 0)
+    abort();
   tcp_ebpf_upload(proto);
 
   port_map = tcp_map_new(proto, MAX_PORT + 1, sizeof(struct tcp_port),
@@ -101,6 +103,8 @@ int tcp_init(struct tcp_slow_context *ctx)
   tcp_flow_tbl_init(flows);
 
   cfg = proto->shm_base + ctl_map->off;
+  cfg->notify_grace_ns = ctx->config.slow_block ?
+      (__u64) ctx->config.slow_poll_us * 1000 : ~0ULL;
   for (i = 0; i < (int) proto->n_fp_cores; i++)
   {
     protoq = tcp_queue_new(proto, ctx->config.ctlq_len,

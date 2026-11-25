@@ -228,7 +228,7 @@ if (cham_upload_ebpf(proto, bytecode, ebpf->size) != 0)
 ```
 
 UDP stores the selected eBPF path in its slow-path config, which is why
-`udp_slow --block=64` can choose a different UDP fast-path object. TCP uses a
+`udp_slow --fast-block=64` can choose a different UDP fast-path object. TCP uses a
 fixed TCP eBPF path today.
 
 ## 6. Write the Application Library

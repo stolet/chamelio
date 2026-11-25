@@ -9,6 +9,8 @@
 
 enum cfg_params {
   CP_VIRT,
+  CP_SLOW_BLOCK,
+  CP_SLOW_POLL_US,
   CP_RXBUF_SZ,
   CP_TXBUF_SZ,
   CP_APPQ_LEN,
@@ -29,6 +31,10 @@ enum cfg_params {
 };
 
 static struct option opts[] = {
+  { .name = "block", .has_arg = no_argument,
+    .val = CP_SLOW_BLOCK },
+  { .name = "block-us", .has_arg = required_argument,
+    .val = CP_SLOW_POLL_US },
   { .name = "virt",
     .has_arg = no_argument,
     .val = CP_VIRT },
@@ -109,6 +115,13 @@ int tcp_config_parse(struct tcp_configuration *c, int argc, char **argv)
     ret = getopt_long(argc, argv, "", opts, NULL);
     switch (ret)
     {
+      case CP_SLOW_BLOCK:
+        c->slow_block = 1;
+        break;
+      case CP_SLOW_POLL_US:
+        if (parse_u32(optarg, &c->slow_poll_us) != 0)
+          goto failed;
+        break;
       case CP_VIRT:
         c->virt = 1;
         break;
@@ -207,6 +220,8 @@ failed:
 
 static int config_defaults(struct tcp_configuration *c)
 {
+  c->slow_block = 0;
+  c->slow_poll_us = 10000;
   c->virt = 0;
   c->virt_gre = 0;
   c->rxbuf_sz = 32768;
@@ -301,6 +316,8 @@ static void print_usage(struct tcp_configuration *c, char *progname)
 {
   fprintf(stderr, "Usage: %s [OPTION]...\n"
       "\n"
+      "  --block            Enable idle slow-path blocking\n"
+      "  --block-us=N       Idle grace in us [default: 10000]\n"
       "Memory size:\n"
       "  --rxbuf-sz=BYTES                       RX buffer size in bytes"
           " [default: %u]\n"

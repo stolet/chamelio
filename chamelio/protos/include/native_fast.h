@@ -9,6 +9,7 @@
 #include "queue_fns.h"
 #include "scheduler_fns.h"
 #include "clock.h"
+#include "cham_fast.h"
 #include "utils_sync.h"
 
 #ifndef __always_inline
@@ -16,6 +17,12 @@
 #endif
 
 #define SEC(name)
+
+static __always_inline void ebpf_notify_slow(struct cham_ebpf_ctx *ctx,
+    __u64 grace_ns)
+{
+  clock_notify(ctx->notify_fd, &ctx->notify_last_ns, grace_ns);
+}
 
 static __always_inline void *ebpf_memcpy(void *dst, void *src, size_t len)
 {

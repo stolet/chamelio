@@ -18,8 +18,14 @@
 #include "udp_queue_types.h"
 #include "log.h"
 #include "uxsocket.h"
+#include "clock.h"
+
 #include "internal.h"
 #include "utils_sync.h"
+
+static int slow_notify_fd;
+static __u64 slow_grace_ns;
+static __thread __u64 slow_last_ns;
 
 #define LIB_BATCH_SIZE 16
 
@@ -93,6 +99,11 @@ int udp_connect_slow()
     LOG_ERROR("cannot read shared memory fd from slow-path");
     goto close_sockfd;
   }
+
+  if (uxsocket_read_one_msg(sock_fd, &tmp, &slow_notify_fd) < 0 ||
+      slow_notify_fd < 0)
+    goto close_sockfd;
+  slow_grace_ns = (__u64) tmp;
 
   u = malloc(sizeof(struct udp_lib));
   if (u == NULL)
@@ -475,6 +486,8 @@ int udp_socket(struct udp_context_lib *ctx)
   req = &qe->data.new_sock_req;
   req->opaque = (__u64) sock;
   ret = queue_enqueue(q, UDP_QUEUE_NEW_SOCK_REQ);
+  if (ret == 0)
+    clock_notify(slow_notify_fd, &slow_last_ns, slow_grace_ns);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue new sock req");
@@ -517,6 +530,8 @@ int udp_bind(struct udp_context_lib *ctx, int sockfd,
   req->local_port = ntohs(sin->sin_port);
   req->opaque = (__u64) sock;
   ret = queue_enqueue(q, UDP_QUEUE_BIND_REQ);
+  if (ret == 0)
+    clock_notify(slow_notify_fd, &slow_last_ns, slow_grace_ns);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue bind req");
@@ -560,6 +575,8 @@ int udp_setsockopt(struct udp_context_lib *ctx, int sockfd, __u8 opt)
   req->opaque = (__u64) sock;
   
   ret = queue_enqueue(q, UDP_QUEUE_SETOPT_REQ);
+  if (ret == 0)
+    clock_notify(slow_notify_fd, &slow_last_ns, slow_grace_ns);
   if (ret != 0)
   {
     LOG_ERROR("failed to enqueue setsockopt req");

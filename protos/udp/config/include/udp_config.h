@@ -6,6 +6,10 @@
 #define UDP_EBPF_PATH_LEN 64
 
 struct udp_configuration {
+  /* Opt in to slow-path blocking after idle polling. */
+  __u32 slow_block;
+  /* Idle polling grace period in microseconds. */
+  __u32 slow_poll_us;
   /* Protocol is running in a VM */
   __u32 virt;
   /* Use GRE for network virtualization */

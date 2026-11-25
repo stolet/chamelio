@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <sys/epoll.h>
 #include <sys/un.h>
@@ -76,7 +77,17 @@ int tcp_appif_poll(struct tcp_slow_context *ctx)
 
   nr = epoll_wait(ctx->app_epfd, evs, 32, 0);
   for (i = 0; i < nr; i++)
-    tcp_appif_poll_ev(ctx, &evs[i]);
+  {
+    if (evs[i].data.ptr == NULL)
+    {
+      __u64 value;
+      if (read(ctx->proto->notify_fd, &value, sizeof(value)) < 0 &&
+          errno != EAGAIN)
+        abort();
+    }
+    else
+      tcp_appif_poll_ev(ctx, &evs[i]);
+  }
 
   return nr;
 }
@@ -398,6 +409,14 @@ static int tcp_appif_listen_accept(struct tcp_slow_context *ctx)
   if (uxsocket_sendfd(fd, ctx->proto->shm_fd, -1) < 0)
   {
     LOG_ERROR("failed to send shm fd");
+    close(fd);
+    return -1;
+  }
+
+  if (uxsocket_sendfd(fd, ctx->proto->notify_fd,
+      ctx->config.slow_block ?
+      (__u64) ctx->config.slow_poll_us * 1000 : ~0ULL) < 0)
+  {
     close(fd);
     return -1;
   }

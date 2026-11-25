@@ -614,6 +614,9 @@ static inline int rx_punt_ctl(struct cham_ebpf_ctx *ctx,
     return -1;
   }
 
+  clock_notify(ctx->notify_fd, &ctx->notify_last_ns,
+      cfg->notify_grace_ns);
+
   return 0;
 }
 
