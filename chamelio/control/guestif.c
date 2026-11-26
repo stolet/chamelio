@@ -462,6 +462,7 @@ static inline void uxsocket_receive(struct control_context *ctx,
   {
     case CHAM_PROTO_TCP:
     case CHAM_PROTO_UDP:
+    case CHAM_PROTO_RPC:
       break;
     default:
       goto send_proto_res;

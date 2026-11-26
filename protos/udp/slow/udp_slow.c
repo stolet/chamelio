@@ -420,7 +420,7 @@ int handle_bind(struct udp_slow_context *ctx,
   port = &port_map[local_port];
   if (port->nsocks != 0 && !sock->reuport)
   {
-    LOG_ERROR("socket with this port already in use");
+    LOG_ERROR("socket with this port already in use port=%d", port);
     res->success = 0;
     res->opaque = req->opaque;
     ret = queue_enqueue(actx->slow_app_q, UDP_QUEUE_BIND_RES);

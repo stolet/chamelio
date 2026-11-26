@@ -25,7 +25,8 @@
 
   // Mount hugepages for DPDK
   "mounts": [
-        "source=/dev/hugepages,target=/dev/hugepages,type=bind"
+        "source=/dev/hugepages,target=/dev/hugepages,type=bind",
+        "source=/local/srsingh/projects/cham/benchmarks,target=/workspaces/benchmarks,type=bind"
   ],
 
   "remoteUser": "root",
